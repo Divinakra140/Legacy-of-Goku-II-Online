@@ -101,11 +101,21 @@ func set_enabled(names: Array) -> void:
 		fa.close()
 	reload()
 
+## a mod that holds a story (content/story.json) only counts while its story is played (STORY MODE): its dark park,
+## people and doors stay out of FREE PLAY
+var story_pack = ""
+
 ## every layer under your own edits: the switched-on packs, first = lowest
 func pack_dirs() -> Array:
 	var out = []
-	for n in enabled_names():
-		out.append(packs_dir().path_join(str(n)))
+	var names = enabled_names()
+	if story_pack != "" and not names.has(story_pack):
+		names.append(story_pack)
+	for n in names:
+		var d = packs_dir().path_join(str(n))
+		if str(n) != story_pack and FileAccess.file_exists(d.path_join("content/story.json")):
+			continue
+		out.append(d)
 	return out
 
 ## all the files of a content kind, lowest first: the packs', then yours
@@ -602,6 +612,7 @@ func load_heroes() -> void:
 	var paths = content_paths("heroes")
 	if not FileAccess.file_exists(paths[-1]) and FileAccess.file_exists("res://content/heroes.json"):
 		paths.append("res://content/heroes.json")
+	paths.push_front(Assets.builtin_dir().path_join("heroes.json"))
 	for f in paths:
 		if not FileAccess.file_exists(f):
 			continue

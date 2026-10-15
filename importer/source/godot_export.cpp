@@ -352,6 +352,79 @@ static int open_invisible_walls(int W, int H, Plain plain, Solid solid, Open ope
     return opened;
 }
 static int g_walls_opened = 0;
+// ---- the title screen and the menus' galaxy (Android port's GBA-style menus): both are 8-bit pictures packed with
+// the game's own packer, drawn with the title's 256 colours. The galaxy is a 128x128 square the game repeats.
+static void export_ui(const fs::path& dir) {
+    fs::create_directories(dir);
+    const uint32_t kPalette = 0x081d4f50u;
+    struct Pic { const char* name; uint32_t at; int w, h; };
+    const Pic pics[] = {{"title.png", 0x08029294u, 240, 160}, {"galaxy.png", 0x080e18b0u, 128, 128}};
+    for (const Pic& p : pics) {
+        std::vector<uint8_t> px;
+        if (!decode(R, p.at, &px) || px.size() < static_cast<size_t>(p.w * p.h)) { std::fprintf(stderr, "[export] %s: not found in this game\n", p.name); continue; }
+        std::vector<uint8_t> img(static_cast<size_t>(p.w) * p.h * 4);
+        for (int i = 0; i < p.w * p.h; ++i) {
+            const uint16_t c = R.r16(kPalette + 2u * px[static_cast<size_t>(i)]);
+            img[i * 4] = static_cast<uint8_t>((c & 31) * 255 / 31); img[i * 4 + 1] = static_cast<uint8_t>(((c >> 5) & 31) * 255 / 31);
+            img[i * 4 + 2] = static_cast<uint8_t>(((c >> 10) & 31) * 255 / 31); img[i * 4 + 3] = 255;
+        }
+        romcat::save_png_rgba((dir / p.name).string(), img, p.w, p.h);
+    }
+    // the title menu's little Dragon Ball (beside the picked choice): width, height, then pixels in the title's colours
+    {
+        const uint32_t at = 0x081d4e9cu;
+        const int w = R.r16(at), h = R.r16(at + 2);
+        if (w == 8 && h == 8) {
+            std::vector<uint8_t> img(64 * 4, 0);
+            for (int i = 0; i < 64; ++i) {
+                const uint8_t ci = R.r8(at + 4u + static_cast<uint32_t>(i));
+                if (!ci) continue;
+                const uint16_t c = R.r16(kPalette + 2u * ci);
+                img[i * 4] = static_cast<uint8_t>((c & 31) * 255 / 31); img[i * 4 + 1] = static_cast<uint8_t>(((c >> 5) & 31) * 255 / 31);
+                img[i * 4 + 2] = static_cast<uint8_t>(((c >> 10) & 31) * 255 / 31); img[i * 4 + 3] = 255;
+            }
+            romcat::save_png_rgba((dir / "ball.png").string(), img, 8, 8);
+        }
+    }
+    // the menus' two fonts (the game's text routine at 0x08020ec2): a table of halfword offsets by character code;
+    // a glyph = its width, then one 16-pixel column per halfword (bit 0 at the top). Saved as a strip of white glyphs
+    // plus where each one is; the game adds the shadow when drawing (one pixel right and down).
+    struct Fnt { const char* name; uint32_t at; };
+    const Fnt fonts[] = {{"font_head", 0x081d6b1cu}, {"font_small", 0x08028724u}};
+    for (const Fnt& f : fonts) {
+        std::vector<std::pair<int, int>> where(256, {-1, 0});
+        int total = 0;
+        for (int c = 32; c < 256; ++c) {
+            const uint16_t o = R.r16(f.at + 2u * c);
+            if (!o) continue;
+            const int w = R.r16(f.at + 2u * o);
+            if (w < 1 || w > 24) continue;
+            where[c] = {total, w};
+            total += w + 1;
+        }
+        if (total == 0) { std::fprintf(stderr, "[export] %s: not found in this game\n", f.name); continue; }
+        std::vector<uint8_t> img(static_cast<size_t>(total) * 16 * 4, 0);
+        std::string js = "{\"h\":16,\"glyphs\":{";
+        bool first = true;
+        for (int c = 32; c < 256; ++c) {
+            if (where[c].first < 0) continue;
+            const uint32_t g = f.at + 2u * R.r16(f.at + 2u * c);
+            for (int x = 0; x < where[c].second; ++x) {
+                const uint16_t col = R.r16(g + 2u + 2u * x);
+                for (int y = 0; y < 16; ++y) if ((col >> y) & 1) {
+                    uint8_t* p = &img[(static_cast<size_t>(y) * total + where[c].first + x) * 4];
+                    p[0] = p[1] = p[2] = p[3] = 255;
+                }
+            }
+            char b[48]; std::snprintf(b, sizeof b, "%s\"%d\":[%d,%d]", first ? "" : ",", c, where[c].first, where[c].second);
+            js += b; first = false;
+        }
+        js += "}}";
+        romcat::save_png_rgba((dir / (std::string(f.name) + ".png")).string(), img, total, 16);
+        write_text(dir / (std::string(f.name) + ".json"), js);
+    }
+    std::fprintf(stderr, "[export] title screen, menu galaxy and fonts\n");
+}
 static void write_area(const fs::path& d, const Area& A, const std::string& extra_json) {
     fs::create_directories(d);
     const int W = A.tw * 8, H = A.th * 8;
@@ -1808,8 +1881,16 @@ static int fill_by_places(std::vector<uint32_t> (&WL)[5], std::vector<uint8_t>& 
         if (dist[i] > lim) near[i] = near2[i];
     }
     // group the cells by kit
-    std::map<const CountryKit*, std::vector<size_t>> by;
-    for (size_t i = 0; i < N; ++i) if (mask[i] && near[i] >= 0) by[&place_kit(near[i])].push_back(i);
+    // (in the order each kit first appears across the map, not by where it sits in memory: that differs on every
+    // run and every device, and so did the seeds and so EARTH - now every import makes the very same planet)
+    std::vector<std::pair<const CountryKit*, std::vector<size_t>>> by;
+    std::unordered_map<const CountryKit*, size_t> slot;
+    for (size_t i = 0; i < N; ++i) if (mask[i] && near[i] >= 0) {
+        const CountryKit* k = &place_kit(near[i]);
+        auto it = slot.find(k);
+        if (it == slot.end()) { it = slot.emplace(k, by.size()).first; by.push_back({k, {}}); }
+        by[it->second].second.push_back(i);
+    }
     int n = 0, ki = 0;
     for (auto& [K, cells] : by) {
         std::vector<uint8_t> m2(N, 0), edge(N, 0);
@@ -3952,7 +4033,8 @@ int main(int argc, char** argv) {
     if (argc > 3) { const int fl = export_floors(argv[3], out / "floors"); std::fprintf(stderr, "[export] %d adventure areas\n", fl); }
     // (no music from the game: you bring your own songs)
     std::fprintf(stderr, "[export] %d invisible-wall tiles opened (lone walls with nothing solid on them)\n", g_walls_opened);
-    write_text(out / "version.txt", "22\n");
+    export_ui(out / "ui");
+    write_text(out / "version.txt", "24\n");
     std::fprintf(stderr, "[export] done: %s\n", out.string().c_str());
     return 0;
 }

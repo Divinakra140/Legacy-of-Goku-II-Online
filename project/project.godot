@@ -10,6 +10,13 @@ config_version=5
 
 [application]
 
+boot_splash/show_image=true
+boot_splash/image="res://art/puni_logo.png"
+boot_splash/fullsize=false
+boot_splash/use_filter=false
+config/quit_on_go_back=false
+boot_splash/bg_color=Color(0, 0, 0, 1)
+
 config/name="Legacy of Goku II - Co-op (Godot)"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.3")

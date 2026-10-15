@@ -133,6 +133,20 @@ func host(password: String) -> void:
 	if available():
 		bridge.hostOpen(PORT, PORT)
 
+## what the players need to put the same world back on the list if they take over as host
+func succession_info() -> Dictionary:
+	return {"name": world_name, "private": is_private, "salt": salt, "proof": _proof}
+
+## a player taking over as host: the same world name and password check as before
+func resume(info: Dictionary) -> void:
+	if info.is_empty():
+		return
+	world_name = str(info.get("name", world_name))
+	is_private = bool(info.get("private", false))
+	salt = str(info.get("salt", ""))
+	_proof = str(info.get("proof", ""))
+	_next_announce = 0
+
 func stop_hosting() -> void:
 	if not hosting:
 		return

@@ -47,3 +47,6 @@ project/lobby_server.txt
 
 # ZeroTier library binary (built from libzt; see README)
 android_custom/*.aar
+
+# art taken from the game file (copyrighted) - never in the repo
+art_work/

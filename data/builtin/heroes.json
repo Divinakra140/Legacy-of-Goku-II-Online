@@ -1,0 +1,10 @@
+{
+  "_help": "Heroes that come with the Android port. They play like their base hero. Your own content/heroes.json and mods lie over these.",
+  "heroes": [
+    {"id": "SS GOKU", "name": "SS GOKU", "base": "GOKU", "inherit": true, "set": 3101},
+    {"id": "SHIRTLESS", "name": "SHIRTLESS", "base": "GOKU", "inherit": true, "set": 3102},
+    {"id": "SS BLUE GOKU", "name": "SS BLUE", "base": "GOKU", "inherit": true, "set": 3103},
+    {"id": "SHADOWGOKU", "name": "SHADOW", "base": "GOKU", "inherit": true, "set": 3100,
+     "stats": {"end": 3.6, "maxep": 26, "maxhp": 85, "pwr": 4.6, "str": 4}}
+  ]
+}

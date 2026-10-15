@@ -76,11 +76,11 @@ func file_for(song: String) -> String:
 	if _files.has(song):
 		return _files[song]
 	var f = ""
-	for ext in ["ogg", "mp3"]:
-		var p = Assets.music_dir().path_join("%s.%s" % [song.to_lower(), ext])
-		if FileAccess.file_exists(p):
-			f = p
-			break
+	for d in [Assets.picked_music_dir(), Assets.music_dir()]:
+		for ext in ["ogg", "mp3"]:
+			var p = d.path_join("%s.%s" % [song.to_lower(), ext])
+			if f == "" and FileAccess.file_exists(p):
+				f = p
 	if f != "":
 		print("[music] your song for ", song, ": ", f)
 	_files[song] = f

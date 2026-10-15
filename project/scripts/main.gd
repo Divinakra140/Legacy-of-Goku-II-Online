@@ -32,6 +32,10 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv = a.trim_prefix("--").split("=")
 		test[kv[0]] = kv[1] if kv.size() > 1 else "1"
+	if Game.cfg.get("_quit_test", false):       # test aid (--quittest): back here after QUIT TO TITLE
+		Game.cfg.erase("_quit_test")
+		print("[test] back at the start menu after QUIT TO TITLE")
+		test.erase("autotest")
 	Game.started.connect(_on_started)
 	if OS.has_feature("android"):
 		# your own songs in Music/LoG2Coop: Android asks once for "music and audio"
@@ -55,6 +59,11 @@ func _ready() -> void:
 			_start_test()
 		else:
 			_menu()
+			if test.has("screen"):        # test aid: open one of the menu screens (--screen=_char_screen)
+				if str(test["screen"]) in ["_char_screen", "_map_screen", "_name_screen"]:
+					call(str(test["screen"]), _menu, func(): pass)
+				else:
+					call(str(test["screen"]))
 			if test.has("lmp"):
 				_local_multiplayer()
 			elif test.has("gmp"):
@@ -83,7 +92,9 @@ func _music_text() -> String:
 		return "MUSIC: put your own songs in  %s  (Internal storage > Music > LoG2Coop). Name them title.ogg, field.ogg, cave.ogg, lair.ogg, boss.ogg and victory.ogg (or .mp3) to replace those songs in the game. Optional: a file named after an area (the name that pops up when you walk in, like \"west city.ogg\") plays only in that area and takes priority over the base soundtrack. Sound effects go in  %s" % [Assets.music_dir(), Assets.sounds_dir()] + ("" if Assets.audio_allowed() else "  (Allow MUSIC AND AUDIO when Android asks, or in the app's settings.)")
 	return "MUSIC: put your own songs in the music folder (title, field, cave, lair, boss, victory .ogg / .mp3, or a place's name like \"west city.ogg\")."
 
+var _screen_gen = 0       # every new screen: a waiting join retry from an older screen gives up
 func _clear() -> void:
+	_screen_gen += 1
 	if ui:
 		ui.queue_free()
 	ui = Control.new()
@@ -93,6 +104,14 @@ func _clear() -> void:
 	bg.color = Color(0.05, 0.06, 0.12)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(bg)
+	if Assets.base_dir != "" and FileAccess.file_exists(Assets.base_dir.path_join("ui/galaxy.png")):
+		var g = TextureRect.new()       # the GBA menus' galaxy behind every screen (dimmed a little under the older screens' text)
+		g.texture = Assets.texture(Assets.base_dir.path_join("ui/galaxy.png"))
+		g.stretch_mode = TextureRect.STRETCH_TILE
+		g.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		g.scale = Vector2(1.5, 1.5); g.size = Vector2(320, 180)
+		g.modulate = Color(0.7, 0.7, 0.7)
+		ui.add_child(g)
 
 func _box() -> VBoxContainer:
 	var v = VBoxContainer.new()
@@ -189,6 +208,7 @@ func _rom_chosen(path: String) -> void:
 	set_process(true)
 
 func _process(_dt: float) -> void:
+	_gal_scroll(_dt)
 	if Assets.fetch_thread != null and is_instance_valid(status):
 		status.text = Assets.fetch_status
 	if Assets.fetch_result >= 0:
@@ -217,7 +237,8 @@ func _process(_dt: float) -> void:
 			Assets.import_thread = null
 
 # ------------------------------------------------------------------ the menu
-func _menu() -> void:
+## the PC-style menu from before the GBA menus (kept for reference; not shown)
+func _menu_classic() -> void:
 	_global_back = Callable()
 	_clear()
 	Music.play("title")
@@ -368,7 +389,8 @@ func _mods_screen() -> void:
 	m.closed.connect(func():
 		cl.queue_free()
 		Mods.reload()
-		_menu())
+		_gmods_screen())
+	_global_back = func(): m.closed.emit()      # B (or ESC) leaves the mod loader too
 
 ## DEV TOOLS: the map, hero, enemy, move, form, blast and mission editors for your team
 var dev: Node
@@ -463,7 +485,7 @@ func _story_id() -> String:
 		out += ch if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9") else "_"
 	return out.left(24)
 
-func _play_story(slot: int) -> void:
+func _play_story(slot: int, story_hero: bool = true) -> void:
 	var st: Dictionary = Content.story
 	_read()
 	Game.cfg["mode"] = "solo"
@@ -471,7 +493,7 @@ func _play_story(slot: int) -> void:
 	Game.cfg["story"] = "%s_%d" % [_story_id(), slot]
 	Game.cfg["local_players"] = 1
 	var ci = Assets.CHARACTERS.find(str(st.get("hero", "GOKU")).to_upper())
-	if ci >= 0:
+	if ci >= 0 and story_hero:
 		Game.cfg["character"] = ci
 	Game.cfg["start_at"] = {"key": str(st.get("start_map", "land/0/0")), "x": float(st.get("x", 8088)), "y": float(st.get("y", 9632))}
 	Game.begin()
@@ -508,64 +530,6 @@ func _join() -> void:
 
 # ------------------------------------------------------------------ LOCAL MULTIPLAYER (Android port): host, join or serve
 ## on the same Wi-Fi; the addresses are found and used behind the scenes - nobody types one
-var in_local_mp = false
-func _local_multiplayer() -> void:
-	_read()
-	in_local_mp = true
-	_clear()
-	var v = _box()
-	v.add_theme_constant_override("separation", 4)
-	# top left: a small BACK, then the title
-	var top = HBoxContainer.new()
-	top.add_theme_constant_override("separation", 8)
-	v.add_child(top)
-	_button(top, "BACK", func(): in_local_mp = false; _menu())
-	var t = _label(top, "LOCAL MULTIPLAYER", 12, Color(1, 0.85, 0.3))
-	t.custom_minimum_size = Vector2(0, 0)
-	t.autowrap_mode = TextServer.AUTOWRAP_OFF
-	# a server with no player of its own
-	var gap_top = Control.new()
-	gap_top.custom_minimum_size = Vector2(0, 6)
-	v.add_child(gap_top)
-	var srv = _button(v, "HOST SERVER WITHOUT PLAYING", func(): in_local_mp = false; _server_from_menu())
-	srv.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	srv.add_theme_font_size_override("font_size", 11)
-	srv.custom_minimum_size = Vector2(0, 24)
-	_green(srv)
-	var sd = _label(v, "Allows a device on your local Wi-Fi network to become a server that other devices can join without that device having to run the game.", 8, Color(0.8, 0.85, 0.95))
-	sd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# a lot of room, then HOST GAME and JOIN GAME down below: the screen is filled
-	var gap = Control.new()
-	gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	gap.size_flags_stretch_ratio = 2.0
-	v.add_child(gap)
-	# HOST GAME and JOIN GAME side by side, big, each with its paragraph
-	var cols = HBoxContainer.new()
-	cols.add_theme_constant_override("separation", 16)
-	v.add_child(cols)
-	for c in [["HOST GAME", _host, "Host a local game on your Wi-Fi network. Only people on your Wi-Fi network can join this game."],
-			["JOIN GAME", func(): in_local_mp = false; _find_games(), "Join a game on your local Wi-Fi network. You won't be able to see games hosted by anyone else on any other Wi-Fi network other than yours."]]:
-		var col = VBoxContainer.new()
-		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		col.add_theme_constant_override("separation", 4)
-		cols.add_child(col)
-		var b = Button.new()
-		b.text = c[0]
-		b.add_theme_font_size_override("font_size", 14)
-		b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		b.custom_minimum_size = Vector2(0, 30)
-		_green(b)
-		b.pressed.connect(c[1])
-		col.add_child(b)
-		var d = _label(col, c[2], 8, Color(0.8, 0.85, 0.95))
-		d.custom_minimum_size = Vector2(0, 0)
-		d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lobby_label = _label(v, "", 8, Color(0.7, 0.9, 1))
-	lobby_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var gap_bottom = Control.new()
-	gap_bottom.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	v.add_child(gap_bottom)
-
 ## the green of the PLAY button (Steam's), for the big buttons
 func _green(b: Button) -> void:
 	for st in [["normal", Color(0.44, 0.69, 0.13), Color(0.36, 0.56, 0.1)], ["hover", Color(0.55, 0.8, 0.18), Color(0.44, 0.69, 0.13)],
@@ -633,43 +597,6 @@ func _big_button(parent: Node, t: String, f: Callable) -> Button:
 # ------------------------------------------------------------------ GLOBAL MULTIPLAYER (Android port): over the internet
 ## (embedded ZeroTier + the lobby list: see online.gd). B goes back from every one of these screens.
 var _global_back: Callable = Callable()
-var _online_label: Label
-func _global_multiplayer() -> void:
-	_read()
-	Online.start()
-	Online.browse(false)
-	_global_back = func(): _menu()
-	_clear()
-	var v = _box()
-	v.add_theme_constant_override("separation", 4)
-	var top = _top_bar(v, "GLOBAL MULTIPLAYER")
-	_online_label = _label(top, "", 8, Color(0.7, 0.9, 1))
-	_online_label.custom_minimum_size = Vector2(0, 0)
-	_online_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	var gap_top = Control.new()
-	gap_top.custom_minimum_size = Vector2(0, 4)
-	v.add_child(gap_top)
-	var srv = _button(v, "HOST SERVER WITHOUT PLAYING", func(): _world_name_screen(func(): _online_action(func(): _global_back = Callable(); test["online"] = "1"; _server_from_menu())))
-	srv.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	srv.add_theme_font_size_override("font_size", 11)
-	srv.custom_minimum_size = Vector2(0, 24)
-	_green(srv)
-	var sd = _label(v, "Turns this device into an online server that anyone in the world can find and join, without this device playing.", 8, Color(0.8, 0.85, 0.95))
-	sd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var gap = Control.new()
-	gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	gap.size_flags_stretch_ratio = 2.0
-	v.add_child(gap)
-	_columns(v, [["HOST PUBLIC GAME", func(): _world_name_screen(func(): _online_action(func(): _host_online(""))), "Host a game anyone in the world can see under JOIN GAME and join."],
-		["HOST PRIVATE GAME", func(): _private_password_screen(), "Host a game protected by a password you choose. Only people with the password can join."],
-		["JOIN GAME", func(): _online_games(), "See the games people are playing online and join one. Private games ask for their password."]])
-	lobby_label = _label(v, "", 8, Color(0.7, 0.9, 1))
-	lobby_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var gap_bottom = Control.new()
-	gap_bottom.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	v.add_child(gap_bottom)
-	_tick(_show_online_state)
-
 ## a small BACK at the top left and the title; returns the row (more can be added to it)
 func _top_bar(v: Control, title_text: String) -> HBoxContainer:
 	var top = HBoxContainer.new()
@@ -712,10 +639,6 @@ func _tick(f: Callable) -> void:
 	ui.add_child(t)
 	f.call()
 
-func _show_online_state() -> void:
-	if is_instance_valid(_online_label):
-		_online_label.text = "   " + Online.status_text()
-
 ## hosting and joining need the internet network up; until then the button says so
 func _online_action(f: Callable) -> void:
 	if not Online.available():
@@ -734,31 +657,6 @@ func _host_online(password: String) -> void:
 	elif is_instance_valid(lobby_label):
 		lobby_label.text = Game.net_error
 
-## WORLD NAME: what people see in JOIN GAME (a lot of worlds are GOKU - EARTH)
-func _world_name_screen(then: Callable) -> void:
-	_global_back = func(): _global_multiplayer()
-	_clear()
-	var v = _box()
-	v.add_theme_constant_override("separation", 6)
-	_top_bar(v, "WORLD NAME")
-	_label(v, "Give your world a name. It is what other players see in JOIN GAME.", 8, Color(0.8, 0.85, 0.95))
-	_password_box(v)
-	_pw_edit.placeholder_text = "world name"
-	_pw_edit.text = Online.world_name
-	var go = _button(v, "CONTINUE", func():
-		var n = _pw_edit.text.strip_edges().to_upper()
-		if n.length() < 2:
-			lobby_label.text = "The name needs 2 or more characters."
-			return
-		Online.world_name = n.left(24)
-		then.call())
-	go.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	go.add_theme_font_size_override("font_size", 12)
-	go.custom_minimum_size = Vector2(90, 26)
-	_green(go)
-	lobby_label = _label(v, "", 8, Color(0.7, 0.9, 1))
-	lobby_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-
 var _pw_edit: LineEdit
 func _password_box(v: Control) -> void:
 	_pw_edit = LineEdit.new()
@@ -769,171 +667,44 @@ func _password_box(v: Control) -> void:
 	_pw_edit.add_theme_font_size_override("font_size", 10)
 	v.add_child(_pw_edit)
 
-func _private_password_screen() -> void:
-	_global_back = func(): _global_multiplayer()
-	_clear()
-	var v = _box()
-	v.add_theme_constant_override("separation", 6)
-	_top_bar(v, "HOST PRIVATE GAME")
-	_label(v, "Choose a password for your game (4 or more characters). Tell it to the people you want to play with - they type it when they join.", 8, Color(0.8, 0.85, 0.95))
-	_password_box(v)
-	var go = _button(v, "START PRIVATE GAME", _start_private)
-	go.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	go.add_theme_font_size_override("font_size", 12)
-	go.custom_minimum_size = Vector2(0, 26)
-	_green(go)
-	lobby_label = _label(v, "", 8, Color(0.7, 0.9, 1))
-	lobby_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-
-func _start_private() -> void:
-	var pw = _pw_edit.text.strip_edges()
-	if pw.length() < 4:
-		lobby_label.text = "The password needs 4 or more characters."
-		return
-	_online_action(func(): _host_online(pw))
-
-var _online_list: VBoxContainer
-var _online_sig = "-"
-func _online_games() -> void:
-	_global_back = func(): Online.browse(false); _global_multiplayer()
-	Online.start()
-	Online.browse(true)
-	_online_sig = "-"
-	_clear()
-	var v = _box()
-	var top = _top_bar(v, "JOIN GAME")
-	_online_label = _label(top, "", 8, Color(0.7, 0.9, 1))
-	_online_label.custom_minimum_size = Vector2(0, 0)
-	_online_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	_label(v, "Games people are playing online. Pick one to join.", 8)
-	_online_list = VBoxContainer.new()
-	v.add_child(_online_list)
-	lobby_label = _label(v, "", 8, Color(0.7, 0.9, 1))
-	_tick(_refresh_online_games)
-
-func _refresh_online_games() -> void:
-	_show_online_state()
-	if not is_instance_valid(_online_list):
-		return
-	var sig = Online.list_error
-	for g in Online.lobbies:
-		sig += "%s|%s|%s|%d|%s;" % [g["id"], g["character"], g["planet"], g["players"], g["private"]]
-	if sig == _online_sig:
-		return
-	_online_sig = sig
-	print("[main] online games: ", sig)
-	var fo = get_viewport().gui_get_focus_owner()
-	var had_focus = fo != null and _online_list.is_ancestor_of(fo)
-	for c in _online_list.get_children():
-		c.queue_free()
-	if Online.list_error != "":
-		_label(_online_list, Online.list_error, 8, Color(1, 0.6, 0.5))
-		return
-	if Online.lobbies.is_empty():
-		_label(_online_list, "Looking for games... (nobody is hosting one online right now)", 8, Color(0.75, 0.75, 0.8))
-		return
-	var first: Button = null
-	for g in Online.lobbies:
-		var t = "%s  -  %s  -  %s   (%d/%d)%s" % [g.get("world", ""), g["character"], g["planet"], int(g["players"]), int(g["max"]), "   PRIVATE" if g["private"] else ""]
-		var b = _big_button(_online_list, t, _pick_online_game.bind(g))
-		b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		_green(b)
-		if first == null:
-			first = b
-	if had_focus and first:
-		first.grab_focus.call_deferred()
-
 func _pick_online_game(g: Dictionary) -> void:
 	if bool(g["private"]):
 		_join_password_screen(g)
 	else:
 		_online_action(func(): _join_online(g, ""))
 
-func _join_password_screen(g: Dictionary) -> void:
-	_global_back = func(): _online_games()
-	Online.browse(false)
-	_clear()
-	var v = _box()
-	v.add_theme_constant_override("separation", 6)
-	_top_bar(v, "PRIVATE GAME")
-	_label(v, "%s  -  %s   is a private game. Type its password:" % [g["character"], g["planet"]], 9, Color(0.85, 0.9, 1))
-	_password_box(v)
-	var go = _button(v, "JOIN", func(): _online_action(func(): _join_online(g, _pw_edit.text.strip_edges())))
-	go.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	go.add_theme_font_size_override("font_size", 12)
-	go.custom_minimum_size = Vector2(80, 26)
-	_green(go)
-	lobby_label = _label(v, "", 8, Color(0.7, 0.9, 1))
-	lobby_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-
-func _join_online(g: Dictionary, password: String) -> void:
+func _join_online(g: Dictionary, password: String, tries: int = 0) -> void:
 	Online.browse(false)
 	Game.net_error = ""
 	Game.cfg["mode"] = "join"
+	_join_retry = [g, password, tries]
 	var port = Online.join(g, password)
 	if Game.join_game_online(port):
-		lobby_label.text = "JOINING ..."
+		lobby_label.text = "JOINING ..." if tries == 0 else "STILL CONNECTING ... (TRY %d OF %d)" % [tries + 1, JOIN_TRIES]
+	elif tries + 1 < JOIN_TRIES:
+		_retry_join()
 	else:
 		lobby_label.text = Game.net_error
 
+## the internet link can still be coming up (a moment after the app starts): a failed join tries again by itself
+const JOIN_TRIES = 6
+var _join_retry = []
+func _retry_join() -> void:
+	if _join_retry.is_empty():
+		return
+	var r = _join_retry
+	_join_retry = []
+	Online.stop_joining()
+	if Game.multiplayer.has_multiplayer_peer():
+		Game.multiplayer.multiplayer_peer = null
+	if is_instance_valid(lobby_label):
+		lobby_label.text = "STILL CONNECTING ... (TRY %d OF %d)" % [int(r[2]) + 2, JOIN_TRIES]
+	var gen = _screen_gen
+	await get_tree().create_timer(2.5).timeout
+	if gen == _screen_gen and Game.cfg.get("mode", "") == "join" and world == null:
+		_join_online(r[0], r[1], int(r[2]) + 1)
+
 # ------------------------------------------------------------------ JOIN GAME: the games on this Wi-Fi
-var finding = false
-var _find_list: VBoxContainer
-var _find_sig = ""
-func _find_games() -> void:
-	finding = true
-	_find_sig = "-"
-	_clear()
-	var v = _box()
-	var top = HBoxContainer.new()
-	top.add_theme_constant_override("separation", 8)
-	v.add_child(top)
-	_button(top, "BACK", _leave_find)
-	var title = _label(top, "JOIN GAME", 12, Color(1, 0.85, 0.3))
-	title.custom_minimum_size = Vector2(0, 0)
-	title.autowrap_mode = TextServer.AUTOWRAP_OFF
-	_label(v, "Games on your Wi-Fi network. Pick one to join.", 8)
-	_find_list = VBoxContainer.new()
-	v.add_child(_find_list)
-	lobby_label = _label(v, "", 8, Color(0.7, 0.9, 1))
-	Game.lan_scan_start()
-	var t = Timer.new()
-	t.wait_time = 0.5
-	t.autostart = true
-	t.timeout.connect(_refresh_find)
-	ui.add_child(t)
-	_refresh_find()
-
-func _refresh_find() -> void:
-	if not finding or not is_instance_valid(_find_list):
-		return
-	var ips = Game.lan_found.keys()
-	ips.sort()
-	var sig = ""
-	for ip in ips:
-		var g: Dictionary = Game.lan_found[ip]
-		sig += "%s|%s|%s;" % [ip, g.get("character", ""), g.get("planet", "")]
-	if sig == _find_sig:
-		return
-	_find_sig = sig
-	print("[main] games on this Wi-Fi: ", sig)
-	var had_focus = get_viewport().gui_get_focus_owner() != null and _find_list.is_ancestor_of(get_viewport().gui_get_focus_owner())
-	for c in _find_list.get_children():
-		c.queue_free()
-	if ips.is_empty():
-		_label(_find_list, "Looking for games... (someone on your Wi-Fi has to choose HOST GAME or HOST SERVER WITHOUT PLAYING)", 8, Color(0.75, 0.75, 0.8))
-		return
-	var first: Button = null
-	for ip in ips:
-		var g: Dictionary = Game.lan_found[ip]
-		var b = _big_button(_find_list, "%s  -  %s" % [str(g.get("character", g.get("name", "?"))), str(g.get("planet", ""))], _join_found.bind(ip))
-		b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		_green(b)
-		if first == null:
-			first = b
-	if had_focus and first:
-		first.grab_focus.call_deferred()
-
 func _join_found(ip: String) -> void:
 	Game.lan_scan_stop()
 	finding = false
@@ -944,12 +715,10 @@ func _join_found(ip: String) -> void:
 	else:
 		lobby_label.text = Game.net_error
 
-func _leave_find() -> void:
-	Game.lan_scan_stop()
-	finding = false
-	_local_multiplayer()
-
 func _refresh_lobby() -> void:
+	if Game.net_error == "COULD NOT CONNECT" and not _join_retry.is_empty() and int(_join_retry[2]) + 1 < JOIN_TRIES:
+		_retry_join()
+		return
 	if lobby_label == null or not is_instance_valid(lobby_label):
 		return
 	if Game.net_error != "":
@@ -965,6 +734,7 @@ func _refresh_lobby() -> void:
 
 func _on_started() -> void:
 	_global_back = Callable()
+	_join_retry = []
 	Online.browse(false)
 	in_local_mp = false
 	finding = false
@@ -1062,7 +832,7 @@ func _input(ev: InputEvent) -> void:
 	if in_local_mp and ui != null and is_instance_valid(ui) and ((ev is InputEventJoypadButton and ev.pressed and ev.button_index == Game.pad_btn("b")) or (ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_ESCAPE)):
 		get_viewport().set_input_as_handled()
 		in_local_mp = false
-		_menu()
+		_mp_choice()
 		return
 	if finding and ui != null and is_instance_valid(ui) and ((ev is InputEventJoypadButton and ev.pressed and ev.button_index == Game.pad_btn("b")) or (ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_ESCAPE)):
 		get_viewport().set_input_as_handled()
@@ -1110,6 +880,10 @@ func _physics_process(_dt: float) -> void:
 	if not test.has("autotest") or world == null:
 		return
 	test_t += 1
+	if test.has("quittest") and test_t == int(test["quittest"]):
+		Game.cfg["_quit_test"] = true
+		world.call("_option_pick_quit")
+		return
 	if test.has("gameshot") and test_t == int(test.get("shotat", "400")):
 		get_viewport().get_texture().get_image().save_png(test["gameshot"])
 	var script: String = test.get("keys", "")
@@ -1386,7 +1160,7 @@ func _script_keys(script: String) -> Dictionary:
 		var p = part.split(":")
 		if p.size() == 3 and test_t >= int(p[0]) and test_t < int(p[1]):
 			for ch in p[2]:
-				k[{"u": "up", "d": "down", "l": "left", "r": "right", "a": "a", "b": "b", "F": "toggle", "s": "sp", "t": "tr", "i": "it", "n": "nx", "m": "mn", "g": "run"}.get(ch, "x")] = true
+				k[{"u": "up", "d": "down", "l": "left", "r": "right", "a": "a", "b": "b", "F": "toggle", "s": "sp", "t": "tr", "i": "it", "n": "nx", "m": "mn", "g": "run", "y": "fly"}.get(ch, "x")] = true
 	return k
 
 # test aid: a tour through a land - A* over its walk grid, from map to map (shows the joined world)
@@ -1575,3 +1349,862 @@ func _fit_view() -> void:
 	win.content_scale_stretch = Window.CONTENT_SCALE_STRETCH_FRACTIONAL
 	win.content_scale_size = sz
 	_fit_size = ws
+
+# ------------------------------------------------------------------ GBA-STYLE MENUS (Android port, v44 "console-like")
+## Every screen is drawn in the GBA's own pixels: a 320x180 room scaled 1.5 (whole screen pixels on a 1080p handheld),
+## with the title picture, the galaxy and the two fonts read from the player's game file by the importer.
+## B (or ESC) goes back on every screen (_global_back).
+const GW = 320.0
+const GH = 180.0
+const G_CYAN = Color(0, 1, 1)
+const G_PICK = Color(1, 0.85, 0.2)
+var gba: Control
+var _gal: TextureRect
+var _gal_t = 0.0
+
+func _gba_screen(galaxy: bool = true) -> Control:
+	_global_back = Callable()
+	in_local_mp = false
+	finding = false
+	_clear()
+	gba = Control.new()
+	gba.size = Vector2(GW, GH)
+	gba.scale = Vector2(1.5, 1.5)
+	gba.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	ui.add_child(gba)
+	_gal = null
+	set_process(true)
+	if galaxy:
+		var clip = Control.new(); clip.size = Vector2(GW, GH); clip.clip_contents = true; gba.add_child(clip)
+		_gal = TextureRect.new()
+		_gal.texture = Assets.texture(Assets.base_dir.path_join("ui/galaxy.png"))
+		_gal.stretch_mode = TextureRect.STRETCH_TILE
+		_gal.size = Vector2(GW + 128, GH + 128)
+		clip.add_child(_gal)
+		_gal.position = Vector2(-fmod(_gal_t * GAL_SPEED.x, 128.0), -fmod(_gal_t * GAL_SPEED.y, 128.0))
+	else:
+		var bk = ColorRect.new(); bk.color = Color.BLACK; bk.size = Vector2(GW, GH); gba.add_child(bk)
+	lobby_label = _gtext(gba, "", Vector2(0, GH - 14))
+	lobby_label.size = Vector2(GW, 14)
+	lobby_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return gba
+
+## text in a GBA font (the small menu one, or the italic heading one), with the game's shadow
+func _gtext(p: Node, t: String, pos: Vector2, head: bool = false, col: Color = Color.WHITE) -> Label:
+	var l = Label.new()
+	l.text = t
+	var f = Assets.gba_font("font_head" if head else "font_small")
+	if f:
+		l.add_theme_font_override("font", f)
+		l.add_theme_font_size_override("font_size", 16)
+	else:
+		l.add_theme_font_size_override("font_size", 10)
+	l.add_theme_color_override("font_color", col)
+	l.add_theme_color_override("font_shadow_color", Color.BLACK)
+	l.add_theme_constant_override("shadow_offset_x", 1)
+	l.add_theme_constant_override("shadow_offset_y", 1)
+	l.add_theme_constant_override("shadow_outline_size", 0)
+	l.position = pos
+	p.add_child(l)
+	return l
+
+func _gheading(t: String) -> void:
+	var l = _gtext(gba, t, Vector2(0, 3), true, G_CYAN)
+	l.size = Vector2(GW, 18)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+## a menu choice: a line of text that turns gold when picked (d-pad + A, or a tap)
+func _gbutton(p: Node, t: String, f: Callable, head: bool = false, w: float = GW) -> Button:
+	var b = Button.new()
+	b.text = t
+	var fo = Assets.gba_font("font_head" if head else "font_small")
+	if fo:
+		b.add_theme_font_override("font", fo)
+		b.add_theme_font_size_override("font_size", 16)
+	for st in ["normal", "hover", "pressed", "focus", "disabled"]:
+		b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	b.add_theme_color_override("font_color", Color.WHITE)
+	for st in ["font_hover_color", "font_focus_color", "font_pressed_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(st, G_PICK)
+	b.add_theme_color_override("font_outline_color", Color.BLACK)
+	b.custom_minimum_size = Vector2(w, 15)
+	b.size = b.custom_minimum_size
+	b.pressed.connect(f)
+	p.add_child(b)
+	if w >= 60:
+		_ball_cursor(b, fo)
+	return b
+
+## the GBA's little Dragon Balls either side of the picked choice (the title menu's own, from the game file)
+var _ball_tex: Texture2D
+var _balls_both = false
+func _ball_cursor(b: Button, fo: Font) -> void:
+	if _ball_tex == null:
+		_ball_tex = Assets.texture(Assets.base_dir.path_join("ui/ball.png"))
+	if _ball_tex == null or fo == null:
+		return
+	var balls = []
+	for side in ([-1, 1] if _balls_both else [-1]):      # the title: one each side; the galaxy menus: one on the left
+		var t = TextureRect.new()
+		t.texture = _ball_tex
+		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		t.visible = false
+		b.add_child(t)
+		balls.append([t, side])
+	var place = func():
+		var tw = fo.get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
+		for e in balls:
+			var cx = b.size.x / 2.0 + e[1] * (tw / 2.0 + 8.0)
+			e[0].position = Vector2(roundf(cx - 4.0), roundf(b.size.y / 2.0 - 4.0))
+	b.focus_entered.connect(func():
+		place.call()
+		for e in balls: e[0].visible = true)
+	b.focus_exited.connect(func():
+		for e in balls: e[0].visible = false)
+
+## choices one under the other, centred; the first one has the pad's focus
+func _glist(items: Array, y: float, gap: float = 16.0, head: bool = false) -> Array:
+	var out = []
+	for i in items.size():
+		var b = _gbutton(gba, items[i][0], items[i][1], head)
+		b.position = Vector2(0, y + i * gap)
+		out.append(b)
+	_focus_remembered(out)
+	return out
+
+## each screen remembers the choice you last pressed (B comes back to it, not to the top)
+var _last_pick = {}
+func _focus_remembered(out: Array) -> void:
+	if out.is_empty():
+		return
+	var key = out[0].text
+	var pick = out[0]
+	for b in out:
+		b.pressed.connect(func(): _last_pick[key] = b.text)
+		if _last_pick.get(key, "") == b.text:
+			pick = b
+	pick.add_to_group("first_focus")
+	pick.grab_focus.call_deferred()
+
+## a long list that scrolls (maps, stories)
+func _gscroll(items: Array, y: float, h: float) -> Array:
+	var sc = ScrollContainer.new()
+	sc.position = Vector2(0, y); sc.size = Vector2(GW, h)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	sc.follow_focus = true
+	gba.add_child(sc)
+	var v = VBoxContainer.new(); v.add_theme_constant_override("separation", 0); sc.add_child(v)
+	var out = []
+	for it in items:
+		out.append(_gbutton(v, it[0], it[1]))
+	_focus_remembered(out)
+	return out
+
+func _gpanel(rect: Rect2) -> Panel:
+	var p = Panel.new()
+	var sb = StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.05, 0.25, 0.85); sb.border_color = Color(0.55, 0.78, 1.0); sb.set_border_width_all(1)
+	p.add_theme_stylebox_override("panel", sb)
+	p.position = rect.position; p.size = rect.size
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	gba.add_child(p)
+	return p
+
+## the GBA's box frame (the SELECT GAME slots): blue, light blue, blue, a black line, then the inside; gold when picked
+func _gba_frame(picked: bool) -> StyleBoxTexture:
+	var c = {"b": Color8(255, 198, 0) if picked else Color8(107, 181, 222), "L": Color8(255, 240, 160) if picked else Color8(181, 222, 239), "k": Color.BLACK}
+	var rows = ["..bbbbbbb..", ".bbLLLLLbb.", "bbLbbbbbLbb", "bLbkkkkkbLb", "bLbk...kbLb", "bLbk...kbLb", "bLbk...kbLb", "bLbkkkkkbLb", "bbLbbbbbLbb", ".bbLLLLLbb.", "..bbbbbbb.."]
+	var img = Image.create(11, 11, false, Image.FORMAT_RGBA8)
+	for y in 11:
+		for x in 11:
+			if c.has(rows[y][x]):
+				img.set_pixel(x, y, c[rows[y][x]])
+	var st = StyleBoxTexture.new()
+	st.texture = ImageTexture.create_from_image(img)
+	st.texture_margin_left = 4; st.texture_margin_right = 4; st.texture_margin_top = 4; st.texture_margin_bottom = 4
+	return st
+
+## a hero's standing picture cut to its own pixels (so it sits in the middle of its box)
+func _hero_picture(i: int) -> Texture2D:
+	var d = Assets.sprite_set(Assets.character_set(i))
+	if d.is_empty() or d["tex"] == null or d["slots"].size() == 0 or d["slots"][0].size() == 0:
+		return null
+	var cell: int = d["cell"]
+	var img: Image = d["tex"].get_image()
+	var r = img.get_region(Rect2i(0, 0, cell, cell)).get_used_rect()
+	if r.size.x <= 0:
+		return null
+	var at = AtlasTexture.new(); at.atlas = d["tex"]; at.region = Rect2(r)
+	return at
+
+## the galaxy drifts every frame and wraps at exactly its own size (128): a seamless loop, as on the GBA
+const GAL_SPEED = Vector2(40.0, 20.0)      # GBA pixels a second
+func _gal_scroll(dt: float) -> void:
+	if _gal != null and is_instance_valid(_gal):
+		_gal_t += dt
+		_gal.position = Vector2(-fmod(_gal_t * GAL_SPEED.x, 128.0), -fmod(_gal_t * GAL_SPEED.y, 128.0))
+
+# ---- the title picture: the game's own, with its tiny "TM" and copyright line drawn again in sharp white text
+var _title_tex: Texture2D
+func _title_texture() -> Texture2D:
+	if _title_tex:
+		return _title_tex
+	var img = Assets.image(Assets.base_dir.path_join("ui/title.png"))
+	if img == null:
+		return null
+	img.convert(Image.FORMAT_RGBA8)
+	# the old letters are painted out: each column of their band blends from the picture just above to just below
+	for r in [Rect2i(204, 68, 8, 5), Rect2i(27, 148, 184, 9)]:
+		for x in range(r.position.x, r.end.x):
+			var top = img.get_pixel(x, r.position.y - 1); var bot = img.get_pixel(x, r.end.y)
+			for y in range(r.position.y, r.end.y):
+				img.set_pixel(x, y, top.lerp(bot, float(y - r.position.y + 1) / (r.size.y + 1)))
+	_title_tex = ImageTexture.create_from_image(img)
+	return _title_tex
+
+## the title stretched over the whole screen (the user's choice: no bars)
+const TSX = GW / 240.0
+const TSY = GH / 160.0
+const TS = TSY
+func _title_art() -> void:
+	var t = TextureRect.new()
+	t.texture = _title_texture()
+	t.scale = Vector2(TSX, TSY)
+	gba.add_child(t)
+	var ff = ThemeDB.fallback_font
+	var tm = Label.new(); tm.text = "TM"
+	tm.add_theme_font_override("font", ff); tm.add_theme_font_size_override("font_size", 4)
+	tm.scale = Vector2(TSX, TSY); tm.position = Vector2(204 * TSX, 66.5 * TSY); gba.add_child(tm)
+	var cp = Label.new(); cp.text = "© 2003 Bird Studios/SHUEISHA, Toei Animation"
+	cp.add_theme_font_override("font", ff); cp.add_theme_font_size_override("font_size", 8)
+	var tw = ff.get_string_size(cp.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x
+	cp.scale = Vector2(TSX, TSY); cp.position = Vector2((118.5 - tw / 2) * TSX, 146 * TSY); gba.add_child(cp)     # where the game's own line was
+	_title_shine()
+
+## the Dragon Ball in "DRAGON" catches the light every few seconds: a soft glint sweeps across it
+const SHINE_C = Vector2(91, 44)
+const SHINE_R = 9.0
+func _title_shine() -> void:
+	var c = Control.new()
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.scale = Vector2(TSX, TSY)
+	c.size = Vector2(240, 160)
+	gba.add_child(c)
+	c.draw.connect(func():
+		var t = fmod(Time.get_ticks_msec() / 1000.0, 4.0)
+		if t > 0.6:
+			return
+		var p = lerpf(-SHINE_R * 1.6, SHINE_R * 1.6, t / 0.6)       # the band's place along the diagonal
+		for dy in range(-int(SHINE_R), int(SHINE_R) + 1):
+			for dx in range(-int(SHINE_R), int(SHINE_R) + 1):
+				if dx * dx + dy * dy > SHINE_R * SHINE_R:
+					continue
+				var d = absf((dx + dy) * 0.7071 - p)
+				if d < 2.5:
+					c.draw_rect(Rect2(SHINE_C.x + dx, SHINE_C.y + dy, 1, 1), Color(1, 1, 1, 0.55 * (1.0 - d / 2.5))))
+	var tm = Timer.new(); tm.wait_time = 1.0 / 30.0; tm.autostart = true
+	tm.timeout.connect(c.queue_redraw)
+	c.add_child(tm)
+
+## START / OPTIONS (and the next pair) inside the title's own box
+func _title_choices(items: Array) -> void:
+	_balls_both = true
+	var bs = _glist(items, 100 * TSY, 18 * TSY)
+	_balls_both = false
+	for b in bs:
+		b.scale = Vector2(TSX, TSY)
+		b.custom_minimum_size.x = GW / TSX
+		b.size.x = GW / TSX
+		b.position.x = 0
+		_outline(b)
+
+## a black outline all round a choice's letters (the GBA title's look): the text drawn in black one pixel off each way, behind
+func _outline(b: Button) -> void:
+	for o in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1), Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		var l = Label.new()
+		l.text = b.text
+		l.add_theme_font_override("font", b.get_theme_font("font"))
+		l.add_theme_font_size_override("font_size", 16)
+		l.add_theme_color_override("font_color", Color.BLACK)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		l.size = b.size
+		l.position = o
+		l.show_behind_parent = true
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(l)
+
+# ---- start screen: the title with START / OPTIONS in its box
+func _menu() -> void:
+	_gba_screen(false)
+	Game.cfg.erase("story")
+	Game.cfg.erase("start_at")
+	if Mods.story_pack != "":
+		Mods.story_pack = ""
+		Mods.reload()
+	Game.cfg["local_players"] = 1
+	Music.play("title")
+	Music.prepare(["field", "cave", "lair", "boss", "victory"])
+	_title_art()
+	_title_choices([["START", _mode_screen], ["OPTIONS", _options_screen]])
+
+func _mode_screen() -> void:
+	_gba_screen(false)
+	_global_back = _menu
+	_title_art()
+	_title_choices([["SINGLE PLAYER", _single_screen], ["MULTIPLAYER", _mp_choice]])
+
+func _single_screen() -> void:
+	_gba_screen()
+	_global_back = _mode_screen
+	_gheading("Single Player")
+	Game.cfg["mode"] = "solo"
+	if Mods.story_pack != "":       # (back from a story: its mod is put away before FREE PLAY)
+		Mods.story_pack = ""
+		Mods.reload()
+	_glist([["FREE PLAY", func(): _map_screen(_single_screen, func(): _char_screen(func(): _map_screen(_single_screen, Callable()), func(): _gload(_solo)))],
+		["STORY MODE", _story_screen]], 70, 22, true)
+
+# ---- SELECT MAP: the planets and the game's own lands; difficulty on the last line
+const G_MAPS = [["PLANET GATORRA", "gatorra"], ["PLANET DUNARA", "dunara"], ["EARTH", "land:0"], ["WEST CITY & TRICERATOPS JUNGLE", "land:4"], ["NORTHERN MOUNTAINS", "land:8"], ["EAST DISTRICT 439", "land:2"],
+	["SOUTHERN CONTINENT", "land:7"], ["GINGERTOWN", "land:10"], ["NORTHERN WASTELANDS", "land:3"], ["TROPICAL ISLANDS", "land:12"],
+	["SNOWY HIGHLANDS", "land:13"], ["CAPSULE CORP & NEW NAMEK", "land:6"], ["RANDOM PLANET", "random"]]
+var _map_then: Callable
+var _map_back: Callable
+func _map_screen(back: Callable, then: Callable) -> void:
+	if then.is_valid():
+		_map_then = then
+	_map_back = back
+	_gba_screen()
+	_global_back = back
+	_gheading("Select Map")
+	var items = []
+	for m in G_MAPS:
+		if str(m[1]).begins_with("land:") and not Assets.has_kit():
+			continue
+		items.append([m[0], _map_chosen.bind(m[1])])
+	var diffs = ["EASY", "NORMAL", "HARD"]
+	_gscroll(items, 22, 128)
+	var d = _gbutton(gba, "DIFFICULTY: " + diffs[clampi(int(Game.cfg.get("difficulty", 1)), 0, 2)], func(): pass)
+	d.position = Vector2(0, 152)
+	d.pressed.connect(func():
+		Game.cfg["difficulty"] = (int(Game.cfg.get("difficulty", 1)) + 1) % 3
+		d.text = "DIFFICULTY: " + diffs[int(Game.cfg["difficulty"])])
+
+func _map_chosen(adv: String) -> void:
+	Game.cfg["adventure"] = adv
+	Game.cfg["seed"] = randi() % 1000000
+	_map_then.call()
+
+# ---- CHOOSE YOUR CHARACTER: each hero standing in a blue box, the name above, the level on this map below
+func _char_screen(back: Callable, then: Callable, who: int = 1) -> void:
+	_gba_screen()
+	_global_back = back
+	_gheading("Choose Your Character" if who == 1 else "Player 2: Your Character")
+	var ckey = "character" if who == 1 else "character2"
+	var levels = {}       # FREE PLAY heroes grow on every map alike (Game.shared_entry)
+	for i in Assets.CHARACTERS.size():
+		var e = Game.shared_entry(str(i))
+		if not e.is_empty():
+			levels[str(i)] = e
+	var sc = ScrollContainer.new(); sc.position = Vector2(9, 25); sc.size = Vector2(GW - 9, GH - 25)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER; sc.follow_focus = true
+	gba.add_child(sc)
+	var grid = GridContainer.new(); grid.columns = 5
+	grid.add_theme_constant_override("h_separation", 3); grid.add_theme_constant_override("v_separation", 4)
+	sc.add_child(grid)
+	var first: Button = null
+	for i in Assets.CHARACTERS.size():
+		var cell = VBoxContainer.new(); cell.add_theme_constant_override("separation", 0)
+		cell.custom_minimum_size = Vector2(58, 0)
+		grid.add_child(cell)
+		var nm = Assets.CHARACTERS[i]
+		var h = Mods.hero_entry(nm)
+		var name_l = _gtext(cell, str(h.get("name", nm)), Vector2.ZERO)
+		name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_l.custom_minimum_size = Vector2(58, 14)
+		name_l.autowrap_mode = TextServer.AUTOWRAP_WORD
+		name_l.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		name_l.add_theme_constant_override("line_spacing", -6)
+		var b = Button.new()
+		b.custom_minimum_size = Vector2(44, 44)
+		b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		var sb = _gba_frame(false); var sf = _gba_frame(true)
+		for st in ["normal", "disabled"]: b.add_theme_stylebox_override(st, sb)
+		for st in ["hover", "pressed", "focus"]: b.add_theme_stylebox_override(st, sf)
+		b.pressed.connect(func(): Game.cfg[ckey] = i; _name_screen(func(): _char_screen(back, then, who), then, who))
+		cell.add_child(b)
+		var pic = _hero_picture(i)
+		if pic:
+			var tr = TextureRect.new(); tr.texture = pic; tr.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+			tr.set_anchors_preset(Control.PRESET_FULL_RECT); tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			b.add_child(tr)
+		var lv = "NEW"
+		if levels.has(str(i)) and levels[str(i)] is Dictionary:
+			lv = "LV %d" % int(levels[str(i)].get("level", 1))
+		var lv_l = _gtext(cell, lv, Vector2.ZERO, false, Color(0.75, 0.9, 1))
+		lv_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lv_l.custom_minimum_size = Vector2(58, 13)
+		if i == int(Game.cfg.get(ckey, 0)):
+			first = b
+	if first:
+		first.add_to_group("first_focus")
+		first.grab_focus.call_deferred()
+
+# ---- the loading screen: shown while the world is built (the game is busy for a moment)
+func _gload(f: Callable) -> void:
+	_gba_screen()
+	_gheading("Loading")
+	_gpanel(Rect2(60, 84, 200, 12))
+	var fill = ColorRect.new(); fill.color = G_CYAN; fill.position = Vector2(62, 86); fill.size = Vector2(0, 8); gba.add_child(fill)
+	for k in 8:
+		fill.size.x = 196.0 * (k + 1) / 10.0
+		await get_tree().process_frame
+	f.call()
+
+# ---- STORY MODE: the stories in the mods, and the original story (still to come)
+func _story_screen() -> void:
+	_gba_screen()
+	_global_back = _single_screen
+	_gheading("Story Mode")
+	var items = []
+	for p in Mods.installed_packs():
+		var sp = Mods.packs_dir().path_join(str(p["folder"])).path_join("content/story.json")
+		if not FileAccess.file_exists(sp):
+			continue
+		var t = Mods.read_json(sp)
+		if t is Dictionary and t.get("story") is Dictionary and str(t["story"].get("title", "")) != "":
+			items.append([str(t["story"]["title"]).to_upper(), _story_pick.bind(str(p["folder"]))])
+	items.append(["ORIGINAL STORY", _original_story])
+	_gscroll(items, 30, 120)
+
+func _original_story() -> void:
+	_gba_screen()
+	_global_back = _story_screen
+	_gheading("Original Story")
+	var l = _gtext(gba, "THE ORIGINAL STORY IS STILL BEING PORTED TO ANDROID.\n\nCOME BACK IN A LATER UPDATE!\n\n\nB: BACK", Vector2(10, 50))
+	l.size = Vector2(GW - 20, 100)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+## a mod's story: its pack is switched on (it holds the story), then its three save slots
+func _story_pick(folder: String) -> void:
+	Mods.story_pack = folder       # (only for this story: back at the start menu it is put away again)
+	Mods.reload()
+	_story_slots()
+
+func _story_slots() -> void:
+	_gba_screen()
+	_global_back = _story_screen
+	_gheading("Select Game")
+	var items = []
+	for i in 3:
+		var path = "user://fighters_story_%s_%d.json" % [_story_id(), i + 1]
+		var txt = "NEW GAME"
+		var saved = -1
+		if FileAccess.file_exists(path):
+			var t = JSON.parse_string(FileAccess.get_file_as_string(path))
+			if t is Dictionary and not t.is_empty():
+				var d: Dictionary = t.values()[0]
+				saved = clampi(int(d.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)
+				txt = "%s  LV %d" % [Assets.CHARACTERS[saved], int(d.get("level", 1))]
+		var slot = i + 1
+		if saved >= 0:
+			items.append([txt, func(): Game.cfg["character"] = saved; _gload(_play_story.bind(slot, false))])
+		else:
+			items.append([txt, func(): _char_screen(_story_slots, func(): _gload(_play_story.bind(slot, false)))])
+	_glist(items, 50, 24, true)
+	var st = _gtext(gba, str(Content.story.get("title", "")).to_upper(), Vector2(0, 130), false, Color(0.75, 0.9, 1))
+	st.size = Vector2(GW, 14); st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+# ---- MULTIPLAYER: over the internet or on this Wi-Fi
+func _mp_choice() -> void:
+	_gba_screen()
+	_global_back = _mode_screen
+	_gheading("Multiplayer")
+	var bs = _glist([["GLOBAL", _global_multiplayer], ["LOCAL", _local_multiplayer], ["SPLIT SCREEN", _split_screen]], 26, 50, true)
+	bs[0].icon = _globe_icon(); bs[1].icon = _wifi_icon(); bs[2].icon = _split_icon()
+	for b in bs:
+		b.add_theme_constant_override("h_separation", 6)
+		b.custom_minimum_size = Vector2(0, 30)
+		b.size = b.get_combined_minimum_size()
+		b.position.x = (GW - b.size.x) / 2
+	var a = _gtext(gba, "PLAY WITH ANYONE OVER THE INTERNET", Vector2(0, 58), false, Color(0.75, 0.9, 1))
+	a.size = Vector2(GW, 12); a.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var b2 = _gtext(gba, "PLAY WITH PEOPLE ON YOUR WI-FI", Vector2(0, 108), false, Color(0.75, 0.9, 1))
+	b2.size = Vector2(GW, 12); b2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var c3 = _gtext(gba, "TWO PLAYERS ON THIS DEVICE (A SECOND CONTROLLER)", Vector2(0, 158), false, Color(0.75, 0.9, 1))
+	c3.size = Vector2(GW, 12); c3.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+## small pixel pictures: a globe, and Wi-Fi waves over two handhelds
+func _pix_icon(rows: Array, cols: Dictionary) -> ImageTexture:
+	var img = Image.create(rows[0].length(), rows.size(), false, Image.FORMAT_RGBA8)
+	for y in rows.size():
+		for x in rows[y].length():
+			var ch = rows[y][x]
+			if cols.has(ch):
+				img.set_pixel(x, y, cols[ch])
+	img.resize(img.get_width() * 2, img.get_height() * 2, Image.INTERPOLATE_NEAREST)
+	return ImageTexture.create_from_image(img)
+
+func _globe_icon() -> ImageTexture:
+	return _pix_icon([
+		"....kkkkkk....", "..kkbgggbbkk..", ".kbbgggbbbbbk.", ".kbggggbbbgbk.", "kbbbggbbbggggk", "kbbbbbbbbggggk", "kbbbbgbbbbggbk",
+		"kbbbbggbbbbbbk", "kbbbbgggbbbbbk", ".kbbbggbbbbbk.", ".kbbbbgbbbbbk.", "..kkbbbbbbkk..", "....kkkkkk....", ".............."],
+		{"k": Color(0, 0, 0), "b": Color(0.2, 0.45, 1), "g": Color(0.25, 0.85, 0.3)})
+
+func _wifi_icon() -> ImageTexture:
+	return _pix_icon([
+		"....wwwwww....", "..ww......ww..", ".w..wwwwww..w.", "...w......w...", ".....wwww.....", "......ww......", "..............",
+		"kkkkk....kkkkk", "kpppk....kpppk", "kpspk....kpspk", "kpppk....kpppk", "kpopk....kpopk", "kkkkk....kkkkk", ".............."],
+		{"w": Color(0.6, 0.9, 1), "k": Color(0.1, 0.1, 0.15), "p": Color(0.5, 0.35, 0.8), "s": Color(0.7, 0.9, 0.6), "o": Color(1, 0.7, 0.2)})
+
+## host flows: SELECT MAP, then CHOOSE YOUR CHARACTER, then go (B goes back to where it started)
+func _pick_map_char(back: Callable, go: Callable) -> void:
+	_map_screen(back, func(): _char_screen(func(): _map_screen(back, Callable()), go))
+
+# ---- OPTIONS: mods (and your own music), credits
+func _options_screen() -> void:
+	_gba_screen()
+	_global_back = _menu
+	_gheading("Options")
+	var items = [["MODS", _gmods_screen], ["CREDITS", _credits_screen]]
+	if not OS.has_feature("android"):
+		items.append(["DEV TOOLS", _dev_tools])
+	_glist(items, 60, 22, true)
+
+func _gmods_screen() -> void:
+	_gba_screen()
+	_global_back = _options_screen
+	_gheading("Mods")
+	_glist([["MOD LOADER", _mods_screen], ["MY OWN MUSIC", _music_screen]], 50, 22, true)
+
+func _credits_screen() -> void:
+	_gba_screen()
+	_global_back = _options_screen
+	_gheading("Credits")
+	var lines = [["ORIGINAL GODOT REBUILD BY PUNI PUNI", Color.WHITE], ["", Color.WHITE], ["ORIGINAL GAME BY WEBFOOT TECHNOLOGIES,", Color.WHITE],
+		["PUBLISHED BY ATARI", Color.WHITE], ["", Color.WHITE], ["DRAGON BALL Z (C) BIRD STUDIO / SHUEISHA,", Color(0.85, 0.85, 0.9)], ["TOEI ANIMATION", Color(0.85, 0.85, 0.9)],
+		["", Color.WHITE], ["ANDROID PORT BY DIVINAKRA", Color(0.75, 0.9, 1)]]
+	for i in lines.size():
+		var l = _gtext(gba, lines[i][0], Vector2(0, 24 + i * 11), false, lines[i][1])
+		l.size = Vector2(GW, 11); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var yt = _glist([["YOUTUBE: @PUNIPUNI2026", func(): OS.shell_open("https://www.youtube.com/@PuniPuni2026")]], 30, 16)
+	yt[0].add_theme_color_override("font_color", Color(1, 0.45, 0.45))
+	yt[0].position.y = 24 + lines.size() * 11 + 4
+
+# ---- MY OWN MUSIC: where songs go, and a picker that copies a song in under the right name
+const G_SONGS = ["title", "field", "cave", "lair", "boss", "victory"]
+var _song_dialog: FileDialog
+var _song_path = ""
+func _music_screen() -> void:
+	_gba_screen()
+	_global_back = _gmods_screen
+	_gheading("My Own Music")
+	var l = Label.new()
+	l.text = _music_text()
+	l.add_theme_font_size_override("font_size", 5)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD
+	l.position = Vector2(12, 22); l.size = Vector2(GW - 24, 96)
+	gba.add_child(l)
+	_glist([["PICK A SONG TO ADD...", _pick_song], ["USE THE GAME'S OWN SONG...", _song_reset_screen]], 120, 15)
+	_song_dialog = FileDialog.new()
+	_song_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_song_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_song_dialog.filters = PackedStringArray(["*.ogg, *.mp3 ; Songs"])
+	_song_dialog.size = Vector2i(360, 200)
+	if OS.has_feature("android"):
+		_song_dialog.use_native_dialog = true
+		_song_dialog.filters = PackedStringArray()
+	_song_dialog.file_selected.connect(func(p): _song_path = p; _song_slot_screen())
+	ui.add_child(_song_dialog)
+
+## a song picked here goes away again: that part of the game plays its own song
+func _song_reset_screen() -> void:
+	_gba_screen()
+	_global_back = _music_screen
+	_gheading("Game's Own Song")
+	var items = []
+	for sl in G_SONGS:
+		var has = FileAccess.file_exists(Assets.picked_music_dir().path_join(sl + ".ogg")) or FileAccess.file_exists(Assets.picked_music_dir().path_join(sl + ".mp3"))
+		items.append([sl.to_upper() + ("  (YOURS)" if has else ""), _song_reset.bind(sl)])
+	_glist(items, 26, 17, true)
+
+func _song_reset(slot: String) -> void:
+	for e in ["ogg", "mp3"]:
+		DirAccess.remove_absolute(Assets.picked_music_dir().path_join("%s.%s" % [slot, e]))
+	Music._files.clear()
+	if slot == "title":
+		Music.current = ""
+		Music.play("title")
+	_music_screen()
+	lobby_label.text = "%s: BACK TO THE GAME'S OWN SONG" % slot.to_upper()
+
+func _pick_song() -> void:
+	_song_dialog.popup_centered()
+
+func _song_slot_screen() -> void:
+	_gba_screen()
+	_global_back = _music_screen
+	_gheading("Use It For")
+	var items = []
+	for s in G_SONGS:
+		items.append([s.to_upper(), _song_copy.bind(s)])
+	_glist(items, 26, 17, true)
+
+func _song_copy(slot: String) -> void:
+	var data = FileAccess.get_file_as_bytes(_song_path)
+	var ext = "ogg" if data.size() > 4 and data.slice(0, 4).get_string_from_ascii() == "OggS" else "mp3"
+	var msg = ""
+	var test_stream = AudioStreamOggVorbis.load_from_buffer(data) if ext == "ogg" else AudioStreamMP3.load_from_buffer(data)
+	if data.size() < 1000:
+		msg = "THAT FILE COULD NOT BE READ."
+	elif test_stream == null or test_stream.get_length() <= 0.0:
+		msg = "THAT SONG CAN'T BE PLAYED - USE AN MP3 OR OGG FILE."     # (nothing replaced: the old song stays)
+	else:
+		var md = Assets.picked_music_dir()
+		DirAccess.make_dir_recursive_absolute(md)
+		for e in ["ogg", "mp3"]:
+			DirAccess.remove_absolute(md.path_join("%s.%s" % [slot, e]))
+		var fa = FileAccess.open(md.path_join("%s.%s" % [slot, ext]), FileAccess.WRITE)
+		if fa:
+			fa.store_buffer(data); fa.close()
+			Music._files.clear()
+			msg = "ADDED AS %s.%s" % [slot.to_upper(), ext.to_upper()]
+			if slot == "title":
+				Music.current = ""
+				Music.play("title")
+		else:
+			msg = "COULD NOT SAVE THE SONG (%d)." % FileAccess.get_open_error()
+	_music_screen()
+	lobby_label.text = msg
+
+# ---- NAME YOUR HERO: a GBA-style letter board (d-pad + A, or tap); no phone keyboard
+func _name_screen(back: Callable, then: Callable, who: int = 1) -> void:
+	_gba_screen()
+	_global_back = back
+	_gheading("Your Name" if who == 1 else "Player 2: Name")
+	var nkey = "name" if who == 1 else "name2"
+	var cur = str(Game.cfg.get(nkey, "PLAYER" if who == 1 else "PLAYER 2")).to_upper().left(10)
+	if cur == "PLAYER" or cur == "PLAYER 2":
+		cur = ""
+	_gpanel(Rect2(100, 22, 120, 18))
+	var shown = _gtext(gba, cur + "_", Vector2(100, 23), true, G_CYAN)
+	shown.size = Vector2(120, 16); shown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var grid = GridContainer.new(); grid.columns = 10
+	grid.add_theme_constant_override("h_separation", 0); grid.add_theme_constant_override("v_separation", 0)
+	grid.position = Vector2(40, 46)
+	gba.add_child(grid)
+	var keys = []
+	for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-":
+		keys.append(ch)
+	var name_ref = [cur]
+	var first: Button = null
+	for k in keys:
+		var b = _gbutton(grid, k, func():
+			if name_ref[0].length() < 10:
+				name_ref[0] += k
+			shown.text = name_ref[0] + "_", true, 24)
+		b.custom_minimum_size = Vector2(24, 18)
+		if first == null:
+			first = b
+	var row = HBoxContainer.new(); row.position = Vector2(40, 134); row.add_theme_constant_override("separation", 0); gba.add_child(row)
+	_gbutton(row, "SPACE", func():
+		if name_ref[0].length() < 10 and name_ref[0] != "":
+			name_ref[0] += " "
+		shown.text = name_ref[0] + "_", false, 80)
+	_gbutton(row, "DELETE", func():
+		name_ref[0] = name_ref[0].left(-1)
+		shown.text = name_ref[0] + "_", false, 80)
+	_gbutton(row, "DONE", func():
+		Game.cfg[nkey] = name_ref[0].strip_edges() if name_ref[0].strip_edges() != "" else ("PLAYER" if who == 1 else "PLAYER 2")
+		Game.save_options()
+		then.call(), false, 80)
+	first.add_to_group("first_focus")
+	first.grab_focus.call_deferred()
+
+# ---- SPLIT SCREEN: two players on this device - a map, then each player's hero and name
+func _split_screen() -> void:
+	Game.cfg["mode"] = "solo"
+	Game.cfg["local_players"] = 2
+	var p2 = func(): _char_screen(func(): _split_screen(), func(): _gload(_solo), 2)
+	_map_screen(func(): Game.cfg["local_players"] = 1; _mp_choice(), func(): _char_screen(func(): _map_screen(_mp_choice, Callable()), p2))
+
+func _split_icon() -> ImageTexture:
+	return _pix_icon([
+		"kkkkkkkkkkkkkk", "kbbbbbbkggggggk".left(14), "kbbbbbbkggggk.", "kbbbbbbkggggk.", "kbbbwbbkggwggk", "kbbwwwbkgwwwgk", "kbbbwbbkggwggk",
+		"kbbbbbbkggggk.", "kbbbbbbkggggk.", "kkkkkkkkkkkkkk", "..............", "..............", "..............", ".............."],
+		{"k": Color(0.1, 0.1, 0.15), "b": Color(0.3, 0.5, 1), "g": Color(0.35, 0.85, 0.4), "w": Color(1, 1, 1)})
+
+# ---- MULTIPLAYER screens in the GBA's look (the same workings as before underneath)
+## a choice with its line of explanation under it
+func _gchoices(items: Array, y: float, gap: float) -> Array:
+	var bs = _glist(items.map(func(it): return [it[0], it[1]]), y, gap)
+	for i in items.size():
+		var d = _gtext(gba, items[i][2], Vector2(0, y + i * gap + 21), false, Color(0.55, 0.75, 0.95))
+		d.size = Vector2(GW, 12); d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return bs
+
+var in_local_mp = false
+func _local_multiplayer() -> void:
+	_gba_screen()
+	_global_back = _mp_choice
+	_gheading("Local Multiplayer")
+	_gchoices([["HOST GAME", func(): _pick_map_char(_local_multiplayer, _host), "ONLY PEOPLE ON YOUR WI-FI CAN JOIN"],
+		["JOIN GAME", func(): _char_screen(_local_multiplayer, _find_games), "JOIN A GAME ON YOUR WI-FI"],
+		["HOST SERVER WITHOUT PLAYING", func(): _map_screen(_local_multiplayer, _server_from_menu), "THIS DEVICE RUNS THE WORLD, OTHERS JOIN IT"]], 40, 38)
+
+var _online_label: Label
+func _global_multiplayer() -> void:
+	Online.start()
+	Online.browse(false)
+	_gba_screen()
+	_global_back = _mp_choice
+	_gheading("Global Multiplayer")
+	_online_label = _gtext(gba, "", Vector2(0, 19), false, Color(0.6, 1, 0.7))
+	_online_label.size = Vector2(GW, 12); _online_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_gchoices([["HOST PUBLIC GAME", func(): _world_name_screen(func(): _pick_map_char(_global_multiplayer, func(): _online_action(func(): _host_online("")))), "ANYONE IN THE WORLD CAN JOIN"],
+		["HOST PRIVATE GAME", _private_password_screen, "ONLY PEOPLE WITH YOUR PASSWORD CAN JOIN"],
+		["JOIN GAME", func(): _char_screen(_global_multiplayer, _online_games), "SEE THE GAMES PEOPLE ARE PLAYING ONLINE"],
+		["HOST SERVER WITHOUT PLAYING", func(): _world_name_screen(func(): _map_screen(_global_multiplayer, func(): _online_action(func(): _global_back = Callable(); test["online"] = "1"; _server_from_menu()))), "THIS DEVICE RUNS AN ONLINE WORLD"]], 36, 34)
+	_tick(_show_online_state)
+
+func _show_online_state() -> void:
+	if is_instance_valid(_online_label):
+		_online_label.text = Online.status_text().to_upper()
+
+## the GBA letter board for a word (a world's name, a password): d-pad + A or taps; done() answers "" or what is wrong
+func _gboard(title: String, initial: String, maxlen: int, back: Callable, done: Callable) -> void:
+	_gba_screen()
+	_global_back = back
+	_gheading(title)
+	_gpanel(Rect2(70, 22, 180, 18))
+	var word = [initial.to_upper().left(maxlen)]
+	var shown = _gtext(gba, word[0] + "_", Vector2(70, 23), true, G_CYAN)
+	shown.size = Vector2(180, 16); shown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var grid = GridContainer.new(); grid.columns = 10
+	grid.add_theme_constant_override("h_separation", 0); grid.add_theme_constant_override("v_separation", 0)
+	grid.position = Vector2(40, 44)
+	gba.add_child(grid)
+	var first: Button = null
+	for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-":
+		var k = ch
+		var b = _gbutton(grid, k, func():
+			if word[0].length() < maxlen:
+				word[0] += k
+			shown.text = word[0] + "_", true, 24)
+		b.custom_minimum_size = Vector2(24, 18)
+		if first == null:
+			first = b
+	var row = HBoxContainer.new(); row.position = Vector2(40, 130); row.add_theme_constant_override("separation", 0); gba.add_child(row)
+	_gbutton(row, "SPACE", func():
+		if word[0].length() < maxlen and word[0] != "":
+			word[0] += " "
+		shown.text = word[0] + "_", false, 80)
+	_gbutton(row, "DELETE", func():
+		word[0] = word[0].left(-1)
+		shown.text = word[0] + "_", false, 80)
+	_gbutton(row, "DONE", func():
+		var err = str(done.call(word[0].strip_edges()))
+		if err != "" and is_instance_valid(lobby_label):
+			lobby_label.text = err, false, 80)
+	first.add_to_group("first_focus")
+	first.grab_focus.call_deferred()
+
+func _world_name_screen(then: Callable) -> void:
+	_gboard("World Name", Online.world_name, 16, _global_multiplayer, func(t: String) -> String:
+		if t.length() < 2:
+			return "THE NAME NEEDS 2 OR MORE LETTERS"
+		Online.world_name = t
+		then.call()
+		return "")
+
+func _private_password_screen() -> void:
+	_gboard("Your Password", "", 12, _global_multiplayer, func(t: String) -> String:
+		if t.length() < 4:
+			return "THE PASSWORD NEEDS 4 OR MORE LETTERS"
+		_pick_map_char(_global_multiplayer, func(): _online_action(func(): _host_online(t)))
+		return "")
+
+func _join_password_screen(g: Dictionary) -> void:
+	Online.browse(false)
+	_gboard("Password", "", 12, _online_games, func(t: String) -> String:
+		_online_action(func(): _join_online(g, t))
+		return "")
+
+## a list of games that refreshes itself (online or on this Wi-Fi)
+var _game_list: VBoxContainer
+var _game_sig = "-"
+func _games_screen(title: String, back: Callable, refresh: Callable) -> void:
+	_gba_screen()
+	_global_back = back
+	_gheading(title)
+	_online_label = _gtext(gba, "", Vector2(0, 19), false, Color(0.6, 1, 0.7))
+	_online_label.size = Vector2(GW, 12); _online_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var sc = ScrollContainer.new(); sc.position = Vector2(0, 34); sc.size = Vector2(GW, 128)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER; sc.follow_focus = true
+	gba.add_child(sc)
+	_game_list = VBoxContainer.new(); _game_list.add_theme_constant_override("separation", 2); sc.add_child(_game_list)
+	_game_sig = "-"
+	_tick(refresh)
+
+func _fill_games(sig: String, rows: Array, empty_text: String) -> void:
+	if not is_instance_valid(_game_list) or sig == _game_sig:
+		return
+	_game_sig = sig
+	var fo = get_viewport().gui_get_focus_owner()
+	var had = fo == null or _game_list.is_ancestor_of(fo)
+	for c in _game_list.get_children():
+		c.queue_free()
+	if rows.is_empty():
+		var l = _gtext(_game_list, empty_text, Vector2.ZERO, false, Color(0.75, 0.75, 0.85))
+		l.custom_minimum_size = Vector2(GW, 30); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; l.autowrap_mode = TextServer.AUTOWRAP_WORD
+		return
+	var first: Button = null
+	for r in rows:
+		var b = _gbutton(_game_list, r[0], r[1])
+		if first == null:
+			first = b
+	if had and first:
+		first.grab_focus.call_deferred()
+
+func _online_games() -> void:
+	Online.start()
+	Online.browse(true)
+	_games_screen("Join Game", func(): Online.browse(false); _global_multiplayer(), _refresh_online_games)
+
+func _refresh_online_games() -> void:
+	_show_online_state()
+	var sig = Online.list_error
+	var rows = []
+	for g in Online.lobbies:
+		sig += "%s|%s|%s|%d|%s;" % [g["id"], g["character"], g["planet"], g["players"], g["private"]]
+		rows.append(["%s - %s  (%d/%d)%s" % [str(g["character"]), str(g["planet"]), int(g["players"]), int(g["max"]), "  PRIVATE" if g["private"] else ""], _pick_online_game.bind(g)])
+	_fill_games(sig, rows, Online.list_error.to_upper() if Online.list_error != "" else "LOOKING FOR GAMES... NOBODY IS HOSTING ONE ONLINE RIGHT NOW")
+
+var finding = false
+func _find_games() -> void:
+	Game.lan_scan_start()
+	_games_screen("Join Game", _leave_find, _refresh_find)
+	finding = true
+	_global_back = _leave_find
+
+func _refresh_find() -> void:
+	if not is_instance_valid(_game_list):
+		return
+	if is_instance_valid(_online_label):
+		_online_label.text = "GAMES ON YOUR WI-FI"
+	var ips = Game.lan_found.keys()
+	ips.sort()
+	var sig = ""
+	var rows = []
+	for ip in ips:
+		var g: Dictionary = Game.lan_found[ip]
+		sig += "%s|%s|%s;" % [ip, g.get("character", ""), g.get("planet", "")]
+		rows.append(["%s - %s" % [str(g.get("character", g.get("name", "?"))), str(g.get("planet", ""))], _join_found.bind(ip)])
+	_fill_games(sig, rows, "LOOKING FOR GAMES... SOMEONE ON YOUR WI-FI HAS TO HOST ONE")
+
+func _leave_find() -> void:
+	Game.lan_scan_stop()
+	finding = false
+	_local_multiplayer()

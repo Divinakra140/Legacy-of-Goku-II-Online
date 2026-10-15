@@ -57,7 +57,7 @@ func exe_dir() -> String:
 ## Android: no folder next to the program - the game's folders (content, modpacks, imported...) come packed in
 ## the APK (res://bundle/gamedata.pack, made by tools/make_pack.py) and are unpacked into the app's own folder
 ## on the first start: [8 bytes: index length][index JSON: [{"p", "s"}...]][the files, in that order]
-const BUNDLE_VERSION = "v42-3"
+const BUNDLE_VERSION = "v44-4"
 var _android_root = ""
 func _android_dir() -> String:
 	if _android_root != "":
@@ -99,6 +99,39 @@ func _android_dir() -> String:
 		mf.close()
 	return _android_root
 
+## the GBA menus' own fonts, read from the player's game file by the importer (ui/font_head, ui/font_small):
+## a pixel font Labels and Buttons can use at font size 16 (draw with a 1-pixel shadow down-right, like the game)
+var _gba_fonts = {}
+func gba_font(name: String) -> FontFile:
+	if _gba_fonts.has(name):
+		return _gba_fonts[name]
+	var f: FontFile = null
+	var img = image(base_dir.path_join("ui/%s.png" % name))
+	var j = json(base_dir.path_join("ui/%s.json" % name))
+	if img != null and j is Dictionary:
+		f = FontFile.new()
+		f.fixed_size = 16
+		f.fixed_size_scale_mode = TextServer.FIXED_SIZE_SCALE_INTEGER_ONLY
+		f.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+		var sz = Vector2i(16, 0)
+		f.set_texture_image(0, sz, 0, img)
+		f.set_cache_ascent(0, 16, 13.0)
+		f.set_cache_descent(0, 16, 3.0)
+		var glyphs: Dictionary = j.get("glyphs", {})
+		for k in glyphs:
+			var c = int(k); var x = float(glyphs[k][0]); var w = float(glyphs[k][1])
+			f.set_glyph_advance(0, 16, c, Vector2(w + 1.0, 0))
+			f.set_glyph_offset(0, sz, c, Vector2(0, -13))
+			f.set_glyph_size(0, sz, c, Vector2(w, 16))
+			f.set_glyph_uv_rect(0, sz, c, Rect2(x, 0, w, 16))
+			f.set_glyph_texture_idx(0, sz, c, 0)
+	_gba_fonts[name] = f
+	return f
+
+## heroes and looks that come with this port (Shadow Goku, Puni Puni's Super Saiyan Gokus): under everything else
+func builtin_dir() -> String:
+	return exe_dir().path_join("builtin")
+
 func find_import_dir() -> String:
 	var env = OS.get_environment("LOG2_IMPORT")
 	if env != "" and FileAccess.file_exists(env.path_join("version.txt")):
@@ -111,7 +144,7 @@ func find_import_dir() -> String:
 		return d
 	return ""
 
-const IMPORT_VERSION = 22    # 22 grass tufts and clumps of them walked over (Android port), 21 invisible walls opened everywhere: lone walls with nothing on them that stands out from the ground (Android port), 20 flowers and the like on the new land are walked over (Android port), 19 no doors into story scenes' backdrops (they showed as a jumble of tiles), 18 the sea is the game's own water, 2 kit and lands, 3 songs, 4 foes' attacks, 5 grown land, 6 heroes' effects + one world per land, 7 people, 8 smoother grown land, 9 recorded songs mended, 10 ledges opened (the lands join up), calmer city edges, 11 the heroes' own attacks, 12 the foes' own behaviour scripts + attack animations, 13 EARTH: the whole planet as one map, 14 every place on it (doors without loading), 15 collision mended (no invisible walls, nothing walked through), 16 the country between places built the way the game builds its maps, 17 the game's own collision kept
+const IMPORT_VERSION = 24    # 24 the title menu's little Dragon Ball (the menus' cursor), 23 same Earth for everyone + the GBA menus' title, galaxy and fonts (Android port), 22 grass tufts and clumps of them walked over (Android port), 21 invisible walls opened everywhere: lone walls with nothing on them that stands out from the ground (Android port), 20 flowers and the like on the new land are walked over (Android port), 19 no doors into story scenes' backdrops (they showed as a jumble of tiles), 18 the sea is the game's own water, 2 kit and lands, 3 songs, 4 foes' attacks, 5 grown land, 6 heroes' effects + one world per land, 7 people, 8 smoother grown land, 9 recorded songs mended, 10 ledges opened (the lands join up), calmer city edges, 11 the heroes' own attacks, 12 the foes' own behaviour scripts + attack animations, 13 EARTH: the whole planet as one map, 14 every place on it (doors without loading), 15 collision mended (no invisible walls, nothing walked through), 16 the country between places built the way the game builds its maps, 17 the game's own collision kept
 func ready_to_play() -> bool:
 	return base_dir != "" and import_version() >= IMPORT_VERSION
 
@@ -149,6 +182,11 @@ func music_dir() -> String:
 	if OS.has_feature("android"):
 		return OS.get_system_dir(OS.SYSTEM_DIR_MUSIC).path_join("LoG2Coop")
 	return exe_dir().path_join("music")
+
+## songs picked in OPTIONS - MODS - MY OWN MUSIC: kept in the app's own folder (Android lets an app write there freely;
+## the shared Music folder refuses files the app did not make itself). Looked in before the Music folder.
+func picked_music_dir() -> String:
+	return exe_dir().path_join("music_picked")
 
 func sounds_dir() -> String:
 	if OS.has_feature("android"):
@@ -352,7 +390,14 @@ func sprite_set(n: int) -> Dictionary:
 		if not rule.is_empty():
 			var img = image(path)
 			if img != null:
-				tex = ImageTexture.create_from_image(recolor(img, rule))
+				img = recolor(img, rule)
+				if str(rule.get("overlay", "")) != "":
+					img = apply_overlay(img, str(rule.get("_dir", "")).path_join(str(rule["overlay"])))
+					j = j.duplicate(true)      # drawn pixels may reach past the base set's frames (an outline): 2 more each way right and down
+					for sl in j["slots"]:
+						for f in sl:
+							f["w"] = int(f["w"]) + 2; f["h"] = int(f["h"]) + 2
+				tex = ImageTexture.create_from_image(img)
 		d = {"tex": tex, "cell": int(j["cell"]), "slots": j["slots"]}
 	_sets[n] = d
 	return d
@@ -390,7 +435,7 @@ var colors = {"sets": {}, "variants": [], "tiles": {}}
 const VARIANT_BASE = 3000
 func load_colors() -> void:
 	colors = {"sets": {}, "variants": [], "tiles": {}}
-	for f in Mods.content_paths("colors"):
+	for f in [builtin_dir().path_join("colors.json")] + Mods.content_paths("colors"):
 		if not FileAccess.file_exists(f):
 			continue
 		var t = Mods.read_json(f)
@@ -401,6 +446,8 @@ func load_colors() -> void:
 				colors[k].merge(t[k], true)
 		if t.get("variants") is Array:
 			for v in t["variants"]:
+				if v is Dictionary and v.has("overlay"):
+					v["_dir"] = f.get_base_dir().path_join("sprites")
 				colors["variants"] = colors["variants"].filter(func(x): return int(x.get("id", -1)) != int(v.get("id", -2)))
 				colors["variants"].append(v)
 	_sets.clear()
@@ -464,6 +511,31 @@ func recolor(src: Image, rule: Dictionary) -> Image:
 		w = (w & 0x00FFFFFF) | (v & 0xFF000000)
 		memo[v] = w
 		px[i] = w
+	return Image.create_from_data(img.get_width(), img.get_height(), false, Image.FORMAT_RGBA8, px.to_byte_array())
+
+## a variant's own pixels laid over its base set (pictures redrawn by hand, shipped as only the pixels that differ):
+## an opaque pixel replaces the set's, a half-transparent one (alpha 128) clears it, a clear one keeps it
+func apply_overlay(src: Image, path: String) -> Image:
+	var ov = image(path)
+	if ov == null:
+		printerr("[assets] no overlay ", path)
+		return src
+	var img: Image = src.duplicate()
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	if ov.get_format() != Image.FORMAT_RGBA8:
+		ov.convert(Image.FORMAT_RGBA8)
+	if ov.get_size() != img.get_size():
+		printerr("[assets] overlay ", path, " is not the size of its set")
+		return img
+	var px: PackedInt32Array = img.get_data().to_int32_array()
+	var op: PackedInt32Array = ov.get_data().to_int32_array()
+	for i in px.size():
+		var a = (op[i] >> 24) & 0xFF
+		if a == 255:
+			px[i] = op[i]
+		elif a == 128:
+			px[i] = 0
 	return Image.create_from_data(img.get_width(), img.get_height(), false, Image.FORMAT_RGBA8, px.to_byte_array())
 
 static func _c32(c: Color) -> int:

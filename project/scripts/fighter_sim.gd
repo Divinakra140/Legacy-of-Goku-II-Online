@@ -63,6 +63,10 @@ var running = false
 var tap_dir = -1           # double-tap a direction to run
 var tap_t = 99
 var was_moving = false
+var flying = false         # FREE PLAY: L2 flies over everything (nothing blocks you, you are drawn above it all); L2 again lands
+var can_fly = true
+var _fly_prev = false
+const A_FLY = 12           # the sets' row 12: the hero flat out, flying
 var equip = {}             # slot -> gear id (worn)
 var quests = {}            # mission id -> progress
 var qdone = []             # missions finished (that don't repeat)
@@ -427,6 +431,47 @@ func can_stand(px: float, py: float) -> bool:
 		return true
 	return (_under(px, py) & lay) != 0
 
+func _fly_step(mx: int, my: int) -> void:
+	if mx != 0 or my != 0:
+		if mx != 0 and my == 0:
+			dir = 3 if mx > 0 else 2
+		elif my != 0 and mx == 0:
+			dir = 0 if my > 0 else 1
+		var spd = speed() * 2.2
+		if mx != 0 and my != 0:
+			spd *= 0.7071
+		x += mx * spd
+		y += my * spd
+		if not area.is_empty():
+			x = clampf(x, 8.0, float(area["w"]) - 8.0)
+			y = clampf(y, 16.0, float(area["h"]) - 4.0)
+	state = "fly"
+	if _frame_count(A_FLY) > 0:
+		set_anim(A_FLY)
+		_animate([8], true)
+	else:
+		set_anim(Rules.A_IDLE)
+		_animate([240, 15], true)
+	regen_t += 1
+	if regen_t >= Rules.EP_REGEN_TICKS:
+		regen_t = 0
+		ep = mini(maxep, ep + 1)
+
+## come down on the nearest ground you can stand on
+func _land() -> void:
+	flying = false
+	state = "idle"
+	set_anim(Rules.A_IDLE)
+	if area.is_empty() or can_stand(x, y):
+		return
+	for r in range(4, 400, 4):
+		for k in 16:
+			var a = TAU * k / 16.0
+			var px = x + cos(a) * r; var py = y + sin(a) * r
+			if px > 8 and py > 16 and px < float(area["w"]) - 8 and py < float(area["h"]) - 4 and can_stand(px, py):
+				place_at(px, py)
+				return
+
 func move_by(dx: float, dy: float) -> void:
 	if dx != 0.0 and can_stand(x + dx, y):
 		x += dx
@@ -498,6 +543,21 @@ func step(inp: Dictionary, enemies: Array) -> void:
 		return
 	var mx = int(inp.get("right", false)) - int(inp.get("left", false))
 	var my = int(inp.get("down", false)) - int(inp.get("up", false))
+	var fly_now = bool(inp.get("fly", false))
+	var fly_press = fly_now and not _fly_prev
+	_fly_prev = fly_now
+	if fly_press and (flying or (can_fly and state in ["idle", "walk"])):
+		if flying:
+			_land()
+		else:
+			flying = true
+			events.append({"type": "msg", "text": "FLYING - L2 TO LAND"})
+	if flying:
+		if not can_fly:
+			_land()
+		else:
+			_fly_step(mx, my)
+			return
 	var a_now: bool = inp.get("a", false)
 	var b_now: bool = inp.get("b", false)
 	var a_press = a_now and a_hold == 0
@@ -629,6 +689,8 @@ func step(inp: Dictionary, enemies: Array) -> void:
 		if inp.get("run", false):
 			running = true
 		var spd = speed() * (1.75 if running else 1.0)
+		if running and (mx == 0 or my == 0):
+			spd *= 1.4142      # running straight is as fast as running on a diagonal (both directions at once)
 		move_by(mx * spd, my * spd)
 		state = "walk"
 		idle_t = 0
@@ -1208,7 +1270,7 @@ func snapshot() -> Dictionary:
 		fxs.append(e.duplicate())
 	return {"ch": ch, "x": x, "y": y, "dir": dir, "anim": anim, "frame": frame, "hp": hp, "maxhp": maxhp, "ep": ep, "maxep": maxep,
 		"lvl": level, "shots": sh, "down": state == "down", "inv": invuln > 0, "set": set_id, "aura": aura(),
-		"tint": (tint() * state_tint()).to_rgba32(), "sts": states.keys(), "scale": size_scale(), "dx": draw_dx, "fx": fxs, "form": str(form().get("name", ""))}
+		"tint": (tint() * state_tint()).to_rgba32(), "sts": states.keys(), "scale": size_scale(), "dx": draw_dx, "fx": fxs, "form": str(form().get("name", "")), "fly": flying}
 
 # ------------------------------------------------------------------ the heroes' own attacks, exactly as the game draws them
 ## content/rom_specials.json: measured from the game frame by frame (the glow at the hands, the beam or the ball,

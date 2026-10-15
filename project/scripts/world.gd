@@ -542,7 +542,7 @@ const KEYS_LEFT = {"up": [KEY_W], "down": [KEY_S], "left": [KEY_A], "right": [KE
 const KEYS_RIGHT = {"up": [KEY_UP], "down": [KEY_DOWN], "left": [KEY_LEFT], "right": [KEY_RIGHT], "a": [KEY_PERIOD, KEY_KP_1],
 	"b": [KEY_SLASH, KEY_KP_2], "sp": [KEY_SEMICOLON, KEY_KP_3], "tr": [KEY_APOSTROPHE, KEY_KP_5], "it": [KEY_BRACKETLEFT, KEY_KP_6],
 	"nx": [KEY_BRACKETRIGHT, KEY_KP_4], "mn": [KEY_BACKSLASH, KEY_KP_0, KEY_BACKSPACE], "run": [KEY_ENTER, KEY_KP_ENTER]}
-const KEYS_SOLO_EXTRA = {"a": [KEY_Z], "b": [KEY_X], "sp": [KEY_C], "tr": [KEY_V], "it": [KEY_F], "nx": [KEY_E], "run": [KEY_SHIFT]}
+const KEYS_SOLO_EXTRA = {"a": [KEY_Z], "b": [KEY_X], "sp": [KEY_C], "tr": [KEY_V], "it": [KEY_F], "nx": [KEY_E], "run": [KEY_SHIFT], "fly": [KEY_G]}
 ## (A/B/X/Y by their labels: OPTIONS - A/B BUTTONS picks the pad's layout)
 func _pad() -> Dictionary:
 	return {"a": Game.pad_btn("a"), "b": Game.pad_btn("b"), "sp": Game.pad_btn("x"), "tr": Game.pad_btn("y"), "it": JOY_BUTTON_LEFT_SHOULDER,
@@ -566,7 +566,7 @@ func _input_for(L: Local) -> Dictionary:
 	var typing = chat_open
 	var k = {}
 	var PAD = _pad()
-	for b in ["up", "down", "left", "right", "a", "b", "sp", "tr", "it", "nx", "mn", "run"]:
+	for b in ["up", "down", "left", "right", "a", "b", "sp", "tr", "it", "nx", "mn", "run", "fly"]:
 		var on = false
 		if not typing:
 			for st in sets:
@@ -583,6 +583,7 @@ func _input_for(L: Local) -> Dictionary:
 		k["left"] = k["left"] or Input.is_joy_button_pressed(p, JOY_BUTTON_DPAD_LEFT) or Input.get_joy_axis(p, JOY_AXIS_LEFT_X) < -0.5
 		k["right"] = k["right"] or Input.is_joy_button_pressed(p, JOY_BUTTON_DPAD_RIGHT) or Input.get_joy_axis(p, JOY_AXIS_LEFT_X) > 0.5
 		k["run"] = k["run"] or Input.get_joy_axis(p, JOY_AXIS_TRIGGER_RIGHT) > 0.5 or Input.is_joy_button_pressed(p, JOY_BUTTON_LEFT_STICK)
+		k["fly"] = k["fly"] or Input.get_joy_axis(p, JOY_AXIS_TRIGGER_LEFT) > 0.5      # L2: fly / land (FREE PLAY)
 	if i == 0 and touch != null and touch.shown and not map_open:
 		for b in touch.keys:
 			k[b] = k.get(b, false) or touch.keys[b]
@@ -813,6 +814,7 @@ func _step_local(L: Local) -> void:
 	inp = _talk_step(L, raw, inp, elist)
 	inp = _save_step(L, raw, inp, elist)
 	L.mprev = raw.duplicate()
+	f.can_fly = not Game.cfg.has("story")      # flying is a FREE PLAY thing (stories keep their walls)
 	f.step(inp, elist)
 	_bump(L)
 	_step_comps(L, elist)
@@ -987,7 +989,7 @@ func _save_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) -> Dic
 ## people stand their ground: you walk around them, not through them (and a duel's two fighters don't merge)
 func _bump(L: Local) -> void:
 	var f: FighterSim = L.fighter
-	if f.state == "down":
+	if f.state == "down" or f.flying:
 		return
 	var others = []
 	for p in L.area.get("people", []):
@@ -1169,6 +1171,7 @@ func _update_view(av: AreaView) -> void:
 			v.label = "DOWN %d" % ceili(f.down_t / 60.0)
 		v.label_color = Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6)
 		v.position = Vector2(roundf(f.x) + f.draw_dx, roundf(f.y))
+		v.z_index = 110 if f.flying else 0      # flying: above the trees and roofs
 		v.show_frame(f.anim, f.dir, f.frame)
 		v.concealed = f.invuln > 0 and (f.invuln / 3) % 2 == 0 and f.state != "down" and f.state != "transform" and f.state != "skill"
 		var b = bubbles.get(Game.pid_of(Game.my_id(), L.k))
@@ -1245,6 +1248,7 @@ func _update_view(av: AreaView) -> void:
 		v.bubble = b[0] if b != null else ""
 		v.hp_frac = float(st.get("hp", 1)) / maxf(1.0, float(st.get("maxhp", 1)))
 		v.position = v.position.lerp(Vector2(float(st["x"]) + float(st.get("dx", 0)), st["y"]), 0.5)
+		v.z_index = 110 if st.get("fly", false) else 0
 		v.show_frame(int(st["anim"]), int(st["dir"]), int(st["frame"]))
 		v.queue_redraw()
 	for pid in av.remote_views.keys():
@@ -2282,6 +2286,38 @@ func _bar(c: Control, x: float, y: float, w: float, v: float, mx: float, col: Co
 	c.draw_rect(Rect2(x - 1, y - 1, w + 2, 6), Color(0, 0, 0, 0.7))
 	c.draw_rect(Rect2(x, y, w * clampf(v / maxf(1.0, mx), 0.0, 1.0), 4), col)
 
+## the GBA's own bars: a dark metal frame, health in red and ki in green (three slanted rows each, in chevron
+## segments of two shades), and a thin bar for the experience to the next level
+const HUD_LEN = 62
+const HP_COLS = [[Color8(248, 72, 72), Color8(168, 8, 16)], [Color8(248, 112, 112), Color8(208, 16, 40)]]
+const KI_COLS = [[Color8(48, 248, 72), Color8(0, 120, 8)], [Color8(112, 248, 144), Color8(0, 168, 24)]]
+func _gba_bars(c: Control, x0: float, y0: float, hp: float, ki: float, xp: float) -> void:
+	var px = func(xx: float, yy: float, col: Color): c.draw_rect(Rect2(x0 + xx, y0 + yy, 1, 1), col)
+	c.draw_rect(Rect2(x0 + 1, y0, HUD_LEN + 10, 15), Color8(32, 32, 64))
+	c.draw_rect(Rect2(x0 + 3, y0, HUD_LEN + 8, 1), Color8(112, 112, 112))
+	c.draw_rect(Rect2(x0 + 3, y0 + 15, HUD_LEN + 8, 1), Color8(88, 88, 88))
+	c.draw_rect(Rect2(x0 + HUD_LEN + 10, y0 + 1, 1, 14), Color8(88, 88, 88))
+	c.draw_rect(Rect2(x0 + 4, y0 + 1, HUD_LEN + 5, 13), Color.BLACK)
+	for k in 16:      # the slanted metal cap at the left
+		px.call(maxf(0, 2 - k * 0.25), k, Color8(192, 192, 192) if k < 3 else Color8(112, 112, 112))
+		px.call(maxf(1, 3 - k * 0.25), k, Color8(144, 144, 144))
+	var rows = [[hp, HP_COLS, 2], [ki, KI_COLS, 7]]
+	for b in rows:
+		var n = int(roundf(HUD_LEN * clampf(float(b[0]), 0.0, 1.0)))
+		for r in 3:
+			var sx = 5 + r
+			for i in HUD_LEN:
+				var col = Color.BLACK
+				if i < n and (i % 16) != 15:
+					var seg = (i / 16) % 2
+					col = b[1][seg][0] if r == 0 else b[1][seg][1]
+				px.call(sx + i, b[2] + r, col)
+		c.draw_rect(Rect2(x0 + 5, y0 + b[2] + 3, HUD_LEN + 2, 1), Color8(88, 88, 88))
+	# experience: a thin bar under the metal
+	c.draw_rect(Rect2(x0 + 4, y0 + 17, HUD_LEN + 6, 3), Color8(32, 32, 64))
+	c.draw_rect(Rect2(x0 + 4, y0 + 17, HUD_LEN + 6, 1), Color8(88, 88, 88))
+	c.draw_rect(Rect2(x0 + 5, y0 + 18, (HUD_LEN + 4) * xp, 1), Color8(248, 216, 64))
+
 func _player_hud(c: Control, L: Local, right: bool) -> void:
 	var font = ThemeDB.fallback_font
 	var vs = c.get_viewport_rect().size
@@ -2289,10 +2325,11 @@ func _player_hud(c: Control, L: Local, right: bool) -> void:
 	var x = vs.x - 182.0 if right else 6.0
 	var col = Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6)
 	c.draw_rect(Rect2(x - 3, 3, 178, 46), Color(0, 0, 0, 0.4))
-	_bar(c, x, 6, 70, f.hp, f.maxhp, Color(0.2, 0.9, 0.3))
-	_bar(c, x, 13, 70, f.ep, f.maxep, Color(0.3, 0.6, 1.0))
 	var tag = ("P%d " % (L.k + 1)) if locals.size() > 1 else ""
 	var fm = f.form()
+	var nxt0 = int(levels[mini(f.level, levels.size() - 1)]) if f.level < levels.size() else f.exp
+	var prev0 = int(levels[mini(f.level - 1, levels.size() - 1)]) if f.level >= 1 and f.level - 1 < levels.size() else 0
+	_gba_bars(c, x - 1, 4, f.hp / maxf(1.0, f.maxhp), f.ep / maxf(1.0, f.maxep), clampf(float(f.exp - prev0) / maxf(1.0, float(nxt0 - prev0)), 0.0, 1.0))
 	c.draw_string(font, Vector2(x + 74, 12), "%s%s LV %d" % [tag, f.name, f.level], HORIZONTAL_ALIGNMENT_LEFT, 100, 8, col)
 	var nxt = int(levels[mini(f.level, levels.size() - 1)]) if f.level < levels.size() else f.exp
 	if not fm.is_empty():
@@ -2781,9 +2818,13 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 					Game.save_options()
 					Game.apply_pad_layout()
 				10:
-					save_all()
-					Game.leave()
-					get_tree().reload_current_scene()
+					_option_pick_quit()
+
+## QUIT TO TITLE AND SAVE GAME: everything saved, back to the start menu (the app stays open)
+func _option_pick_quit() -> void:
+	save_all()
+	Game.leave()
+	get_tree().reload_current_scene()
 
 func _option_adjust(row: int, d: float) -> void:
 	# A steps up 10%, after 100% back to 0 (off)

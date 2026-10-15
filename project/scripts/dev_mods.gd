@@ -24,7 +24,8 @@ func _ready() -> void:
 		var cb = Button.new(); cb.text = "BACK"; cb.pressed.connect(func(): closed.emit()); top.add_child(cb)
 	var bar = HBoxContainer.new(); v.add_child(bar)
 	_btn(bar, "ADD A MOD (.zip)", _add)
-	_btn(bar, "OPEN THE MODS FOLDER", func(): DirAccess.make_dir_recursive_absolute(Mods.packs_dir()); OS.shell_open(Mods.packs_dir()))
+	if not OS.has_feature("android"):      # (Android: the folder is inside the app - no file manager can open it)
+		_btn(bar, "OPEN THE MODS FOLDER", func(): DirAccess.make_dir_recursive_absolute(Mods.packs_dir()); OS.shell_open(Mods.packs_dir()))
 	_btn(bar, "REFRESH", refresh)
 	rows = VBoxContainer.new(); v.add_child(rows)
 	warn = Label.new(); warn.autowrap_mode = TextServer.AUTOWRAP_WORD; warn.add_theme_font_size_override("font_size", font_size)
@@ -99,9 +100,17 @@ func _add() -> void:
 	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	fd.access = FileDialog.ACCESS_FILESYSTEM
 	fd.filters = PackedStringArray(["*.zip ; Mod packages"])
+	if OS.has_feature("android"):
+		fd.use_native_dialog = true      # Android's own file picker (Godot's is tiny there and B cannot leave it)
+		fd.filters = PackedStringArray()
 	fd.title = "Choose a mod (.zip)"
 	fd.size = Vector2i(700, 420)
 	fd.file_selected.connect(func(p):
+		if OS.has_feature("android"):     # the picker hands a file a zip reader cannot open: a copy in the app's folder first
+			var tmp = Assets.exe_dir().path_join("mod_picked.zip")
+			var fa = FileAccess.open(tmp, FileAccess.WRITE)
+			if fa:
+				fa.store_buffer(FileAccess.get_file_as_bytes(p)); fa.close(); p = tmp
 		msg.text = Mods.import_pack(p)
 		changed.emit()
 		refresh()

@@ -49,6 +49,84 @@ func world_id() -> String:
 func save_world() -> void:
 	pass
 
+# ------------------------------------------------------------------ host migration (Android port)
+## The host keeps the players in the order they joined and tells everyone (with how to reach each one, and the
+## online world's name and password check). When the host leaves, the first in line becomes the host - their
+## world goes on, foes and all - and everyone else connects to them. If they do not come up, the next one does.
+var join_order = []        # host: peer ids in the order they joined
+var peer_addr = {}         # host: peer id -> address (LAN: IP, online: ZeroTier address)
+var succession = []        # everyone: [[peer id, address], ...] - who takes over, in order
+var succ_info = {}         # everyone: the online world {name, private, salt, proof}
+var my_peer_id = 0
+var migrating = false
+
+## where the others can reach this device (LAN: its IP on the Wi-Fi, online: its ZeroTier address)
+func my_address() -> String:
+	if cfg.get("online", false):
+		return str(Online.status()["address"])
+	for a in IP.get_local_addresses():
+		if a.count(".") == 3 and not a.begins_with("127.") and not a.begins_with("169.254."):
+			return a
+	return ""
+
+func _send_succession() -> void:
+	if not multiplayer.has_multiplayer_peer():
+		return
+	var list = []
+	for id in join_order:
+		if peer_addr.get(id, "") != "":
+			list.append([id, peer_addr[id]])
+	var info = {}
+	if cfg.get("online", false):
+		info = Online.succession_info()
+	rpc("succession_msg", list, info)
+
+@rpc("authority", "reliable")
+func succession_msg(list: Array, info: Dictionary) -> void:
+	succession = list
+	succ_info = info
+	my_peer_id = multiplayer.get_unique_id()
+
+func _migrate(me: int) -> void:
+	if succession.is_empty():
+		return
+	var next = succession[0]
+	if int(next[0]) == me:
+		_become_host()
+	else:
+		migrating = true
+		toast.emit("THE HOST LEFT - CONNECTING TO THE NEW HOST...", Color(1, 0.8, 0.4))
+		if cfg.get("online", false):
+			Online.join({"address": str(next[1]), "salt": str(succ_info.get("salt", "")), "private": bool(succ_info.get("private", false))}, "")
+			Online.join_proof = str(succ_info.get("proof", ""))
+		else:
+			cfg["ip"] = str(next[1])
+		reconnect_tries = 40
+		reconnect_t = 2.5          # (the new host needs a moment to open their game)
+
+func _become_host() -> void:
+	succession.pop_front()
+	var online = cfg.get("online", false)
+	cfg["mode"] = "host"
+	var ok = false
+	if online:
+		Online.stop_joining()
+		ok = host_game_online("")
+		Online.resume(succ_info)       # the same world on the list: its name, and its password if private
+	else:
+		ok = host_game()
+	if not ok:
+		toast.emit("COULD NOT TAKE OVER AS HOST - PLAYING ON ALONE", Color(1, 0.5, 0.5))
+		return
+	cfg["online"] = online
+	net_error = ""
+	join_order = []
+	peer_addr = {}
+	sims.clear()                   # (foes start again round the players, as on any host)
+	print("[game] the host left - this device is the host now")
+	toast.emit("THE HOST LEFT - YOU ARE THE HOST NOW", Color(0.6, 1, 0.7))
+	lobby_changed.emit()
+
 ## the host turned this player away (a private game's wrong password)
 @rpc("authority", "reliable")
 func refused(why: String) -> void:
@@ -70,12 +148,16 @@ func _on_server_lost() -> void:
 		return
 	net_error = "THE HOST LEFT"
 	lobby_changed.emit()
+	var me = my_peer_id
+	if multiplayer.has_multiplayer_peer():
+		multiplayer.multiplayer_peer = null
+	if in_game and not succession.is_empty():
+		_migrate(me)
+		return
 	if in_game:
 		toast.emit("LOST THE HOST - RECONNECTING...", Color(1, 0.6, 0.4))
 		reconnect_tries = 40
 		reconnect_t = 2.0
-	if multiplayer.has_multiplayer_peer():
-		multiplayer.multiplayer_peer = null
 
 func _process(dt: float) -> void:
 	_lan_host_poll()
@@ -92,7 +174,13 @@ func _process(dt: float) -> void:
 					join_game_online(Online.join_port)
 				else:
 					join_game(str(cfg["ip"]))
+			# the next in line did not come up (gone too): try the one after them
+			if migrating and reconnect_tries % 5 == 0 and succession.size() > 1:
+				succession.pop_front()
+				_migrate(my_peer_id)
+				return
 			if reconnect_tries == 0:
+				migrating = false
 				toast.emit("COULD NOT REACH THE HOST - PLAYING ON ALONE (Q IN THE PAUSE MENU: BACK)", Color(1, 0.5, 0.5))
 	# a partner we have not heard from for 4 seconds has gone (left, or dropped out of split screen)
 	var now = Time.get_ticks_msec()
@@ -250,6 +338,11 @@ func join_game(ip: String) -> bool:
 	return true
 
 func leave() -> void:
+	succession = []
+	succ_info = {}
+	join_order = []
+	peer_addr = {}
+	migrating = false
 	lan_host_stop()
 	Online.stop_hosting()
 	if not cfg.get("online", false) or reconnect_tries == 0:
@@ -270,11 +363,13 @@ func lobby_name() -> String:
 	return str(cfg["name"])
 
 func _on_connected() -> void:
+	my_peer_id = multiplayer.get_unique_id()
+	migrating = false
 	if reconnect_tries > 0:
 		reconnect_tries = 0
 		net_error = ""
 		toast.emit("BACK IN THE WORLD", Color(0.6, 1, 0.6))
-	rpc_id(1, "hello", lobby_name(), int(cfg["character"]), Online.join_proof if cfg.get("online", false) else "")
+	rpc_id(1, "hello", lobby_name(), int(cfg["character"]), Online.join_proof if cfg.get("online", false) else "", my_address())
 
 func _on_peer_connected(_id: int) -> void:
 	lobby_changed.emit()
@@ -282,6 +377,10 @@ func _on_peer_connected(_id: int) -> void:
 func _on_peer_disconnected(id: int) -> void:
 	save_world()
 	peers.erase(id)
+	if is_host():
+		join_order.erase(id)
+		peer_addr.erase(id)
+		_send_succession()
 	for pid in remote_states.keys():
 		if pid / 8 == id:
 			remote_states.erase(pid)
@@ -290,7 +389,7 @@ func _on_peer_disconnected(id: int) -> void:
 		toast.emit("A PLAYER LEFT THE WORLD", Color(1, 0.7, 0.4))
 
 @rpc("any_peer", "reliable")
-func hello(n: String, ch: int, proof: String = "") -> void:
+func hello(n: String, ch: int, proof: String = "", addr: String = "") -> void:
 	if not is_host():
 		return
 	var id = multiplayer.get_remote_sender_id()
@@ -300,6 +399,10 @@ func hello(n: String, ch: int, proof: String = "") -> void:
 		get_tree().create_timer(1.0).timeout.connect(func(): if multiplayer.has_multiplayer_peer(): multiplayer.multiplayer_peer.disconnect_peer(id))
 		return
 	peers[id] = {"name": n, "character": ch}
+	if not join_order.has(id):
+		join_order.append(id)
+	peer_addr[id] = addr
+	_send_succession()
 	rpc("lobby", peers)
 	lobby_changed.emit()
 	if in_game:
@@ -741,7 +844,7 @@ func apply_pad_layout() -> void:
 func save_options() -> void:
 	var fa = FileAccess.open("user://options.json", FileAccess.WRITE)
 	if fa:
-		fa.store_string(JSON.stringify({"music": Music.volume, "sound": Sfx.volume, "view_zoom": int(cfg.get("view_zoom", 0)), "touch_mode": str(cfg.get("touch_mode", "auto")), "pad_layout": pad_layout()}))
+		fa.store_string(JSON.stringify({"music": Music.volume, "sound": Sfx.volume, "view_zoom": int(cfg.get("view_zoom", 0)), "touch_mode": str(cfg.get("touch_mode", "auto")), "pad_layout": pad_layout(), "name": str(cfg.get("name", "PLAYER"))}))
 		fa.close()
 
 func load_options() -> void:
@@ -753,6 +856,8 @@ func load_options() -> void:
 			Sfx.volume = float(t.get("sound", Sfx.volume))
 			cfg["view_zoom"] = int(t.get("view_zoom", 0))
 			cfg["touch_mode"] = str(t.get("touch_mode", "auto"))
+			if str(t.get("name", "")) != "":
+				cfg["name"] = str(t["name"])
 			if t.has("pad_layout"):
 				cfg["pad_layout"] = str(t["pad_layout"])
 			var mn = get_tree().root.get_node_or_null("Main")
@@ -771,25 +876,76 @@ func _save_path() -> String:
 		return "user://fighters_story_%s.json" % str(cfg["story"])       # a story's own save slot
 	return "user://fighters_%s.json" % str(cfg["adventure"]).replace(":", "_")
 
-func save_fighter(f: FighterSim, k: int = 0) -> void:
-	var path = _save_path()
-	var all = {}
+## FREE PLAY: a hero's growth (level, numbers, items, zeni, moves) is shared by every map - level 16 Piccolo is level 16
+## everywhere; what belongs to one world (where you stand, its quests and flags) stays in that world's own file.
+const SHARED_SAVE = "user://fighters_free.json"
+const WORLD_KEYS = ["where", "quests", "qdone", "flags"]
+func _shared_saves() -> bool:
+	return not cfg.has("dev_return") and not cfg.has("story")
+
+static func _read_json_dict(path: String) -> Dictionary:
 	if FileAccess.file_exists(path):
 		var t = JSON.parse_string(FileAccess.get_file_as_string(path))
 		if t is Dictionary:
-			all = t
-	all[_slot(f, k)] = f.to_save()
+			return t
+	return {}
+
+static func _write_json(path: String, d: Dictionary) -> void:
 	var fa = FileAccess.open(path, FileAccess.WRITE)
 	if fa:
-		fa.store_string(JSON.stringify(all))
+		fa.store_string(JSON.stringify(d))
 		fa.close()
+
+func save_fighter(f: FighterSim, k: int = 0) -> void:
+	var d = f.to_save()
+	var path = _save_path()
+	var all = _read_json_dict(path)
+	if _shared_saves():
+		var shared = _read_json_dict(SHARED_SAVE)
+		var grow = d.duplicate(true)
+		var here = {"ch": d.get("ch")}
+		for key in WORLD_KEYS:
+			here[key] = grow.get(key)
+			grow.erase(key)
+		shared[_slot(f, k)] = grow
+		_write_json(SHARED_SAVE, shared)
+		all[_slot(f, k)] = here
+	else:
+		all[_slot(f, k)] = d
+	_write_json(path, all)
+
+## a hero's shared growth; the first time, the strongest copy from the older one-file-per-map saves
+func shared_entry(slot: String) -> Dictionary:
+	var shared = _read_json_dict(SHARED_SAVE)
+	if shared.get(slot) is Dictionary:
+		return shared[slot]
+	var best = {}
+	var dir = DirAccess.open("user://")
+	if dir:
+		for fn in dir.get_files():
+			if not fn.begins_with("fighters_") or fn.begins_with("fighters_story") or fn in ["fighters_playtest.json", "fighters_free.json"]:
+				continue
+			var e = _read_json_dict("user://" + fn).get(slot)
+			if e is Dictionary and e.has("level") and (best.is_empty() or int(e.get("level", 1)) * 10000000 + int(e.get("exp", 0)) > int(best.get("level", 1)) * 10000000 + int(best.get("exp", 0))):
+				best = e.duplicate(true)
+	for key in WORLD_KEYS:
+		best.erase(key)
+	return best
 
 func load_fighter(f: FighterSim, k: int = 0) -> void:
 	var path = _save_path()
-	if not FileAccess.file_exists(path):
+	if not FileAccess.file_exists(path) and FileAccess.file_exists("user://fighters_%s.json" % str(cfg["adventure"])):
 		path = "user://fighters_%s.json" % str(cfg["adventure"])     # saved by an older version
-		if not FileAccess.file_exists(path):
-			return
-	var t = JSON.parse_string(FileAccess.get_file_as_string(path))
-	if t is Dictionary and t.has(_slot(f, k)):
-		f.from_save(t[_slot(f, k)])
+	var t = _read_json_dict(path)
+	var d = {}
+	if t.get(_slot(f, k)) is Dictionary:
+		d = t[_slot(f, k)].duplicate(true)
+	if _shared_saves():
+		var here = {}
+		for key in WORLD_KEYS:
+			if d.has(key):
+				here[key] = d[key]
+		d = shared_entry(_slot(f, k)).duplicate(true)
+		d.merge(here, true)
+	if not d.is_empty():
+		f.from_save(d)

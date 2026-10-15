@@ -21,7 +21,7 @@ func _physics_process(_dt: float) -> void:
 	t += 1
 	if t % 30 == 0 and status:
 		var lines = ["WORLD: %s (%s)   PORT %d" % [Game.planet.title, Game.world_id(), Game.PORT],
-			"People on your Wi-Fi can join it under LOCAL MULTIPLAYER - JOIN GAME. (Each player keeps their own fighter.)",
+			("Anyone can join it under GLOBAL MULTIPLAYER - JOIN GAME." if Game.cfg.get("online", false) else "People on your Wi-Fi can join it under LOCAL MULTIPLAYER - JOIN GAME.") + " (Each player keeps their own fighter.)",
 			"B: STOP THE SERVER AND GO BACK TO THE MENU" if OS.has_feature("mobile") else "Close this window or press ESC to stop.", "", "PLAYING NOW: %d" % Game.remote_states.size()]
 		for pid in Game.remote_states:
 			var st: Dictionary = Game.remote_states[pid]

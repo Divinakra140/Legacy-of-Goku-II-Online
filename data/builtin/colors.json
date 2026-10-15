@@ -1,0 +1,9 @@
+{
+  "_help": "Looks that come with the Android port. overlay: hand-drawn pixels (by Puni Puni) laid over the base set from your own game file - only the pixels that differ are shipped.",
+  "variants": [
+    {"id": 3100, "base": 53, "name": "SHADOW GOKU", "hue": 180, "sat": 0.6, "val": 0.75, "swaps": {}},
+    {"id": 3101, "base": 61, "name": "SS GOKU (UNDERSHIRT, TORN PANTS)", "overlay": "overlay_ssj_undershirt.png"},
+    {"id": 3102, "base": 61, "name": "SS GOKU (SHIRTLESS, BATTLE DAMAGED)", "overlay": "overlay_ssj_shirtless.png"},
+    {"id": 3103, "base": 61, "name": "SS BLUE GOKU", "overlay": "overlay_ssb.png"}
+  ]
+}
