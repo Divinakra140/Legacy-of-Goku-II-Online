@@ -5,8 +5,8 @@ The Godot rebuild of **Legacy of Goku II** by **Puni Puni** and **Divinakra**
 for **Android** (Handhelds and phones), **Windows** and **Mac** (Apple Silicon and Intel). All three play
 GLOBAL multiplayer together. Formerly "Legacy of Goku II - Co-op".
 
-**This is not only an Android port.** LoG2 Online is a new and improved version of the whole game and its dev tools,
-on every system:
+**Improvements** LoG2 Online v44 has some exciting impovements to both the game on all three platforms and bundled map editor
+ on PC and Mac:
 - **The game:** global and local multiplayer across Android, Windows and Mac, GBA-style menus, flying, new playable heroes, 
   villians and  outfits, a reworked Earth (Goku's House, Triceratops Jungle and West City improved by hand), the original 
   game's balance (level cap 50), original game music recorded from your own cartridge, and shared saves.
