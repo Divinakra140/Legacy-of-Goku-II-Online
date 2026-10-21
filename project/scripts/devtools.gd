@@ -54,9 +54,13 @@ var brush_cell = [0, 0, 0, 0, 0, 1]   # STAMP: a whole cell + walk
 var last_brush = "TILE"
 var show_walls = true
 var show_changes = false
+var _last_look = []              # what the overlay was last drawn for
+var _redraw_t = 0.0
 var _changes = []          # [[layer name, {"x,y": cell}]] for the CHANGES view
 var show_grid = false
 var show_objects = true
+var sel_from = Vector2.ZERO        # SELECT: where the click began
+var keep_ground = false          # PASTE / THINGS: the ground already there stays (the copy's background is left out)
 var clipboard = {}              # {w, h, cells: [[6 values]...]}
 var drag_from = Vector2i(-1, -1)
 var dragging = false
@@ -64,6 +68,7 @@ var pan_drag = false
 var pan_last = Vector2.ZERO
 var stroke = {}                 # index -> [old6, new6] while painting
 var undo = []
+var redo = []                   # steps undone, newest last (a new edit forgets them)
 var dirty = false
 var selected = {}               # {kind, ...}
 var door_rect = []              # DOOR: the box drawn, waiting for its arrival click
@@ -77,6 +82,7 @@ var layer_pick: OptionButton
 var palette: Control
 var pal_scroll = 0
 var foe_type = 8
+var foe_look = 0                # FOE: a sprite set to wear (0 = the kind's own look)
 var foe_lv = 0
 var person_name = "TRAVELLER"
 var person_set = 54
@@ -92,6 +98,8 @@ var preview: ActorView
 var MT = preload("res://scripts/dev_maptools.gd").new()
 var smart_mask = {}
 var smart_size = 1
+var paint_size = 1               # TILE / STAMP / ERASE / WALL / GROUND: the brush is this many cells across
+var paint_last = Vector2i(-1, -1)   # the cell painted last in this drag (the stroke is joined up from it)
 var shape_brush = "TILE"     # LINE / RECT paint with: TILE, CELL, WALL, GROUND
 var rect_filled = true
 var stamps = []              # THINGS: the list shown (saved ones + found in view)
@@ -186,6 +194,7 @@ func load_map(k: String) -> void:
 	cam.zoom = Vector2(1, 1)
 	selected = {}
 	undo.clear()
+	redo.clear()
 	_changes = []
 	_stream(true)
 	call_deferred("_refresh_minimap")
@@ -286,6 +295,7 @@ func end_stroke() -> void:
 	_write(stroke, 1)
 	_changes = []
 	undo.append({"cells": stroke})
+	redo.clear()
 	if coedit:
 		coedit.sent_cells(key, stroke)
 	if undo.size() > 60:
@@ -326,15 +336,30 @@ func do_undo() -> void:
 		_say("Nothing to undo.")
 		return
 	var u: Dictionary = undo.pop_back()
-	if u.has("cells"):
-		_write(u["cells"], 0)
-	if u.has("patch"):
-		var p = Mods.patch(key)
-		for k in u["patch"]:
-			p[k] = u["patch"][k]
-		_rebuild_world()
+	redo.append(_flip(u, 0))
 	dirty = true
-	_say("Undone.")
+	_say("Undone. (REDO / Control+Y puts it back.)")
+
+func do_redo() -> void:
+	if redo.is_empty():
+		_say("Nothing to redo.")
+		return
+	undo.append(_flip(redo.pop_back(), 1))
+	dirty = true
+	_say("Redone.")
+
+## undo (side 0) or redo (side 1) one step; gives back the step that turns it round again
+func _flip(u: Dictionary, side: int) -> Dictionary:
+	if u.has("cells"):
+		_write(u["cells"], side)
+		return u
+	var p = Mods.patch(key)
+	var now = {}
+	for k in u["patch"]:
+		now[k] = p[k].duplicate(true)
+		p[k] = u["patch"][k]
+	_rebuild_world()
+	return {"patch": now}
 
 func _remember_patch() -> void:
 	var p = Mods.patch(key)
@@ -342,6 +367,7 @@ func _remember_patch() -> void:
 	for k in ["enemies_add", "enemies_del", "people_add", "people_del", "doors_add", "doors_del", "items"]:
 		snap[k] = p[k].duplicate(true)
 	undo.append({"patch": snap})
+	redo.clear()
 
 ## foes, people and doors changed: the world is put together again (the planet's lists, the map's people)
 func _rebuild_world() -> void:
@@ -353,7 +379,7 @@ func _rebuild_world() -> void:
 		area["people"] = fresh.get("people", [])
 	else:
 		area["people"] = []
-	var p = Mods.merged(key)
+	var p = Mods.merged(key, false)
 	var ppl: Array = area["people"]
 	for d in p["people_del"]:
 		var q = Vector2(float(d[0]), float(d[1]))
@@ -414,11 +440,27 @@ func _unhandled_input(ev: InputEvent) -> void:
 			_drag(mouse_cell, _world_of(mm.position))
 	elif ev is InputEventKey and ev.pressed and not ev.echo:
 		var kk: InputEventKey = ev
-		if kk.ctrl_pressed and kk.keycode == KEY_Z:
+		if kk.ctrl_pressed and (kk.keycode == KEY_Y or (kk.keycode == KEY_Z and kk.shift_pressed)):
+			do_redo()
+		elif kk.ctrl_pressed and kk.keycode == KEY_Z:
 			do_undo()
+		elif kk.keycode == KEY_G and not kk.ctrl_pressed and tool in ["COPY", "PASTE", "THINGS"]:
+			keep_ground = not keep_ground
+			_say("Keep the ground there: %s." % ("ON - only the thing itself is laid down" if keep_ground else "OFF - the whole box is laid down"))
+			_refresh_side()
+		elif (kk.keycode == KEY_X or kk.keycode == KEY_Y) and not kk.ctrl_pressed and tool in ["COPY", "PASTE"]:
+			mirror_clipboard(kk.keycode == KEY_X)
+		elif kk.keycode == KEY_J and not kk.ctrl_pressed and not selected.is_empty() and selected["obj"].has("arrive"):
+			var so: Dictionary = selected["obj"]      # J: jump to where the chosen door leads (J again: back to the door)
+			var at = Vector2(float(so["arrive"][0]), float(so["arrive"][1]))
+			var rc: Array = so["rect"]
+			var door_c = Vector2((float(rc[0]) + float(rc[2])) / 2.0, (float(rc[1]) + float(rc[3])) / 2.0)
+			cam.position = door_c if cam.position.distance_to(at) < 16.0 else at
+			_say("J: jumped to where the door leads (J again: back to the door).")
+			overlay.queue_redraw()
 		elif kk.ctrl_pressed and kk.keycode == KEY_S:
 			save()
-		elif kk.keycode == KEY_DELETE and not selected.is_empty():
+		elif (kk.keycode == KEY_DELETE or kk.keycode == KEY_BACKSPACE) and not selected.is_empty():      # (a Mac keyboard has only Backspace)
 			_delete_selected()
 		elif kk.keycode >= KEY_0 and kk.keycode <= KEY_4 and not kk.ctrl_pressed:
 			layer = kk.keycode - KEY_0
@@ -437,13 +479,15 @@ func _press(c: Vector2i, w: Vector2) -> void:
 		return
 	match tool:
 		"TILE", "STAMP", "ERASE", "WALL", "GROUND":
-			_paint(c)
+			_paint_brush(c)
+			paint_last = c
 		"SMART":
 			if int(brush_cell[0]) == 0:
 				_say("PICK the ground to paint first (click PICK, then a water / sand / path cell).")
 				return
 			smart_mask = {}
 			_smart_add(c)
+			paint_last = c
 		"THINGS":
 			if stamp_i >= 0 and stamp_i < stamps.size():
 				MT.place_stamp(self, stamps[stamp_i], c)
@@ -457,6 +501,8 @@ func _press(c: Vector2i, w: Vector2) -> void:
 				var t = int(brush_cell[layer]) & ~(1 << 18)
 				if t > 0:
 					brush_tile = t
+				dragging = false      # the same click must not paint with the STAMP it switches to
+				paint_last = Vector2i(-1, -1)
 				_set_tool("STAMP")
 				_say("Picked: layers %s, %s. STAMP paints it; TILE paints tile %d." % [str(brush_cell.slice(0, 5)), "walkable" if int(brush_cell[5]) & 1 else "wall", brush_tile])
 		"PASTE":
@@ -464,7 +510,7 @@ func _press(c: Vector2i, w: Vector2) -> void:
 		"FOE":
 			_remember_patch()
 			var ts = Rules.kind_to_type_set(foe_type)
-			Mods.patch(key)["enemies_add"].append([foe_type, ts[1], snappedf(w.x, 1), snappedf(w.y, 1), foe_lv if foe_lv > 0 else int(Assets.data["enemies"][clampi(foe_type, 0, 127)]["lvl"])])
+			Mods.patch(key)["enemies_add"].append([foe_type, foe_look if foe_look > 0 else ts[1], snappedf(w.x, 1), snappedf(w.y, 1), foe_lv if foe_lv > 0 else int(Assets.data["enemies"][clampi(foe_type, 0, 127)]["lvl"])])
 			_rebuild_world()
 			_say("Foe %d placed. SAVE to keep it." % foe_type)
 		"PERSON":
@@ -486,6 +532,7 @@ func _press(c: Vector2i, w: Vector2) -> void:
 			_say("Treasure %s x%d placed." % [item_id, item_n])
 		"SELECT":
 			selected = _pick_object(w)
+			sel_from = w      # a move only when dragged a little way (a hand's shake on the click is no move)
 			_refresh_side()
 		"DOOR":
 			if door_rect.size() == 4:
@@ -501,21 +548,27 @@ func _press(c: Vector2i, w: Vector2) -> void:
 				Mods.save_patch(from_key)
 				door_rect = []
 				door_to = ""
+				drag_from = Vector2i(-1, -1)      # letting go of this click must not start a new door box
 				_rebuild_world()
 				_say("Door made. (Make one back the same way if you want to return.)")
 
 func _drag(c: Vector2i, _w: Vector2) -> void:
 	match tool:
 		"TILE", "STAMP", "ERASE", "WALL", "GROUND":
-			_paint(c)
+			for q in _cells_between(paint_last, c):      # a quick mouse skips cells: the line between is painted too
+				_paint_brush(q)
+			paint_last = c
 		"SMART":
-			_smart_add(c)
+			for q in _cells_between(paint_last, c):
+				_smart_add(q)
+			paint_last = c
 		"SELECT":
 			if not selected.is_empty():
 				selected["drag_to"] = _w
 	overlay.queue_redraw()
 
 func _release(c: Vector2i, w: Vector2) -> void:
+	paint_last = Vector2i(-1, -1)
 	match tool:
 		"TILE", "STAMP", "ERASE", "WALL", "GROUND":
 			end_stroke()
@@ -579,7 +632,7 @@ func _release(c: Vector2i, w: Vector2) -> void:
 		"FILL":
 			_fill(drag_from, c)
 		"DOOR":
-			if door_rect.is_empty():
+			if door_rect.is_empty() and drag_from.x >= 0:
 				var a = Vector2(mini(drag_from.x, c.x) * 8, mini(drag_from.y, c.y) * 8)
 				var b = Vector2((maxi(drag_from.x, c.x) + 1) * 8, (maxi(drag_from.y, c.y) + 1) * 8)
 				door_rect = [a.x, a.y, b.x, b.y]
@@ -587,7 +640,10 @@ func _release(c: Vector2i, w: Vector2) -> void:
 				_say("Door box drawn. Now click where it takes you (GO TO MAP first to arrive on another map).")
 		"SELECT":
 			if selected.has("drag_to"):
-				_move_selected(selected["drag_to"])
+				if (selected["drag_to"] as Vector2).distance_to(sel_from) * cam.zoom.x >= 6.0:
+					_move_selected(selected["drag_to"])
+				else:
+					selected.erase("drag_to")      # only a shake: it stays chosen where it is
 	drag_from = Vector2i(-1, -1)
 
 func _paint(c: Vector2i) -> void:
@@ -611,6 +667,23 @@ func _paint(c: Vector2i) -> void:
 		"GROUND":
 			v[5] = 1
 	put(c.x, c.y, v)
+
+## the brush: paint_size x paint_size cells round c
+func _paint_brush(c: Vector2i) -> void:
+	var o = (paint_size - 1) / 2
+	for dy in paint_size:
+		for dx in paint_size:
+			_paint(c + Vector2i(dx - o, dy - o))
+
+## every cell on the straight line from a to b (b included; a too when it is the first)
+func _cells_between(a: Vector2i, b: Vector2i) -> Array:
+	if a.x < 0:
+		return [b]
+	var out = []
+	var n = maxi(absi(b.x - a.x), absi(b.y - a.y))
+	for i in range(1, n + 1):
+		out.append(Vector2i(roundi(lerpf(a.x, b.x, float(i) / n)), roundi(lerpf(a.y, b.y, float(i) / n))))
+	return out
 
 func _smart_add(c: Vector2i) -> void:
 	for dy in range(-(smart_size - 1), smart_size):
@@ -647,13 +720,69 @@ func _copy(a: Vector2i, b: Vector2i) -> void:
 	_set_tool("PASTE")
 	_say("Copied %d x %d cells. Click to lay them down (PASTE)." % [r.size.x, r.size.y])
 
+## the clipboard turned over: across = left-right (the X key), else upside down (the Y key)
+func mirror_clipboard(across: bool) -> void:
+	if clipboard.is_empty():
+		_say("Copy something first (COPY), then mirror it.")
+		return
+	var w: int = clipboard["w"]; var h: int = clipboard["h"]
+	var src: Array = clipboard["cells"]
+	var out = []
+	var bit = (1 << 16) if across else (1 << 17)      # each tile drawn turned over too
+	for y in h:
+		for x in w:
+			var v: Array = src[y * w + (w - 1 - x)] if across else src[(h - 1 - y) * w + x]
+			v = v.duplicate()
+			for k in 5:
+				if int(v[k]) != 0:
+					v[k] = int(v[k]) ^ bit
+			out.append(v)
+	clipboard["cells"] = out
+	_say("Clipboard mirrored %s. Click to PASTE it." % ("left-right" if across else "upside down"))
+
+## cells laid down with their top-left at c. With keep_ground, the copy's background (the ground tiles
+## round its edge) is left out: the ground there stays, only the rest (a pad, a tree, its walls) is laid on it
+func _lay(c: Vector2i, w: int, cells: Array, mask: Array = [], own_ground: bool = false) -> void:
+	var keep = keep_ground or own_ground     # own_ground: a thing drawn to go over any ground (SAVE POINT)
+	var h = cells.size() / maxi(1, w)
+	var bg = {}
+	if keep:
+		for j in cells.size():
+			var x = j % w; var y = j / w
+			if x == 0 or y == 0 or x == w - 1 or y == h - 1:
+				bg[int(cells[j][0])] = true
+	for j in cells.size():
+		if mask.size() > j and int(mask[j]) == 0:
+			continue
+		var q = Vector2i(c.x + j % w, c.y + j / w)
+		var v: Array = cells[j]
+		if not keep:
+			put(q.x, q.y, v)
+			continue
+		if not _inside(q.x, q.y):
+			continue
+		var i = q.y * int(area["tw"]) + q.x
+		var out: Array = (stroke[i][1] if stroke.has(i) else cell_at(q.x, q.y)).duplicate()
+		var is_bg = bg.has(int(v[0]))
+		var has_obj = false
+		for k in range(1, 5):
+			if int(v[k]) != 0:
+				has_obj = true
+		for k in range(1, 5):
+			if int(v[k]) != 0 or not is_bg or (own_ground and has_obj):      # nothing of the old place stays on the thing (no flower on the pad)
+				out[k] = v[k]
+		if is_bg and not has_obj:
+			continue
+		if not is_bg:
+			out[0] = v[0]
+		out[5] = v[5]
+		put(q.x, q.y, out)
+
 func _paste(c: Vector2i) -> void:
 	if clipboard.is_empty():
 		_say("Copy something first (COPY).")
 		return
-	var w: int = clipboard["w"]
-	for j in clipboard["cells"].size():
-		put(c.x + j % w, c.y + j / w, clipboard["cells"][j])
+	_lay(c, int(clipboard["w"]), clipboard["cells"])
 	end_stroke()
 	_say("Pasted.")
 
@@ -679,7 +808,7 @@ func _objects() -> Dictionary:
 		out["foes"] = nd["spec"].get("fixed", [])
 		out["doors"] = nd["exits"]
 	out["people"] = area.get("people", [])
-	var mp = Mods.merged(key)
+	var mp = Mods.merged(key, false)
 	var its: Array = mp["items"]
 	for d in mp["items_del"]:
 		its = its.filter(func(it): return Vector2(float(it["x"]), float(it["y"])).distance_to(Vector2(float(d[0]), float(d[1]))) > 4.0)
@@ -805,9 +934,15 @@ func _process(_dt: float) -> void:
 		tiles[i].visible = not far and layer_shown[i]
 	if not far:
 		_stream()
-	overlay.queue_redraw()
-	if minimap:
-		minimap.queue_redraw()
+	# drawn again only when something to see changed (the walls of a whole screen each frame made it slow)
+	var look = [cam.position, cam.zoom, mouse_cell, stroke.size(), undo.size(), redo.size(), tool, selected.size(), show_walls, show_grid, show_changes, show_objects, layer, paint_size, door_rect.size(), selected.get("drag_to", Vector2.ZERO)]
+	_redraw_t += _dt
+	if look != _last_look or dragging or _redraw_t > 0.25:      # (and a few times a second anyway, for anything else that changed)
+		_last_look = look
+		_redraw_t = 0.0
+		overlay.queue_redraw()
+		if minimap:
+			minimap.queue_redraw()
 	if status and _inside(mouse_cell.x, mouse_cell.y):
 		var v = cell_at(mouse_cell.x, mouse_cell.y)
 		var nm = ""
@@ -850,11 +985,18 @@ func _draw_overlay() -> void:
 	var walk: PackedByteArray = area["walk"]
 	if show_walls and (x1 - x0) * (y1 - y0) < 40000:
 		for y in range(y0, y1 + 1):
+			var run_x = -1
 			for x in range(x0, x1 + 1):
 				var i = y * tw + x
 				var wv = int(stroke[i][1][5]) if stroke.has(i) else int(walk[i])
 				if not (wv & 1):
-					overlay.draw_rect(Rect2(x * 8, y * 8, 8, 8), Color(1, 0.1, 0.1, 0.28))
+					if run_x < 0:
+						run_x = x
+				elif run_x >= 0:
+					overlay.draw_rect(Rect2(run_x * 8, y * 8, (x - run_x) * 8, 8), Color(1, 0.1, 0.1, 0.28))
+					run_x = -1
+			if run_x >= 0:      # a row's walls in one strip, not a square each
+				overlay.draw_rect(Rect2(run_x * 8, y * 8, (x1 + 1 - run_x) * 8, 8), Color(1, 0.1, 0.1, 0.28))
 	if show_grid and cam.zoom.x >= 1.0:
 		for x in range(x0, x1 + 2):
 			overlay.draw_line(Vector2(x * 8, y0 * 8), Vector2(x * 8, (y1 + 1) * 8), Color(1, 1, 1, 0.12), 1.0 / cam.zoom.x)
@@ -895,6 +1037,13 @@ func _draw_overlay() -> void:
 		for ex in ob["doors"]:
 			var r: Array = ex["rect"]
 			var rr = Rect2(float(r[0]), float(r[1]), float(r[2]) - float(r[0]), float(r[3]) - float(r[1]))
+			var chosen = selected.get("obj") == ex
+			if chosen and int(ex["to"]) == _node_index():
+				# the chosen door: its line and where it leads stay drawn however far you pan (J jumps there)
+				var arr0 = Vector2(float(ex["arrive"][0]), float(ex["arrive"][1]))
+				overlay.draw_line(rr.get_center(), arr0, Color(1, 0.9, 0.2, 0.9), 2.0 / cam.zoom.x)
+				overlay.draw_circle(arr0, 6.0 / cam.zoom.x, Color(0.3, 1, 0.4, 0.9))
+				overlay.draw_string(font, arr0 + Vector2(8, -6) / cam.zoom.x, "ARRIVES HERE", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.6, 1, 0.7))
 			if not view.intersects(rr): continue
 			overlay.draw_rect(rr, Color(1, 0.9, 0.2, 0.35))
 			overlay.draw_rect(rr, Color(1, 0.9, 0.2), false, 1.0 / cam.zoom.x)
@@ -920,7 +1069,7 @@ func _draw_overlay() -> void:
 		for q in cs:
 			overlay.draw_rect(Rect2(Vector2(q) * 8.0, Vector2(8, 8)), Color(0.4, 0.9, 1, 0.35))
 	if show_objects:
-		var mp = Mods.merged(key)
+		var mp = Mods.merged(key, false)
 		for z in mp["zones"]:
 			var r: Array = z["rect"]
 			var rr = Rect2(float(r[0]), float(r[1]), float(r[2]) - float(r[0]), float(r[3]) - float(r[1]))
@@ -953,7 +1102,8 @@ func _draw_overlay() -> void:
 	if tool == "PASTE" and not clipboard.is_empty() and mouse_cell.x >= 0:
 		overlay.draw_rect(Rect2(Vector2(mouse_cell) * 8.0, Vector2(int(clipboard["w"]), int(clipboard["h"])) * 8.0), Color(0.4, 0.9, 1), false, 1.0 / cam.zoom.x)
 	if mouse_cell.x >= 0 and tool in ["TILE", "STAMP", "ERASE", "WALL", "GROUND", "PICK"]:
-		overlay.draw_rect(Rect2(Vector2(mouse_cell) * 8.0, Vector2(8, 8)), Color(1, 1, 1, 0.8), false, 1.0 / cam.zoom.x)
+		var bs = 1 if tool == "PICK" else paint_size
+		overlay.draw_rect(Rect2(Vector2(mouse_cell - Vector2i((bs - 1) / 2, (bs - 1) / 2)) * 8.0, Vector2(bs, bs) * 8.0), Color(1, 1, 1, 0.8), false, 1.0 / cam.zoom.x)
 
 # ------------------------------------------------------------------ the panels
 func _build_ui() -> void:
@@ -978,7 +1128,7 @@ func _build_ui() -> void:
 		tabs.add_child(b)
 	var sp = Control.new(); sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL; tabs.add_child(sp)
 	var lg = TextureRect.new(); lg.texture = preload("res://art/puni_logo.png"); lg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	lg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; lg.custom_minimum_size = Vector2(16, 16); lg.tooltip_text = "LoG2 Co-op by Puni Puni"; tabs.add_child(lg)
+	lg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; lg.custom_minimum_size = Vector2(16, 16); lg.tooltip_text = "LoG2 Online by Puni Puni"; tabs.add_child(lg)
 	var ytb = Button.new(); ytb.text = "YOUTUBE"; ytb.add_theme_font_size_override("font_size", 9); ytb.add_theme_color_override("font_color", Color(1, 0.45, 0.45))
 	ytb.tooltip_text = "Puni Puni on YouTube: @PuniPuni2026"; ytb.pressed.connect(func(): OS.shell_open("https://www.youtube.com/@PuniPuni2026")); tabs.add_child(ytb)
 	var tg = Button.new(); tg.text = "TOGETHER"; tg.tooltip_text = "Edit the same world with friends over LAN or Hamachi"
@@ -1000,6 +1150,7 @@ func _build_ui() -> void:
 	var nb = Button.new(); nb.text = "NEW MAP"; nb.pressed.connect(_new_map_dialog); bar.add_child(nb)
 	var sb = Button.new(); sb.text = "SAVE"; sb.pressed.connect(save); bar.add_child(sb)
 	var ub = Button.new(); ub.text = "UNDO"; ub.pressed.connect(do_undo); bar.add_child(ub)
+	var rb = Button.new(); rb.text = "REDO"; rb.pressed.connect(do_redo); bar.add_child(rb)
 	var pb = Button.new(); pb.text = "PLAY HERE"; pb.tooltip_text = "Play right here (saves first). In the game F10 brings you back."
 	pb.pressed.connect(_play_dialog); bar.add_child(pb)
 	var og = Button.new(); og.text = "OTHER GAMES"; og.tooltip_text = "Read Buu's Fury and The Legacy of Goku from your own cartridges: their maps and characters to use here"
@@ -1329,6 +1480,8 @@ func _refresh_side() -> void:
 	match tool:
 		"TILE", "FILL", "ERASE", "STAMP", "PICK":
 			_lab("Tile %d on LAYER %d. Click a tile below. PICK copies a cell from the map." % [brush_tile & 0xFFFF, layer])
+			if tool in ["TILE", "ERASE", "STAMP"]:
+				_spin(side, "brush size", 1, 32, paint_size, func(v): paint_size = int(v); overlay.queue_redraw())
 			var gsel = OptionButton.new()
 			gsel.add_item("TILES: LEGACY OF GOKU II"); gsel.set_item_metadata(0, "")
 			for g in Assets.LIB_GAMES:
@@ -1341,6 +1494,7 @@ func _refresh_side() -> void:
 			palette.game = pal_game
 			palette.custom_minimum_size = Vector2(232, 420)
 			palette.chosen = brush_tile
+			palette.jump_to(brush_tile & 0xFFFF)      # the list opens at the tile chosen (or PICKed)
 			palette.picked.connect(func(t): brush_tile = t; last_brush = "TILE"; _set_tool("TILE") if tool in ["PICK", "STAMP"] else _refresh_side())
 			side.add_child(palette)
 			var jb = HBoxContainer.new(); side.add_child(jb)
@@ -1348,9 +1502,35 @@ func _refresh_side() -> void:
 			sp.value_changed.connect(func(v): brush_tile = palette.cell_of(int(v)); palette.chosen = brush_tile; palette.jump_to(int(v)))
 			jb.add_child(sp)
 		"FOE":
-			_lab("The kind of foe (the game's own enemy numbers, 0-127) and its level (0 = its own).")
+			_lab("Choose the foe (weakest at the top): its look, its moves and its own strength. Then its level (0 = its own) and, if you like, another look (a sprite set; Frieza is 48).")
+			# every foe of the game with a picture, weakest first: the original level and health on each line
+			var fl = ItemList.new(); fl.custom_minimum_size = Vector2(230, 240); fl.fixed_icon_size = Vector2i(40, 40)
+			fl.max_columns = 1
+			var kinds = []
+			for k in 128:
+				if Rules.kind_to_type_set(k)[1] >= 0 and Assets.data.get("enemies") is Array and k < Assets.data["enemies"].size():
+					kinds.append(k)
+			kinds.sort_custom(func(x, y): return int(Assets.data["enemies"][x]["hp"]) < int(Assets.data["enemies"][y]["hp"]))
+			for k in kinds:
+				var tab: Dictionary = Assets.data["enemies"][k]
+				var ss: Dictionary = Assets.sprite_set(Rules.kind_to_type_set(k)[1])
+				var icon: Texture2D = null
+				if ss.get("tex") is Texture2D:
+					var at = AtlasTexture.new(); at.atlas = ss["tex"]
+					at.region = Rect2(0, 0, int(ss.get("cell", 64)), int(ss.get("cell", 64)))
+					icon = at
+				fl.add_item("LV %d   %d HP" % [int(tab["lvl"]), int(tab["hp"])], icon)
+				fl.set_item_metadata(fl.item_count - 1, k)
+				if k == foe_type:
+					fl.select(fl.item_count - 1)
+			fl.item_selected.connect(func(j): foe_type = int(fl.get_item_metadata(j)); _update_preview(); _say("Click the map to put this foe there."))
+			side.add_child(fl)
+			if fl.get_selected_items().size() > 0:
+				fl.ensure_current_is_visible.call_deferred()
 			var sp = _spin(side, "kind", 0, 127, foe_type, func(v): foe_type = int(v); _update_preview())
+			fl.item_selected.connect(func(j): sp.set_value_no_signal(int(fl.get_item_metadata(j))))      # (the number follows the picture)
 			_spin(side, "level", 0, 99, foe_lv, func(v): foe_lv = int(v))
+			_spin(side, "look (set)", 0, 3999, foe_look, func(v): foe_look = int(v); _update_preview())
 			_preview_box()
 			_update_preview()
 		"PERSON":
@@ -1411,7 +1591,11 @@ func _refresh_side() -> void:
 				_lab("Drag it to move it.")
 		"COPY", "PASTE":
 			_lab("COPY: drag a box. PASTE: click where its top-left goes. Clipboard: %s" % ("empty" if clipboard.is_empty() else "%d x %d" % [clipboard["w"], clipboard["h"]]))
+			var kg = CheckBox.new(); kg.text = "KEEP THE GROUND THERE (G)"; kg.button_pressed = keep_ground
+			kg.toggled.connect(func(on): keep_ground = on); side.add_child(kg)
 			if not clipboard.is_empty():
+				var mh = Button.new(); mh.text = "MIRROR LEFT-RIGHT (X)"; mh.pressed.connect(mirror_clipboard.bind(true)); side.add_child(mh)
+				var mv = Button.new(); mv.text = "MIRROR UPSIDE DOWN (Y)"; mv.pressed.connect(mirror_clipboard.bind(false)); side.add_child(mv)
 				var sn = _line(side, "thing name", "MY THING", func(_t): pass)
 				var sb = Button.new(); sb.text = "SAVE THE COPY AS A THING"; side.add_child(sb)
 				sb.pressed.connect(func():
@@ -1435,6 +1619,8 @@ func _refresh_side() -> void:
 		"THINGS":
 			if stamps.is_empty():
 				stamps = MT.list_stamps()
+			var kg2 = CheckBox.new(); kg2.text = "KEEP THE GROUND THERE (G)"; kg2.button_pressed = keep_ground
+			kg2.toggled.connect(func(on): keep_ground = on); side.add_child(kg2)
 			var il = ItemList.new(); il.custom_minimum_size = Vector2(230, 260); il.fixed_icon_size = Vector2i(40, 40)
 			il.max_columns = 1
 			for st in stamps:
@@ -1488,6 +1674,7 @@ func _refresh_side() -> void:
 			_lab("Drag a box: in it the place is dark (a light round each fighter), has weather or its own music. SELECT (click inside) to delete.")
 		"WALL", "GROUND":
 			_lab("Red = wall (WALLS on). Paint walls or walkable ground. The game's own walls are kept exactly; change only what you mean to.")
+			_spin(side, "brush size", 1, 32, paint_size, func(v): paint_size = int(v); overlay.queue_redraw())
 		_:
 			_lab(TOOL_HELP.get(tool, ""))
 
@@ -1520,7 +1707,7 @@ func _preview_box() -> void:
 func _update_preview() -> void:
 	if preview == null:
 		return
-	var st = person_set if tool == "PERSON" else Rules.kind_to_type_set(foe_type)[1]
+	var st = person_set if tool == "PERSON" else (foe_look if foe_look > 0 else Rules.kind_to_type_set(foe_type)[1])
 	preview.set_sprite_set(Assets.sprite_set(st))
 	preview.show_frame(1, 0, 0)
 

@@ -729,12 +729,7 @@ func hit(id: int, dmg: int, kx: float, ky: float, stun: int = 12, kind: int = 1,
 
 var player_lv = 1           # the players' level here (the host sets it): foes coming back keep up with it
 func _respawn(e: Dictionary, p: Vector2) -> void:
-	if not e["boss"] and player_lv > int(e["lvl"]):
-		var ne = make_enemy(int(e["id"]), int(e["type"]), int(e["set"]), p, player_lv + rng.randi_range(-1, 1), false, false)
-		for k in ["hp", "maxhp", "atk", "lvl", "exp", "base_hp", "base_atk"]:
-			e[k] = ne[k]
-		e["elite"] = false
-	e["alive"] = true
+	e["alive"] = true      # (back as it was: its own strength, as in the original game)
 	e["x"] = p.x; e["y"] = p.y
 	e["hx"] = p.x; e["hy"] = p.y
 	e["state"] = "spawning"; e["t"] = 0

@@ -2,6 +2,8 @@ extends Node
 ## Everything the game shows comes from the player's own game, turned into an "imported" folder
 ## by godot_export(.exe) the first time (nothing of the game is shipped).
 
+var _json_lock: Mutex      # (the outfits are made ahead on another thread: the JSON cache is shared; made on first use)
+var _built_lock: Mutex
 var base_dir = ""
 var _json = {}
 var _tex = {}
@@ -11,6 +13,16 @@ var data = {}            # enemies, forms, fighters, levels, strings, items
 var import_thread: Thread
 var import_result = -1
 var import_log = ""
+# the loading bar (import screen): how far, which step, and that step's count
+var import_frac = 0.0
+var import_step = ""
+var import_count = ""
+var import_ms0 = 0
+## the importer's steps: their part of the bar (measured: the maps take half the time) and what the bar says
+const IMPORT_STEPS = {"start": [0.0, 0.0, "Starting"], "sprites": [0.0, 0.18, "Reading the characters"],
+	"maps": [0.18, 0.73, "Reading the maps"], "data": [0.73, 0.74, "Reading foes and people"],
+	"kit": [0.74, 0.77, "Sorting the map pieces"], "lands": [0.77, 0.87, "Joining the lands"],
+	"earth": [0.87, 0.99, "Laying out Earth"], "ui": [0.99, 1.0, "Menus and fonts"], "done": [1.0, 1.0, "Done"]}
 
 const BASE_HEROES = ["GOHAN", "PICCOLO", "VEGETA", "TRUNKS", "GOKU", "MR. SATAN"]
 var CHARACTERS = ["GOHAN", "PICCOLO", "VEGETA", "TRUNKS", "GOKU", "MR. SATAN"]   # + your team's own (content/heroes.json)
@@ -24,6 +36,42 @@ func refresh_heroes() -> void:
 		var id = str(h.get("id", "")).to_upper()
 		if id != "" and not CHARACTERS.has(id):
 			CHARACTERS.append(id)
+
+## OUTFITS (the character screen's L / R): a hero's looks; the level and the save stay the hero's
+func outfits(ch: int) -> Array:
+	if ch < 0 or ch >= CHARACTERS.size():
+		return []
+	var o = Mods.hero_entry(CHARACTERS[ch]).get("outfits", [])
+	return o if o is Array else []
+
+func outfit_index(ch: int) -> int:
+	var n = outfits(ch).size()
+	if n == 0:
+		return 0
+	var picks = Game.cfg.get("outfit", {})
+	return clampi(int(picks.get(CHARACTERS[ch], 0)) if picks is Dictionary else 0, 0, n - 1)
+
+func outfit_of(ch: int) -> Dictionary:
+	var o = outfits(ch)
+	return o[outfit_index(ch)] if not o.is_empty() and o[outfit_index(ch)] is Dictionary else {}
+
+## the name the character screen shows: the outfit's, or the hero's own
+func hero_shown_name(ch: int) -> String:
+	var o = outfit_of(ch)
+	if o.has("name"):
+		return str(o["name"])
+	return str(Mods.hero_entry(CHARACTERS[ch]).get("name", CHARACTERS[ch]))
+
+func set_outfit(ch: int, i: int) -> void:
+	var n = outfits(ch).size()
+	if n == 0:
+		return
+	var picks = Game.cfg.get("outfit", {})
+	if not picks is Dictionary:
+		picks = {}
+	picks[CHARACTERS[ch]] = posmod(i, n)
+	Game.cfg["outfit"] = picks
+	Game.save_options()
 
 ## the game hero a hero plays like (itself for the game's own)
 func hero_base(ch: int) -> int:
@@ -52,13 +100,25 @@ func exe_dir() -> String:
 		return ProjectSettings.globalize_path("res://").get_base_dir()
 	if OS.has_feature("android"):
 		return _android_dir()
-	return OS.get_executable_path().get_base_dir()
+	var ep = OS.get_executable_path()
+	if OS.get_name() == "macOS" and ep.contains(".app/Contents/MacOS"):
+		return ep.substr(0, ep.find(".app/Contents/MacOS")).get_base_dir()      # the folder the app is in (its data sits beside it)
+	return ep.get_base_dir()
 
 ## Android: no folder next to the program - the game's folders (content, modpacks, imported...) come packed in
 ## the APK (res://bundle/gamedata.pack, made by tools/make_pack.py) and are unpacked into the app's own folder
 ## on the first start: [8 bytes: index length][index JSON: [{"p", "s"}...]][the files, in that order]
-const BUNDLE_VERSION = "v44-4"
+const BUNDLE_VERSION = "v44-49"
 var _android_root = ""
+func _remove_tree(path: String) -> void:
+	if not DirAccess.dir_exists_absolute(path):
+		return
+	for d in DirAccess.get_directories_at(path):
+		_remove_tree(path.path_join(d))
+	for f in DirAccess.get_files_at(path):
+		DirAccess.remove_absolute(path.path_join(f))
+	DirAccess.remove_absolute(path)
+
 func _android_dir() -> String:
 	if _android_root != "":
 		return _android_root
@@ -74,6 +134,8 @@ func _android_dir() -> String:
 	if not index is Array:
 		printerr("[assets] the game data's index is broken")
 		return _android_root
+	for gone in ["modpacks/Example_NewHero"]:      # shipped by an older version, no longer (Shadow Goku is an outfit now)
+		_remove_tree(_android_root.path_join(gone))
 	print("[assets] unpacking ", index.size(), " files into ", _android_root)
 	var t0 = Time.get_ticks_msec()
 	for e in index:
@@ -98,6 +160,21 @@ func _android_dir() -> String:
 		mf.store_string(BUNDLE_VERSION)
 		mf.close()
 	return _android_root
+
+## does a sprite set have a sideways pose of its own in the flying row (12)? Some heroes' row 12 is another pose
+## (Mr. Satan's dazed one) whose left and right frames are the front frame again: those fly sideways in their walk
+var _side_fly = {}
+func has_side_fly(set_id: int) -> bool:
+	if _side_fly.has(set_id):
+		return _side_fly[set_id]
+	var ok = true
+	var d = sprite_set(set_id)
+	if not d.is_empty() and d["tex"] != null and d["slots"].size() > 51 and d["slots"][48].size() > 0 and d["slots"][50].size() > 0:
+		var img: Image = d["tex"].get_image()
+		var c: int = d["cell"]
+		ok = img.get_region(Rect2i(0, 48 * c, c, c)).get_data() != img.get_region(Rect2i(0, 50 * c, c, c)).get_data()
+	_side_fly[set_id] = ok
+	return ok
 
 ## the GBA menus' own fonts, read from the player's game file by the importer (ui/font_head, ui/font_small):
 ## a pixel font Labels and Buttons can use at font size 16 (draw with a 1-pixel shadow down-right, like the game)
@@ -144,7 +221,7 @@ func find_import_dir() -> String:
 		return d
 	return ""
 
-const IMPORT_VERSION = 24    # 24 the title menu's little Dragon Ball (the menus' cursor), 23 same Earth for everyone + the GBA menus' title, galaxy and fonts (Android port), 22 grass tufts and clumps of them walked over (Android port), 21 invisible walls opened everywhere: lone walls with nothing on them that stands out from the ground (Android port), 20 flowers and the like on the new land are walked over (Android port), 19 no doors into story scenes' backdrops (they showed as a jumble of tiles), 18 the sea is the game's own water, 2 kit and lands, 3 songs, 4 foes' attacks, 5 grown land, 6 heroes' effects + one world per land, 7 people, 8 smoother grown land, 9 recorded songs mended, 10 ledges opened (the lands join up), calmer city edges, 11 the heroes' own attacks, 12 the foes' own behaviour scripts + attack animations, 13 EARTH: the whole planet as one map, 14 every place on it (doors without loading), 15 collision mended (no invisible walls, nothing walked through), 16 the country between places built the way the game builds its maps, 17 the game's own collision kept
+const IMPORT_VERSION = 36    # 36 EARTH comes with the game (only its minimap drawn on import), 35 rooms behind doors have black round them (no mirrored copies), 34 grass mixed round the game's own buildings too, no wall in small trees' leaves, 33 the green country's grass mixed, field tree trunks block, 32 tree trunks under whole-tree canopies block again, fluffy trees' shading opens, 31 the Northern Mountains' grass mixed like its forests', 30 the clothes on the ground east of Gingertown walked over, 29 you walk under the trees' leaves (only trunks block), 28 grass patches in the snowy country made snow, 27 the neon-green grass laid again with the game's yellow-green grass, 26 Krillin's flying frames (his set read past a longer gap), 25 rows of flowers and bigger grass clumps walked over (invisible-wall patches up to 48 cells), 24 the title menu's little Dragon Ball (the menus' cursor), 23 same Earth for everyone + the GBA menus' title, galaxy and fonts (Android port), 22 grass tufts and clumps of them walked over (Android port), 21 invisible walls opened everywhere: lone walls with nothing on them that stands out from the ground (Android port), 20 flowers and the like on the new land are walked over (Android port), 19 no doors into story scenes' backdrops (they showed as a jumble of tiles), 18 the sea is the game's own water, 2 kit and lands, 3 songs, 4 foes' attacks, 5 grown land, 6 heroes' effects + one world per land, 7 people, 8 smoother grown land, 9 recorded songs mended, 10 ledges opened (the lands join up), calmer city edges, 11 the heroes' own attacks, 12 the foes' own behaviour scripts + attack animations, 13 EARTH: the whole planet as one map, 14 every place on it (doors without loading), 15 collision mended (no invisible walls, nothing walked through), 16 the country between places built the way the game builds its maps, 17 the game's own collision kept
 func ready_to_play() -> bool:
 	return base_dir != "" and import_version() >= IMPORT_VERSION
 
@@ -157,8 +234,113 @@ func import_version() -> int:
 func load_data() -> void:
 	for k in ["enemies", "forms", "fighters", "levels", "strings", "items", "ai"]:
 		data[k] = json(base_dir.path_join("data/%s.json" % k))
+	# the levels: the game's own 50 (past 50 the table read on into other data)
+	if data.get("levels") is Array and data["levels"].size() >= MAX_LEVEL:
+		var lv = []
+		for i in MAX_LEVEL:
+			lv.append(int(data["levels"][i]))
+		data["levels"] = lv
 	_rom_enemies = data["enemies"].duplicate(true) if data.get("enemies") != null else []
 	apply_enemy_overrides()
+	start_music_render()
+
+# ------------------------------------------------------------------ the game's own songs
+## played by the game's own sound engine from your game file (the importer's "music" job, run in the background
+## after the import): imported/music/song_NN.qoa with its loop in song_NN.json. The menus' song comes first.
+const MENU_SONG = 15
+const MAX_LEVEL = 50      # as in the original game
+var music_thread: Thread
+func game_music_dir() -> String:
+	return base_dir.path_join("music")
+
+## the music question's answer ("play": record while playing, "now": all first, "": not asked yet) - kept with this
+## copy's songs (not in the settings every copy shares), so a new copy or a new read of your game asks once
+func music_mode() -> String:
+	var f = game_music_dir().path_join("music_mode.txt") if base_dir != "" else ""
+	return FileAccess.get_file_as_string(f).strip_edges() if f != "" and FileAccess.file_exists(f) else ""
+
+func set_music_mode(m: String) -> void:
+	if base_dir == "":
+		return
+	DirAccess.make_dir_recursive_absolute(game_music_dir())
+	var fa = FileAccess.open(game_music_dir().path_join("music_mode.txt"), FileAccess.WRITE)
+	if fa:
+		fa.store_string(m)
+		fa.close()
+
+func game_song_ready(n: int) -> bool:
+	return base_dir != "" and FileAccess.file_exists(game_music_dir().path_join("song_%02d.json" % n))
+
+## songs still to record (the menus' first, then the ones the most places use); 0 = all there
+func songs_missing() -> int:
+	return _song_order().filter(func(s): return not game_song_ready(int(s))).size()
+
+func _song_order() -> Array:
+	var order = [MENU_SONG]
+	var cnt = {}
+	var km = json(base_dir.path_join("kit/maps.json")) if base_dir != "" else null
+	if km != null:
+		for mm in km["maps"]:
+			var s = int(mm.get("song", -1))
+			if s >= 0:
+				cnt[s] = cnt.get(s, 0) + 1
+	var used = cnt.keys()
+	used.sort_custom(func(x, y): return cnt[x] > cnt[y])
+	for s in used + range(44):
+		if not order.has(s):
+			order.append(s)
+	return order
+
+## the song of the place you walk into: recorded next (you hear it in seconds, not at its turn)
+var music_want = -1
+var music_done = 0
+var music_total = 0
+func want_song(n: int) -> void:
+	music_want = n
+
+func start_music_render() -> void:
+	if base_dir == "" or (music_thread != null and music_thread.is_alive()):
+		return
+	if music_mode() == "":
+		return      # not chosen yet: the menu asks (record while playing, or all now)
+	var rom = FileAccess.get_file_as_string("user://rom_path.txt").strip_edges() if FileAccess.file_exists("user://rom_path.txt") else ""
+	if rom == "" or not FileAccess.file_exists(rom):
+		var g = exe_dir().path_join("game.gba")
+		rom = g if FileAccess.file_exists(g) else ""
+	if rom == "":
+		return
+	# the menus' song, then the songs the most places use, then the rest
+	var todo = _song_order().filter(func(s): return not game_song_ready(int(s)))
+	if todo.is_empty():
+		return
+	if music_thread != null:
+		music_thread.wait_to_finish()
+	music_thread = Thread.new()
+	music_thread.start(_music_worker.bind(rom, todo))
+
+## one song at a time (the recorder lowers its own priority: the game comes first), the wanted one first
+func _music_worker(rom: String, todo: Array) -> void:
+	DirAccess.make_dir_recursive_absolute(game_music_dir())
+	music_total = todo.size()
+	music_done = 0
+	print("[assets] the game's songs: ", todo.size(), " to play and keep")
+	while not todo.is_empty() and not _quitting:
+		var s = todo[0]
+		if music_want >= 0 and todo.has(music_want):
+			s = music_want
+		music_want = -1
+		todo.erase(s)
+		if not game_song_ready(int(s)):
+			# its own process, checked every 0.1 s, so quitting the game stops it at once
+			var pid = OS.create_process(importer_path(), ["music", rom, game_music_dir(), str(s)])
+			while pid > 0 and OS.is_process_running(pid):
+				if _quitting:
+					OS.kill(pid)
+					DirAccess.remove_absolute(game_music_dir().path_join("song_%02d.json" % int(s)))   # half-written
+					break
+				OS.delay_msec(100)
+		music_done += 1
+	print("[assets] songs done")
 
 ## your team's numbers for each kind of foe (content/enemies.json "types": lvl, hp, atk, exp, w8) over the game's
 var _rom_enemies = []
@@ -215,6 +397,10 @@ func importer_path() -> String:
 
 func start_import(rom_path: String) -> void:
 	import_result = -1
+	import_frac = 0.0
+	import_step = "Starting"
+	import_count = ""
+	import_ms0 = Time.get_ticks_msec()
 	import_thread = Thread.new()
 	import_thread.start(_import_worker.bind(rom_path))
 
@@ -229,21 +415,75 @@ func _import_worker(rom_path: String) -> void:
 	var adv = exe_dir().path_join("adventures")
 	var output = []
 	print("[assets] importer: ", tool, " ", rom_path, " -> ", out_dir)
-	var code = OS.execute(tool, [rom_path, out_dir, adv], output, true)
+	var code = _run_importer(tool, _import_args(rom_path, out_dir, adv), output)
 	print("[assets] importer exit ", code, ": ", "\n".join(PackedStringArray(output)).right(400))
 	import_log = "\n".join(PackedStringArray(output))
 	if code != 0 or not FileAccess.file_exists(out_dir.path_join("version.txt")):
 		# a folder we may not write to: the user folder instead
 		out_dir = ProjectSettings.globalize_path("user://imported")
 		output.clear()
-		code = OS.execute(tool, [rom_path, out_dir, adv], output, true)
+		code = _run_importer(tool, _import_args(rom_path, out_dir, adv), output)
 		import_log += "\n".join(PackedStringArray(output))
 	# the other games found next to it (Buu's Fury, The Legacy of Goku): for the DEV TOOLS
 	if code == 0:
 		var roms = library_roms()
 		for g in roms:
+			import_step = "Reading your other games (%s)" % str(g).to_upper()
+			import_count = ""
 			OS.execute(tool, ["library", roms[g], out_dir], [], true)
 	call_deferred("_import_done", code)
+
+## the importer's words; EARTH comes with the game (builtin/earth): written in first, so the importer only
+## draws its minimap ("noearth" - growing the country took most of the import's time and memory)
+func _import_args(rom_path: String, out_dir: String, adv: String) -> Array:
+	var args = [rom_path, out_dir, adv]
+	var src = builtin_dir().path_join("earth/earth_base.gz")
+	var lj = builtin_dir().path_join("earth/lands.json")
+	if not FileAccess.file_exists(src) or not FileAccess.file_exists(lj):
+		return args
+	var zd = out_dir.path_join("kit/lands/0")
+	DirAccess.make_dir_recursive_absolute(zd)
+	var body = FileAccess.get_file_as_bytes(src).decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
+	var f = FileAccess.open(zd.path_join("0.bin"), FileAccess.WRITE)
+	if f == null or body.size() < 8:
+		return args
+	f.store_buffer(body)
+	f.close()
+	body = PackedByteArray()
+	DirAccess.copy_absolute(lj, zd.path_join("lands.json"))
+	# laid in already: the game need not do it again
+	var ver = FileAccess.get_file_as_string(builtin_dir().path_join("earth/version.txt")).strip_edges()
+	var sf = FileAccess.open(zd.path_join("earth_base.txt"), FileAccess.WRITE)
+	if sf:
+		sf.store_string("%s|%d" % [ver, FileAccess.get_modified_time(zd.path_join("0.bin"))])
+		sf.close()
+	args.append("noearth")
+	return args
+
+## the importer run with its words read as they come (the loading bar moves with them); its exit code
+func _run_importer(tool: String, args: Array, output: Array) -> int:
+	var p: Dictionary = OS.execute_with_pipe(tool, PackedStringArray(args))
+	if p.is_empty():
+		return OS.execute(tool, args, output, true)      # (no pipes here: all at the end)
+	var err: FileAccess = p["stderr"]
+	var lines = []
+	while true:
+		var l = err.get_line()
+		if err.get_error() != OK and l == "":
+			break
+		lines.append(l)
+		var w = l.split(" ")
+		if w.size() >= 4 and w[0] == "[progress]" and IMPORT_STEPS.has(w[1]):
+			var st: Array = IMPORT_STEPS[w[1]]
+			var of = maxi(1, int(w[3]))
+			import_frac = lerpf(float(st[0]), float(st[1]), clampf(float(w[2]) / of, 0.0, 1.0))
+			import_step = str(st[2])
+			import_count = "%d of %d" % [mini(int(w[2]) + 1, of), of] if of > 1 else ""
+	var pid = int(p["pid"])
+	while OS.is_process_running(pid):
+		OS.delay_msec(20)
+	output.append("\n".join(PackedStringArray(lines.filter(func(x): return not str(x).begins_with("[progress]")))))
+	return OS.get_process_exit_code(pid)
 
 func _import_done(code: int) -> void:
 	import_thread.wait_to_finish()
@@ -350,13 +590,21 @@ func library_sets(g: String) -> Array:
 
 # ------------------------------------------------------------------ files
 func json(path: String) -> Variant:
+	if _json_lock == null:
+		_json_lock = Mutex.new()
+	_json_lock.lock()
 	if _json.has(path):
-		return _json[path]
+		var c = _json[path]
+		_json_lock.unlock()
+		return c
+	_json_lock.unlock()
 	var f = FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return null
 	var v = JSON.parse_string(f.get_as_text())
+	_json_lock.lock()
 	_json[path] = v
+	_json_lock.unlock()
 	return v
 
 func texture(path: String) -> Texture2D:
@@ -377,30 +625,105 @@ func image(path: String) -> Image:
 
 # ------------------------------------------------------------------ sprite sets
 ## {tex, cell, slots: [[{x,y,w,h}...]...]}
+## the outfits' pictures made ahead on another thread (the character screen): switching outfits does not hitch
+var _built = {}
+func prewarm_sets(ids: Array) -> void:
+	if _built_lock == null:
+		_built_lock = Mutex.new()
+	var todo = []
+	for n in ids:
+		if int(n) >= 0 and not _sets.has(int(n)) and not todo.has(int(n)):
+			todo.append(int(n))
+	if todo.is_empty():
+		return
+	var lk: Mutex = _built_lock      # (the thread keeps its own hold on the lock and the results: safe at quit)
+	var built: Dictionary = _built
+	_prewarm_task = WorkerThreadPool.add_task(func():
+		for n in todo:
+			if _quitting:
+				return
+			lk.lock(); var have = built.has(n); lk.unlock()
+			if have:
+				continue
+			var r = _build_set(n)
+			lk.lock(); built[n] = r; lk.unlock())
+
+var _prewarm_task = -1
+var _quitting = false
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE or what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_quitting = true
+		if music_thread != null and music_thread.is_started():
+			music_thread.wait_to_finish()
+		if _prewarm_task >= 0:
+			WorkerThreadPool.wait_for_task_completion(_prewarm_task)
+			_prewarm_task = -1
+
 func sprite_set(n: int) -> Dictionary:
 	if _sets.has(n):
 		return _sets[n]
+	if _built_lock == null:
+		_built_lock = Mutex.new()
+	_built_lock.lock()
+	var r = _built.get(n, {})
+	_built.erase(n)
+	_built_lock.unlock()
+	if r.is_empty():
+		r = _build_set(n)
 	var d = {}
+	if r.has("j"):
+		var j: Dictionary = r["j"]
+		var rule: Dictionary = r["rule"]
+		var tex: Texture2D = texture(r["path"]) if r["img"] == null else ImageTexture.create_from_image(r["img"])
+		d = {"tex": tex, "cell": int(j["cell"]), "slots": j["slots"]}
+		if r["img"] != null:
+			d["img"] = r["img"]      # kept: the menus cut pictures from it without reading the texture back
+		if rule.get("villain_fx", false):       # a villain played as a hero: red when hit, smoke when beaten (actor_view)
+			d["villain_fx"] = true
+			d["smoke_down"] = rule.get("smoke_down", false)
+		if rule.get("hand_band") is Array:      # where the hands can be (King Cold: his cape reaches out further at the hips)
+			d["hand_band"] = rule["hand_band"]
+	_sets[n] = d
+	return d
+
+## a set's picture worked out (colours, made poses, overlay, frame boxes): no textures, so it can run on another thread
+func _build_set(n: int) -> Dictionary:
 	var b = set_base(n)
 	var j = json(set_path(b, "json"))
-	if j != null:
-		var rule = color_rule_for_set(n)
-		var path = set_path(b, "png")
-		var tex: Texture2D = texture(path) if rule.is_empty() else null
+	if j == null:
+		return {}
+	var rule = color_rule_for_set(n)
+	var path = set_path(b, "png")
+	var out_img: Image = null
+	if true:
 		if not rule.is_empty():
 			var img = image(path)
 			if img != null:
 				img = recolor(img, rule)
+				if rule.get("canvas") is Array:      # a sheet with more frames or poses than the game's set (a new hero's): room made first
+					var cw = maxi(img.get_width(), int(rule["canvas"][0])); var chh = maxi(img.get_height(), int(rule["canvas"][1]))
+					if cw != img.get_width() or chh != img.get_height():
+						var big = Image.create(cw, chh, false, Image.FORMAT_RGBA8)
+						img.convert(Image.FORMAT_RGBA8)
+						big.blit_rect(img, Rect2i(Vector2i.ZERO, img.get_size()), Vector2i.ZERO)
+						img = big
+				if rule.get("make") is Dictionary:      # poses the set never had, made from its own frames (a recipe)
+					img = make_poses(img, rule["make"], int(j["cell"]))
 				if str(rule.get("overlay", "")) != "":
 					img = apply_overlay(img, str(rule.get("_dir", "")).path_join(str(rule["overlay"])))
 					j = j.duplicate(true)      # drawn pixels may reach past the base set's frames (an outline): 2 more each way right and down
 					for sl in j["slots"]:
 						for f in sl:
 							f["w"] = int(f["w"]) + 2; f["h"] = int(f["h"]) + 2
-				tex = ImageTexture.create_from_image(img)
-		d = {"tex": tex, "cell": int(j["cell"]), "slots": j["slots"]}
-	_sets[n] = d
-	return d
+				if rule.get("frames") is Dictionary:       # new poses drawn in their own boxes (Mr. Satan flying sideways)
+					j = j.duplicate(true)
+					for sk in rule["frames"]:
+						var si = int(sk)
+						while j["slots"].size() <= si:
+							j["slots"].append([])
+						j["slots"][si] = rule["frames"][sk].duplicate(true)
+				out_img = img
+	return {"j": j, "rule": rule, "path": path, "img": out_img}
 
 ## a sprite set's file: your team's own (content/sprites: made or changed in DEV TOOLS - SPRITES), a mod's, or the import's
 func set_path(n: int, ext: String) -> String:
@@ -443,6 +766,9 @@ func load_colors() -> void:
 			continue
 		for k in ["sets", "tiles"]:
 			if t.get(k) is Dictionary:
+				for sk in t[k]:
+					if t[k][sk] is Dictionary and t[k][sk].has("overlay"):
+						t[k][sk]["_dir"] = f.get_base_dir().path_join("sprites")
 				colors[k].merge(t[k], true)
 		if t.get("variants") is Array:
 			for v in t["variants"]:
@@ -502,7 +828,7 @@ func recolor(src: Image, rule: Dictionary) -> Image:
 		if memo.has(v):
 			px[i] = memo[v]
 			continue
-		var o = v | 0xFF000000
+		var o = (v & 0xFFFFFF) | 0xFF000000      # (unsigned, as the swap list keeps them: a pixel read back is signed)
 		var w = swaps.get(o, o)
 		if hsv:
 			var c = Color8(w & 0xFF, (w >> 8) & 0xFF, (w >> 16) & 0xFF)
@@ -512,6 +838,71 @@ func recolor(src: Image, rule: Dictionary) -> Image:
 		memo[v] = w
 		px[i] = w
 	return Image.create_from_data(img.get_width(), img.get_height(), false, Image.FORMAT_RGBA8, px.to_byte_array())
+
+## POSES FROM A RECIPE: {"slot": [{"from": [slot, frame], "ops": [["mirror"], ["shift", dx, dy], ["bright", k],
+## ["rot", quarter], ["tilt", t]]}, ...]} - each frame made from one of the set's own frames (so nothing of the game ships)
+func make_poses(src: Image, recipe: Dictionary, cell: int) -> Image:
+	var rows = 0
+	for k in recipe:
+		rows = maxi(rows, int(k) + 1)
+	var img = Image.create(maxi(src.get_width(), 7 * cell), maxi(src.get_height(), rows * cell), false, Image.FORMAT_RGBA8)
+	var s2 = src.duplicate()
+	s2.convert(Image.FORMAT_RGBA8)
+	img.blit_rect(s2, Rect2i(Vector2i.ZERO, s2.get_size()), Vector2i.ZERO)
+	for k in recipe:
+		var slot = int(k)
+		var list: Array = recipe[k]
+		# the slot's old pictures go (a side that was only the front again)
+		img.fill_rect(Rect2i(0, slot * cell, img.get_width(), cell), Color(0, 0, 0, 0))
+		for f in list.size():
+			var r: Dictionary = list[f]
+			var fr = r.get("from", [0, 0])
+			var c = s2.get_region(Rect2i(int(fr[1]) * cell, int(fr[0]) * cell, cell, cell)) if int(fr[0]) * cell < s2.get_height() else Image.create(cell, cell, false, Image.FORMAT_RGBA8)
+			for o in r.get("ops", []):
+				c = _pose_op(c, o, cell)
+			img.blit_rect(c, Rect2i(0, 0, cell, cell), Vector2i(f * cell, slot * cell))
+	return img
+
+func _pose_op(c: Image, o: Array, cell: int) -> Image:
+	var used = c.get_used_rect()
+	match str(o[0]):
+		"mirror":         # turned round where it stands
+			if used.size.x > 0:
+				var fig = c.get_region(used); fig.flip_x()
+				var out = Image.create(cell, cell, false, Image.FORMAT_RGBA8)
+				out.blit_rect(fig, Rect2i(Vector2i.ZERO, fig.get_size()), used.position)
+				return out
+		"shift":
+			var out = Image.create(cell, cell, false, Image.FORMAT_RGBA8)
+			out.blit_rect(c, Rect2i(0, 0, cell, cell), Vector2i(int(o[1]), int(o[2])))
+			return out
+		"bright":
+			var out = c.duplicate()
+			var k = float(o[1]) / 255.0
+			for y in cell:
+				for x in cell:
+					var p = out.get_pixel(x, y)
+					if p.a > 0:
+						out.set_pixel(x, y, Color(minf(1, p.r + k), minf(1, p.g + k), minf(1, p.b + k), p.a))
+			return out
+		"rot":            # a quarter turn, keeping the lowest middle where it was
+			if used.size.x > 0:
+				var fig = c.get_region(used)
+				fig.rotate_90(COUNTERCLOCKWISE if int(o[1]) > 0 else CLOCKWISE)
+				var out = Image.create(cell, cell, false, Image.FORMAT_RGBA8)
+				var cx = used.position.x + used.size.x / 2
+				var nx = clampi(cx - fig.get_width() / 2, 0, cell - fig.get_width())
+				var ny = clampi(used.end.y - fig.get_height(), 0, cell - fig.get_height())
+				out.blit_rect(fig, Rect2i(Vector2i.ZERO, fig.get_size()), Vector2i(nx, ny))
+				return out
+		"tilt":           # leaning over: each row slides a little more the higher it is
+			if used.size.x > 0:
+				var out = Image.create(cell, cell, false, Image.FORMAT_RGBA8)
+				for y in range(used.position.y, used.end.y):
+					var off = int(roundf((used.end.y - y) * 0.6 * float(o[1])))
+					out.blit_rect(c, Rect2i(0, y, cell, 1), Vector2i(off, y))
+				return out
+	return c
 
 ## a variant's own pixels laid over its base set (pictures redrawn by hand, shipped as only the pixels that differ):
 ## an opaque pixel replaces the set's, a half-transparent one (alpha 128) clears it, a clear one keeps it
@@ -555,7 +946,19 @@ func _sheet_image(game: String) -> Image:
 		return null
 	var img = Image.load_from_file(path)
 	var rule = colors["tiles"].get("kit" if game == "" else game, {})
-	return recolor(img, rule) if img != null else null
+	if img == null:
+		return null
+	if rule.get("only") is Array:      # colours swapped in these tiles alone (the neon-green grass made like the grass beside it)
+		img.convert(Image.FORMAT_RGBA8)
+		var cols = img.get_width() / 8
+		for t in rule["only"]:
+			var r = Rect2i((int(t) % cols) * 8, (int(t) / cols) * 8, 8, 8)
+			if r.end.y > img.get_height():
+				continue
+			var part = recolor(img.get_region(r), {"swaps": rule.get("swaps", {})})
+			img.blit_rect(part, Rect2i(Vector2i.ZERO, r.size), r.position)
+		return img
+	return recolor(img, rule)
 
 func fx(name: String) -> Dictionary:
 	var key = "fx_" + name
@@ -580,6 +983,29 @@ func efx(name: String) -> Dictionary:
 	_sets[key] = d
 	return d
 
+## how big a set's fighter stands (its first standing frame's own pixels): for moves made for someone smaller or bigger
+var _body = {}
+func body_size(set_id: int) -> Vector2:
+	if _body.has(set_id):
+		return _body[set_id]
+	var r = Vector2(16, 30)
+	var d = sprite_set(set_id)
+	if not d.is_empty() and d["tex"] != null:
+		var img = _set_image(set_id, d)
+		var c: int = d["cell"]
+		if img != null and img.get_height() >= c:
+			var u = img.get_region(Rect2i(0, 0, c, c)).get_used_rect()
+			if u.size.y > 0:
+				r = Vector2(u.size)
+	_body[set_id] = r
+	return r
+
+## the set's finished picture (its outfit's colours, the poses a recipe added): what the hand and the charge are read from
+func _set_image(set_id: int, d: Dictionary) -> Image:
+	if not d.is_empty() and d["tex"] != null:
+		return d["tex"].get_image()
+	return image(set_path(set_base(set_id), "png"))
+
 ## where the hand is in a pose (offset from the feet): the furthest pixel toward where the fighter faces,
 ## read from the fighter's own sprite (so a blast leaves exactly from the hand, for every fighter and form)
 var _hands = {}
@@ -598,8 +1024,10 @@ func hand_point(set_id: int, anim: int, dir: int) -> Vector2:
 			var fi = slots[s].size() - 1
 			var f: Dictionary = slots[s][fi]
 			if not _imgs.has(set_id):
-				_imgs[set_id] = image(set_path(set_base(set_id), "png"))
+				_imgs[set_id] = _set_image(set_id, d)
 			var img: Image = _imgs[set_id]
+			if img != null and (s + 1) * int(d["cell"]) > img.get_height():
+				img = null          # (a pose the picture does not have: the usual hand place)
 			if img != null and dir >= 2:
 				var cell: int = d["cell"]
 				var ox = fi * cell
@@ -608,9 +1036,15 @@ func hand_point(set_id: int, anim: int, dir: int) -> Vector2:
 				var ys = []
 				var w = int(f["w"]); var h = int(f["h"])
 				var xr = range(w - 1, -1, -1) if dir == 3 else range(0, w)
+				var y0 = 0
+				var y1 = h - 6
+				if d.has("hand_band"):
+					var u = img.get_region(Rect2i(ox, oy, mini(w, cell), mini(h, cell))).get_used_rect()
+					y0 = u.position.y + int(u.size.y * float(d["hand_band"][0]))
+					y1 = mini(y1, u.position.y + int(u.size.y * float(d["hand_band"][1])))
 				for x in xr:
-					for y in h:
-						if img.get_pixel(ox + x, oy + y).a > 0.5 and y < h - 6:
+					for y in range(y0, y1):
+						if img.get_pixel(ox + x, oy + y).a > 0.5:
 							ys.append(y)
 					if not ys.is_empty():
 						best_x = x
@@ -622,6 +1056,52 @@ func hand_point(set_id: int, anim: int, dir: int) -> Vector2:
 					my /= ys.size()
 					res = Vector2(float(f["x"]) + best_x + (2 if dir == 3 else -2), float(f["y"]) + my)
 	_hands[key] = res
+	return res
+
+## where the eyes are in a pose (offset from the feet): the red eye pixels in the top half of the figure (Cooler's red
+## eye); without any, a third of the way down from the top of the figure, toward where the fighter faces
+var _eyes = {}
+func eye_point(set_id: int, anim: int, dir: int) -> Vector2:
+	var key = "%d_%d_%d" % [set_id, anim, dir]
+	if _eyes.has(key):
+		return _eyes[key]
+	var b = body_size(set_id)
+	var res = Vector2({2: -0.3, 3: 0.3}.get(dir, 0.0) * b.x, -b.y * 0.66)
+	var d = sprite_set(set_id)
+	if not d.is_empty():
+		var slots: Array = d["slots"]
+		var s = anim * 4 + dir
+		if s < slots.size() and slots[s].size() > 0:
+			var f: Dictionary = slots[s][0]
+			if not _imgs.has(set_id):
+				_imgs[set_id] = _set_image(set_id, d)
+			var img: Image = _imgs[set_id]
+			var cell: int = d["cell"]
+			if img != null and (s + 1) * cell <= img.get_height():
+				var u = img.get_region(Rect2i(0, s * cell, cell, cell)).get_used_rect()
+				if u.size.y > 0:
+					var top = u.position.y
+					var hgt = u.size.y
+					var n = 0
+					var sum = Vector2.ZERO
+					for y in range(top, top + hgt / 2 if dir != 1 else top):      # (facing up the eyes are hidden: the middle of the head)
+						for x in range(u.position.x, u.end.x):
+							var c = img.get_pixel(x, s * cell + y)
+							if c.a > 0.5 and c.r > 0.55 and c.g < 0.3 and c.b < 0.3:
+								sum += Vector2(x, y); n += 1
+					var ep = sum / n
+					if n == 0:
+						# no eye to see: the middle of the head itself (the tail must not pull it over a shoulder)
+						var hx = 0.0
+						var hn = 0
+						for y in range(top + int(hgt * 0.12), top + int(hgt * 0.3)):
+							for x in range(u.position.x, u.end.x):
+								if img.get_pixel(x, s * cell + y).a > 0.5:
+									hx += x; hn += 1
+						var mid = hx / hn if hn > 0 else u.position.x + u.size.x * 0.5
+						ep = Vector2(mid + u.size.x * {2: -0.15, 3: 0.15}.get(dir, 0.0), top + hgt * 0.34)
+					res = Vector2(float(f["x"]) + ep.x, float(f["y"]) + ep.y)
+	_eyes[key] = res
 	return res
 
 ## where the energy gathers in a charge pose: the blue energy ball drawn in the pose's first frame
@@ -639,8 +1119,10 @@ func charge_point(set_id: int, anim: int, dir: int) -> Vector2:
 		if s < slots.size() and slots[s].size() > 0:
 			var f: Dictionary = slots[s][0]
 			if not _imgs.has(set_id):
-				_imgs[set_id] = image(set_path(set_base(set_id), "png"))
+				_imgs[set_id] = _set_image(set_id, d)
 			var img: Image = _imgs[set_id]
+			if img != null and (s + 1) * int(d["cell"]) > img.get_height():
+				img = null
 			if img != null:
 				var cell: int = d["cell"]
 				var sx = 0.0; var sy = 0.0; var n = 0
@@ -685,7 +1167,11 @@ func character_set(ch: int) -> int:
 	var forms = data.get("forms")
 	if ch >= 0 and ch < CHARACTERS.size():
 		var hh = Mods.hero_entry(CHARACTERS[ch])
-		if hh.has("set") and int(hh["set"]) >= 0:
+		var o = outfit_of(ch)
+		if not o.is_empty():
+			if int(o.get("set", -1)) >= 0:
+				return int(o["set"])
+		elif hh.has("set") and int(hh["set"]) >= 0:
 			return int(hh["set"])
 	ch = hero_base(ch)
 	if f == null or forms == null or ch < 0 or ch >= f.size():
@@ -823,6 +1309,14 @@ func _read_people() -> Dictionary:
 		if sc > float(best_score.get(st, 0.0)):
 			best_score[st] = sc
 			best_mark[st] = sp[1]
+	# which looks each learned name belongs to (KRILLIN: one look; a townsfolk name: often several)
+	var owner = {}
+	for st0 in best_mark:
+		var on = str(names.get(best_mark[st0], ""))
+		if on != "":
+			if not owner.has(on):
+				owner[on] = []
+			owner[on].append(int(st0))
 	# 3. each person: their own lines
 	var quiet: Dictionary = cfg.get("quiet", {})
 	var set_names: Dictionary = cfg.get("names", {})
@@ -844,14 +1338,27 @@ func _read_people() -> Dictionary:
 			for q in ls:
 				if q[0] == mark and mark != "":
 					has = true
+			var nm = ""
+			var own_mark = str(best_mark.get(st, ""))
+			var own_nm = str(names.get(own_mark, "")) if own_mark != "" else ""
+			var sure = own_nm != "" and owner.get(own_nm, []).size() == 1      # a name only this look has (KRILLIN, CHI-CHI)
 			if not has:
 				mark = ""
 				for q in ls:
 					if q[0] != "":
 						mark = q[0]
 						break
+				# the line next to them is another character's own (GOKU's line beside KRILLIN: the game shows only
+				# some of a scene's people at a time): they stay themselves, with nothing of the other's to say
+				var other = ""      # the name written in that line (a mark can belong to several people)
+				for q in ls:
+					if mark != "" and q[0] == mark and q[1] != "":
+						other = str(q[1])
+						break
+				if sure and other != "" and other != own_nm and owner.has(other) and not owner[other].has(st):
+					nm = own_nm
+					mark = "-"
 			# one look can stand for several people (the same face for BILLY and FERNANDO): the first name under the mark is theirs
-			var nm = ""
 			for q in ls:
 				if mark != "" and q[0] == mark and q[1] != "":
 					nm = q[1]
@@ -870,6 +1377,8 @@ func _read_people() -> Dictionary:
 				nm = str(names.get(mark, ""))
 			if nm == "":
 				nm = str(set_names.get(str(st), ""))
+			if nm == "" and sure and ls.is_empty():
+				nm = own_nm      # nothing to say at all: still CHI-CHI, not a VILLAGER
 			if over.has("%s:%d" % [mk, i]):
 				lines = over["%s:%d" % [mk, i]]
 			if lines.is_empty():
@@ -912,7 +1421,61 @@ func land(z: int) -> Dictionary:
 		return _lands[z]
 	var j = json(base_dir.path_join("kit/lands/%d/lands.json" % z))
 	_lands[z] = j if j != null else {}
+	# EARTH's roaming foes: the same list for everybody (the importer's grown country differs a little per system)
+	var ef = builtin_dir().path_join("earth/earth_enemies.json")
+	if z == 0 and FileAccess.file_exists(ef) and _lands[z].has("regions") and _lands[z]["regions"].size() > 0:
+		var en = json(ef)
+		if en is Array:
+			_lands[z]["regions"][0]["enemies"] = en
 	return _lands[z]
+
+## EARTH as it ships (builtin/earth: tile numbers and walls, no picture of the game) laid over this
+## machine's own import once - everybody walks the same Earth, edits and all (tools/bake_earth.py)
+func _earth_base(bin_path: String) -> void:
+	var src = builtin_dir().path_join("earth/earth_base.gz")
+	if not FileAccess.file_exists(src) or not FileAccess.file_exists(bin_path):
+		return
+	var ver = FileAccess.get_file_as_string(builtin_dir().path_join("earth/version.txt")).strip_edges()
+	var stamp_path = bin_path.get_base_dir().path_join("earth_base.txt")
+	var stamp = "%s|%d" % [ver, FileAccess.get_modified_time(bin_path)]
+	if FileAccess.file_exists(stamp_path) and FileAccess.get_file_as_string(stamp_path).strip_edges() == stamp:
+		return      # laid in already (a new import or a new Earth lays it again)
+	var body = FileAccess.get_file_as_bytes(src).decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
+	var head = FileAccess.get_file_as_bytes(bin_path).slice(0, 8)
+	if body.size() < 8 or body.slice(0, 8) != head:
+		print("[assets] the shipped Earth does not fit this import: left out")
+		return
+	var f = FileAccess.open(bin_path, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_buffer(body)
+	f.close()
+	# the minimap: the cells the edits changed drawn in (the picture is the import's)
+	var mini_path = bin_path.get_base_dir().path_join("0_mini.png")
+	var img = Image.load_from_file(mini_path) if FileAccess.file_exists(mini_path) else null
+	var chp = builtin_dir().path_join("earth/earth_changed.gz")
+	if img != null and FileAccess.file_exists(chp):
+		img.convert(Image.FORMAT_RGBA8)
+		var idx = FileAccess.get_file_as_bytes(chp).decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP).to_int32_array()
+		var tw = body.decode_u16(4)
+		var n = tw * body.decode_u16(6)
+		var ls = []
+		for k in 5:
+			ls.append(body.slice(8 + k * n * 4, 8 + (k + 1) * n * 4).to_int32_array())
+		var MT = preload("res://scripts/dev_maptools.gd")
+		var iw = img.get_width(); var ih = img.get_height()
+		for i in idx:
+			var x = i % tw; var y = i / tw
+			if x < iw and y < ih:
+				var col: Color = MT.cell_color([ls[0][i], ls[1][i], ls[2][i], ls[3][i], ls[4][i]]); col.a = 1.0
+				img.set_pixel(x, y, col)
+		img.save_png(mini_path)
+		_tex.erase(mini_path)
+	var sf = FileAccess.open(stamp_path, FileAccess.WRITE)
+	if sf:
+		sf.store_string("%s|%d" % [ver, FileAccess.get_modified_time(bin_path)])
+		sf.close()
+	print("[assets] Earth laid in: ", ver)
 
 ## every tile of the game in one TileSet (tiles are made the first time a map uses them)
 const SRC_ROWS = 16      # the tile sheet cut in strips of 64 x 16 tiles: one atlas each
@@ -1044,6 +1607,8 @@ func _land_area(key: String) -> Dictionary:
 	if reg.has("src"):
 		fz = int(reg["src"][0])
 		fr = int(reg["src"][1])
+	if fz == 0 and fr == 0:
+		_earth_base(base_dir.path_join("kit/lands/0/0.bin"))
 	var data = FileAccess.get_file_as_bytes(base_dir.path_join("kit/lands/%d/%d.bin" % [fz, fr]))
 	if data.size() < 8:
 		return {}

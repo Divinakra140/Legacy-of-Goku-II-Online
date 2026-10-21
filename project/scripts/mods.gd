@@ -139,7 +139,7 @@ func reload() -> void:
 
 var _merged = {}
 ## one map's changes from every pack switched on and your own (yours last: they win)
-func merged(key: String) -> Dictionary:
+func merged(key: String, with_cells: bool = true) -> Dictionary:      # with_cells false: only foes, people, doors, items (fast: no copy of every changed tile)
 	var m = {}
 	_fill_patch(m)
 	var layers = []
@@ -152,8 +152,9 @@ func merged(key: String) -> Dictionary:
 				layers.append(t)
 	layers.append(patch(key))
 	for p in layers:
-		for c in p["cells"]:
-			m["cells"][c] = p["cells"][c]
+		if with_cells:
+			for c in p["cells"]:
+				m["cells"][c] = p["cells"][c]
 		for k in PATCH_KEYS:
 			if k != "cells":
 				m[k] = m[k] + p[k]
@@ -252,7 +253,7 @@ func import_pack(zip_path: String) -> String:
 			break
 	if not files.has(root.path_join("mod.json") if root != "" else "mod.json"):
 		z.close()
-		return "%s is not a LoG2 Co-op mod (no mod.json in it)" % zip_path.get_file()
+		return "%s is not a LoG2 Online mod (no mod.json in it)" % zip_path.get_file()
 	var meta = parse_json(z.read_file(root.path_join("mod.json") if root != "" else "mod.json").get_string_from_utf8())
 	var name = _safe(str(meta.get("name", zip_path.get_file().get_basename())) if meta is Dictionary else zip_path.get_file().get_basename())
 	var dest = packs_dir().path_join(name)
@@ -367,6 +368,21 @@ func apply_cells(key: String, a: Dictionary) -> void:
 	for j in idx.size():
 		walk[idx[j]] = int(vals[j][5]) & 1
 	a["walk"] = walk
+	if not idx.is_empty():
+		a["saves"] = Assets.save_points(cells, tw)      # save pads you put down (THINGS - SAVE POINT) save too
+	# EARTH's minimap is a picture from the import: your changed tiles drawn into it too (trees you planted show)
+	if not idx.is_empty() and a.get("mini") is Texture2D:
+		var img: Image = (a["mini"] as Texture2D).get_image()
+		if img != null:
+			img.convert(Image.FORMAT_RGBA8)
+			var MT = preload("res://scripts/dev_maptools.gd")
+			var iw = img.get_width(); var ih = img.get_height()
+			for j in idx.size():
+				var x = idx[j] % tw; var y = idx[j] / tw
+				if x < iw and y < ih:
+					var col: Color = MT.cell_color(vals[j]); col.a = 1.0
+					img.set_pixel(x, y, col)
+			a["mini"] = ImageTexture.create_from_image(img)
 	# people added / taken away
 	var ppl: Array = a.get("people", [])
 	for d in p["people_del"]:
@@ -549,7 +565,7 @@ func apply_to_planet(pl) -> void:
 	for i in pl.nodes.size():
 		var nd: Dictionary = pl.nodes[i]
 		var key = str(nd["key"])
-		var p = merged(key)
+		var p = merged(key, false)
 		var spec: Dictionary = nd["spec"]
 		var fixed: Array = spec.get("fixed", [])
 		for d in p["enemies_del"]:

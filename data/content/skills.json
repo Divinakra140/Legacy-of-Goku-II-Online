@@ -5,7 +5,10 @@
    "id": "kamehameha",
    "name": "KAMEHAMEHA",
    "who": [
-    "GOKU"
+    "GOKU",
+    "CELL",
+    "YAMCHA",
+    "KRILLIN"
    ],
    "level": 1,
    "ep": 6,
@@ -45,7 +48,9 @@
    "id": "solar_flare",
    "name": "SOLAR FLARE",
    "who": [
-    "GOKU"
+    "GOKU",
+    "KRILLIN",
+    "TIEN"
    ],
    "level": 12,
    "ep": 5,
@@ -68,7 +73,7 @@
    "cooldown": 600,
    "type": "bomb",
    "charge": 90,
-   "power": 9.0,
+   "power": 44.0,
    "stat": "pwr",
    "speed": 2.2,
    "range": 170,
@@ -162,7 +167,8 @@
    "id": "special_beam_cannon",
    "name": "SPECIAL BEAM CANNON",
    "who": [
-    "PICCOLO"
+    "PICCOLO",
+    "CELL"
    ],
    "level": 1,
    "ep": 7,
@@ -236,7 +242,8 @@
    "id": "galick_gun",
    "name": "GALICK GUN",
    "who": [
-    "VEGETA"
+    "VEGETA",
+    "CELL"
    ],
    "level": 1,
    "ep": 6,
@@ -469,6 +476,418 @@
    "color": "ffe060",
    "sfx": "heal",
    "info": "The crowd cheers: stronger and tougher for 15 seconds."
+  },
+  {
+   "id": "death_beam",
+   "name": "DEATH BEAM",
+   "who": [
+    "FRIEZA",
+    "CELL"
+   ],
+   "level": 1,
+   "ep": 5,
+   "cooldown": 70,
+   "type": "beam",
+   "charge": 14,
+   "power": 3.0,
+   "stat": "pwr",
+   "speed": 9,
+   "range": 300,
+   "width": 4,
+   "color": "ff4fb4",
+   "sfx": "beam",
+   "info": "A thin, fast laser from the fingertip that pierces everything in its way."
+  },
+  {
+   "id": "death_ball",
+   "name": "DEATH BALL",
+   "who": [
+    "FRIEZA"
+   ],
+   "level": 8,
+   "ep": 9,
+   "cooldown": 200,
+   "type": "bomb",
+   "charge": 40,
+   "power": 10.0,
+   "stat": "pwr",
+   "speed": 3.0,
+   "range": 220,
+   "radius": 60,
+   "size": 12,
+   "color": "7a2fc8",
+   "sfx": "bomb",
+   "look": "deathball",
+   "info": "A dark purple sphere grown on one fingertip, then thrown."
+  },
+  {
+   "id": "supernova",
+   "name": "SUPERNOVA",
+   "who": [
+    "FRIEZA"
+   ],
+   "level": 20,
+   "ep": 15,
+   "cooldown": 480,
+   "type": "bomb",
+   "charge": 80,
+   "power": 44.0,
+   "stat": "pwr",
+   "speed": 2.4,
+   "range": 200,
+   "radius": 120,
+   "size": 30,
+   "color": "ff9a20",
+   "sfx": "bomb",
+   "look": "supernova",
+   "info": "A burning sun of energy, gathered overhead and hurled at the foe."
+  },
+  {
+   "id": "cooler_death_beam",
+   "name": "DEATH BEAM",
+   "who": [
+    "COOLER"
+   ],
+   "level": 1,
+   "ep": 5,
+   "cooldown": 70,
+   "type": "beam",
+   "charge": 14,
+   "power": 3.2,
+   "stat": "pwr",
+   "speed": 9,
+   "range": 300,
+   "width": 4,
+   "color": "b04cff",
+   "sfx": "beam",
+   "info": "A thin purple laser from the fingertip that pierces everything."
+  },
+  {
+   "id": "darkness_eye_beam",
+   "name": "DARKNESS EYE BEAM",
+   "who": [
+    "COOLER"
+   ],
+   "level": 8,
+   "ep": 7,
+   "cooldown": 120,
+   "type": "beam",
+   "charge": 10,
+   "power": 3.8,
+   "stat": "pwr",
+   "speed": 10,
+   "range": 260,
+   "width": 7,
+   "color": "d0306a",
+   "sfx": "beam",
+   "info": "Two red-purple beams straight from the eyes - no hands needed.",
+   "from": "eyes",
+   "anim": 0
+  },
+  {
+   "id": "cooler_supernova",
+   "name": "SUPERNOVA",
+   "who": [
+    "COOLER"
+   ],
+   "level": 20,
+   "ep": 15,
+   "cooldown": 480,
+   "type": "bomb",
+   "charge": 80,
+   "power": 44.0,
+   "stat": "pwr",
+   "speed": 2.4,
+   "range": 200,
+   "radius": 120,
+   "size": 30,
+   "color": "ff6a1a",
+   "sfx": "bomb",
+   "look": "supernova",
+   "info": "A huge orange-red sphere gathered overhead and thrown - a planet killer."
+  },
+  {
+   "id": "full_power_death_beam",
+   "name": "FULL POWER DEATH BEAM",
+   "who": [
+    "KING COLD"
+   ],
+   "level": 1,
+   "ep": 6,
+   "cooldown": 90,
+   "type": "beam",
+   "charge": 22,
+   "power": 4.2,
+   "stat": "pwr",
+   "speed": 8,
+   "range": 320,
+   "width": 8,
+   "color": "c03cff",
+   "sfx": "beam",
+   "info": "The death beam at full strength: wider and harder."
+  },
+  {
+   "id": "cold_explosive_wave",
+   "name": "EXPLOSIVE WAVE",
+   "who": [
+    "KING COLD"
+   ],
+   "level": 8,
+   "ep": 7,
+   "cooldown": 180,
+   "type": "wave",
+   "power": 3.0,
+   "stat": "pwr",
+   "range": 75,
+   "color": "b060ff",
+   "sfx": "wave",
+   "info": "A burst of purple energy all around him."
+  },
+  {
+   "id": "super_explosive_wave",
+   "name": "SUPER EXPLOSIVE WAVE",
+   "who": [
+    "KING COLD"
+   ],
+   "level": 18,
+   "ep": 13,
+   "cooldown": 420,
+   "type": "wave",
+   "power": 5.5,
+   "stat": "pwr",
+   "range": 140,
+   "color": "9040ff",
+   "sfx": "wave",
+   "info": "A huge purple dome of energy that swallows everything around him.",
+   "dome": true
+  },
+  {
+   "id": "solar_kamehameha",
+   "name": "SOLAR KAMEHAMEHA",
+   "who": [
+    "CELL"
+   ],
+   "level": 26,
+   "ep": 16,
+   "cooldown": 480,
+   "type": "beam",
+   "charge": 60,
+   "power": 7.0,
+   "stat": "pwr",
+   "speed": 8,
+   "range": 380,
+   "width": 28,
+   "color": "9fe8ff",
+   "sfx": "beam",
+   "look": "blue",
+   "info": "Cell's full-power Kamehameha: wider and longer than any other."
+  },
+  {
+   "id": "spirit_ball",
+   "name": "SPIRIT BALL",
+   "who": [
+    "YAMCHA"
+   ],
+   "level": 12,
+   "ep": 8,
+   "cooldown": 200,
+   "type": "bomb",
+   "charge": 30,
+   "power": 10.0,
+   "stat": "pwr",
+   "speed": 3.4,
+   "range": 220,
+   "radius": 50,
+   "size": 10,
+   "color": "aee8ff",
+   "sfx": "bomb",
+   "look": "spirit",
+   "info": "Yamcha's own ball of energy, steered straight at the foe."
+  },
+  {
+   "id": "wolf_fang_fist",
+   "name": "WOLF FANG FIST",
+   "who": [
+    "YAMCHA"
+   ],
+   "level": 1,
+   "ep": 4,
+   "cooldown": 60,
+   "type": "dash",
+   "power": 2.4,
+   "stat": "str",
+   "speed": 4.8,
+   "range": 130,
+   "color": "6a7ac0",
+   "sfx": "dash",
+   "shape_set": 3205,
+   "shape_anim": 1,
+   "trail": false,
+   "info": "For a moment Yamcha becomes a pale navy wolf and tears through the foe."
+  },
+  {
+   "id": "destructo_disk",
+   "name": "DESTRUCTO DISK",
+   "who": [
+    "KRILLIN",
+    "ANDROID 18"
+   ],
+   "level": 1,
+   "ep": 6,
+   "cooldown": 110,
+   "type": "bomb",
+   "charge": 26,
+   "power": 4.4,
+   "stat": "pwr",
+   "speed": 4.2,
+   "range": 240,
+   "radius": 14,
+   "size": 8,
+   "color": "ffe86a",
+   "sfx": "bomb",
+   "look": "disk",
+   "pierce": true,
+   "info": "A spinning disk of ki held overhead, then thrown: it cuts through everything in its way."
+  },
+  {
+   "id": "infinity_bullet",
+   "name": "INFINITY BULLET",
+   "who": [
+    "ANDROID 18"
+   ],
+   "level": 8,
+   "ep": 8,
+   "cooldown": 160,
+   "type": "volley",
+   "count": 14,
+   "power": 0.7,
+   "stat": "pwr",
+   "speed": 4.8,
+   "range": 220,
+   "color": "c8f0ff",
+   "sfx": "ki",
+   "info": "A storm of ki blasts fired as fast as she can."
+  },
+  {
+   "id": "power_blitz",
+   "name": "POWER BLITZ",
+   "who": [
+    "ANDROID 17"
+   ],
+   "level": 8,
+   "ep": 8,
+   "cooldown": 160,
+   "type": "volley",
+   "count": 14,
+   "power": 0.7,
+   "stat": "pwr",
+   "speed": 4.8,
+   "range": 220,
+   "color": "b8ffd8",
+   "sfx": "ki",
+   "info": "Ki blasts fired as fast as he can."
+  },
+  {
+   "id": "sadistic_18",
+   "name": "SADISTIC 18",
+   "who": [
+    "ANDROID 18"
+   ],
+   "level": 14,
+   "ep": 4,
+   "cooldown": 60,
+   "type": "dash",
+   "power": 2.2,
+   "stat": "str",
+   "speed": 4.5,
+   "range": 120,
+   "color": "bfe0ff",
+   "sfx": "dash",
+   "info": "A merciless rush straight through the foe.",
+   "anim": 16
+  },
+  {
+   "id": "android_barrier",
+   "name": "ANDROID BARRIER",
+   "who": [
+    "ANDROID 18",
+    "ANDROID 17"
+   ],
+   "level": 18,
+   "ep": 6,
+   "cooldown": 600,
+   "type": "buff",
+   "buffs": {
+    "end": 2.0
+   },
+   "ticks": 900,
+   "barrier": true,
+   "aura": "60e0c0",
+   "drain": 30,
+   "color": "60e0c0",
+   "sfx": "heal",
+   "info": "A blue-green barrier round the body: far tougher until it runs out or your ki does."
+  },
+  {
+   "id": "dodon_ray",
+   "name": "DODON RAY",
+   "who": [
+    "TIEN"
+   ],
+   "level": 1,
+   "ep": 5,
+   "cooldown": 70,
+   "type": "beam",
+   "charge": 14,
+   "power": 3.1,
+   "stat": "pwr",
+   "speed": 9,
+   "range": 290,
+   "width": 4,
+   "color": "ffd640",
+   "sfx": "beam",
+   "info": "A thin golden beam from the fingertip."
+  },
+  {
+   "id": "high_pressure_blast",
+   "name": "HIGH PRESSURE BLAST",
+   "who": [
+    "ANDROID 17"
+   ],
+   "level": 1,
+   "ep": 5,
+   "cooldown": 70,
+   "type": "beam",
+   "charge": 14,
+   "power": 3.1,
+   "stat": "pwr",
+   "speed": 9,
+   "range": 290,
+   "width": 4,
+   "color": "ffd640",
+   "sfx": "beam",
+   "info": "A thin golden beam from the hand."
+  },
+  {
+   "id": "tri_beam",
+   "name": "TRI BEAM",
+   "who": [
+    "TIEN"
+   ],
+   "level": 20,
+   "ep": 15,
+   "cooldown": 480,
+   "type": "beam",
+   "charge": 50,
+   "power": 6.5,
+   "stat": "pwr",
+   "speed": 8,
+   "range": 330,
+   "width": 22,
+   "color": "ffd640",
+   "sfx": "beam",
+   "sparks": true,
+   "info": "Tien's all-out beam: wide, golden, throwing sparks all round."
   }
  ]
 }

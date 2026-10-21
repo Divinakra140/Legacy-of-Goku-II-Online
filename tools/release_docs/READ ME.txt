@@ -1,0 +1,288 @@
+LEGACY OF GOKU 2 ONLINE, REBUILT IN GODOT - by Puni Puni and Divinakra
+YouTube: https://www.youtube.com/@PuniPuni2026   https://www.youtube.com/@DivinakraCreations
+================================================
+
+New in v44 - LoG2 ONLINE: ANDROID, WINDOWS AND MAC, PLAYING TOGETHER
+- A new name: LEGACY OF GOKU 2 ONLINE (it was LoG2 Co-op). Your saved fighters and settings carry over.
+- One game on three systems: Android (the Retroid Pocket and phones), Windows, and Mac (one app for both
+  Apple Silicon and Intel Macs, macOS 10.15 or newer).
+- GLOBAL MULTIPLAYER: play with anyone over the internet - public games, or private ones with a password.
+  Android, Windows and Mac players all join the same games. LOCAL MULTIPLAYER: the same Wi-Fi.
+  No Hamachi needed any more. Allow the game and log2_ztbridge when Windows' firewall asks.
+
+  EARTH
+- Earth reworked by hand: new forests, roads, rivers, doors, and strong foes out at the edges. Everybody walks the
+  same Earth, and it loads quickly.
+- Improved by hand: the area around GOKU'S HOUSE, TRICERATOPS JUNGLE and WEST CITY.
+- Every room behind a door has plain black round it (no more mirrored copies of the room). City Hall, the
+  Antiquities shop and the West City apartments have their floors back. The minimap shows the changes.
+- GOKU'S HOUSE (SELECT MAP): Earth, starting in Gohan's bedroom - and back there when you are beaten.
+  (EAST DISTRICT 439 is gone from the list: GOKU'S HOUSE is the same place, made better.)
+- People are named after who they are (Krillin is KRILLIN, Chi-Chi is CHI-CHI) and only say their own lines.
+
+  FIRST START
+- Reading your game shows a loading bar with each step. Earth comes ready made, so it is faster than before.
+- The game's music is recorded from your cartridge: RECORD WHILE I PLAY (a stand-in tune until each song is
+  ready - the place you are in goes first) or RECORD ALL NOW. It never slows the game down.
+
+  BALANCE - AS IN THE ORIGINAL GAME
+- Foes keep their own strength: they no longer rise to your level. The tough ones are out at the edges - fly there.
+- Levels end at 50, and each level gives 3 points (+1 strength, power and endurance). A saved hero keeps their
+  level (above 50: 50) and gets the points their level now gives.
+- Goku reaches SUPER SAIYAN BLUE AURA at level 40 and SUPER SAIYAN BLUE at level 50.
+- Beams reach further as you level up: full length 40 levels after you learn them. Hold a beam to keep it
+  going - it costs ki and ends when you let go or run out. Upward beams are drawn behind the fighter.
+- Spirit Bomb hits as hard as Supernova, the Spirit Ball as hard as the Death Ball.
+
+  CONTROLS
+- SPRINT: click L3 to sprint until you stop (while flying: a boost); R2 turns sprint on and off. Keyboard: hold Shift.
+- Flying: L2 (G) flies or lands, B also lands, Y boosts, and you can switch specials while you fly.
+- Windows / Mac: Enter, Space, J or Z select in every menu, Esc goes back, and the mouse works in every menu
+  (right click: back). Q / E change a hero's outfit on CHOOSE YOUR CHARACTER. F11: fullscreen. F3: frame rate.
+- Fullscreen from the start (remembered), and the menus fill the screen at any size. OPTIONS - QUIT GAME closes it.
+
+  NEW HEROES AND ART
+- Yamcha, Krillin, Tien, Android 18 and Android 17, each with their own moves. Every villain can be played
+  except King Cold. More outfits for Goku, Piccolo, Gohan, Vegeta and Trunks.
+- New sprite art: Perfect Cell's walk (Chris Ruok), Teen Trunks flying in all directions, Mecha Frieza's
+  redesign, Supernova, Death Ball, Death Beam, Destructo Disk and Darkness Eye Beam, and flying left and
+  right for Cooler, Mr. Satan and Teen Trunks (Divinakra). All in the CREDITS (scroll down).
+- Android 17 and 18 have their own beaten animations; Galick Gun and Trunks' Sword Slash have their own icons.
+
+  DEV TOOLS (WINDOWS AND MAC) - see "Earth Editor Guide.txt"
+- The map editor got REDO (Ctrl+Y), a brush size, smooth strokes, MIRROR of a copy (X / Y), KEEP THE GROUND THERE
+  when pasting, a SAVE POINT thing, a picture list of foes (weakest first) with a level and a look, Backspace to
+  delete, and J to jump to where a door leads. Much faster on big maps, and it opens in a window.
+- Want to help improve Earth? Make your edits, then SHARE - MAKE THE MOD FILE and send the .zip.
+- Picking your game file uses your computer's own file browser, and the game has the Dragon Ball icon.
+  (The first start of v44 reads your game once more, about a minute.)
+
+Earlier versions
+================
+
+New in v42 - MAKE A GAME OF YOUR OWN (single-player stories, all in "DEV TOOLS.txt" part 8)
+- STORY tab: a title, a hero, where it starts, an intro event, credits - and your story is on the main
+  menu with 3 save slots of its own.
+- New event steps for story scenes like the game's: people (and you) walk, turn and pose, the camera
+  moves and zooms, the screen shakes, ! and ? over heads, faces next to the text box, people appear
+  and leave for good.
+- Story boss fights: a WIN and a LOSE label, phases at less health (a line, a transformation, then
+  the fight goes on), the doors stay shut.
+- Numbers and timers (VAR, IF VAR, TIMER on screen, IF TIMER), "{var:name}" in a line.
+- Companions who fight beside you, SWITCH HERO, OPEN AREA / CLOSE AREA (kept after saving), SAVE,
+  THE END with scrolling credits.
+- MAP: the MOOD tool (darkness with a light round you, rain, snow, ash, dust, its own music),
+  locked doors (need an item / a flag / a level), event boxes only an attack starts (rocks, crates).
+- EVENTS: LINES FROM THE GAME (search every line the game's people say), X, Y FROM THE MAP VIEW.
+- F8 in the game: the EVENT DEBUGGER (flags, numbers, timers, states, the running step; F7 skips on).
+- CHECK looks at the new steps and the story too.
+- A new example mod: Example - A Story Of Your Own (THE MISSING KEY CAPSULE).
+- Fixed: lines of people placed with the PERSON tool showed as [ "", "NAME", "text" ]; the blind
+  darkness is now round the hero, not the middle of the screen.
+
+New in v41 - FORMS AS REWARDS AND STATES (RPG-style)
+- Forms can be a reward: a form with unlock = reward is not reached by level - a MISSION (reward "forms")
+  or an EVENT (UNLOCK FORM step) gives it, then it is on the TRANSFORM button. unlock = event: never on the
+  button - only events (TRANSFORM step), a move ("then_form": transform when the move ends - like a limit
+  break) or a state put you in it. Another hero's form can be given too.
+- STATES (new DEV TOOLS tab): poison, regeneration, slow, haste, weakened, rage, iron skin, blind, paralysed,
+  ki sealed, confused - and your own. They are given by events (STATE step), moves ("self_state" on you,
+  "inflict" on the foes hit), foe kinds (ENEMIES "inflict": their blows put it on you), items ("state",
+  "cure") and mission rewards. They show under your bars with the seconds left. Foes feel poison,
+  regeneration, paralysis and slow too. A state can also turn you into a form while it lasts.
+- Events can ask for a state or a form ("has state", "in form", "has form").
+- A new example mod: Example - Forms & States (switched off - MODS).
+- The Puni Puni logo and the YouTube button in the DEV TOOLS bar as well.
+- Foes no longer hit you while you talk (from v35) - and a state like poison can't knock you out unless it
+  says can_kill.
+
+New in v40
+- DEV TOOLS - SPRITES asks first before what can't be undone: DELETE a frame, BACK TO THE GAME'S OWN (your
+  version of a set is thrown away - a copy goes to CHECK - HISTORY first) and making a sprite set over one
+  of yours.
+
+New in v39
+- DEV TOOLS - SPRITES - ANIMATIONS: place many frames at once. COPY X,Y takes the chosen frame's place, then
+  PASTE it to all frames of the pose, the pose in all 4 directions or every frame of the set. MOVE BY x / y
+  shifts this pose, all 4 directions or the whole set (each frame keeps its own offset).
+
+New in v38
+- DEV TOOLS - SPRITES - IMPORT: a sheet of the game's own (a set's PNG you recoloured or drew over) keeps
+  ALL its frames now - tick SAME LAYOUT AS SET and type the set it came from (Goku: 60), and every frame
+  lands where the game has it. (Before, only the first frame of each pose came in.) The game's 64 x 64
+  cells are found by themselves, and an empty cell no longer ends a row.
+
+New in v37
+- The Puni Puni logo and the YouTube channel (@PuniPuni2026 - click it) on the main menu, and the logo as
+  the window's icon.
+
+New in v36
+- DEV TOOLS - SPRITES - ANIMATIONS: TAKE FRAMES FROM A SET now shows every pose of a set as pictures, with
+  their names (stand, walk, kick, beam charge...). Click the frames you want - several at once - and ADD
+  them after the chosen frame or REPLACE it. The pose number shows its name too.
+
+New in v35
+- FIXED: some doors in West City (and a few elsewhere) led into a jumble of tiles - story scenes' backdrops
+  (the city seen from the sky, a ship in space...) that are no rooms. Those doors are gone.
+  (The first start of v35 imports your ROM once more, about half a minute.)
+- Foes can't hit you while you talk or while an event runs.
+- An event's text box grows with its lines (no line over its edge any more).
+- DEV TOOLS: an empty list (LOOT at first) no longer shows the last list's fields.
+- New tutorial video: "DEV TOOLS tutorial v34.mp4" shows every new tool.
+
+New in v34 - DEV TOOLS FOR EVERYONE (all in "DEV TOOLS.txt")
+- FIRST MAP GUIDE: HELP > FIRST MAP walks you through making a map step by step, plus tips.
+- PLAY HERE: play right where you are looking in the tools (choose hero, level, god mode); F10 goes back.
+- EVENTS editor: little scripts with no programming - talks with choices, flags, gifts, missions, warps,
+  foes, shops. SHOPS and LOOT editors. ZONES of foes that come back, EVENT boxes you walk into.
+- New map tools: SMART brush (fits edges by itself), LINE, RECT, THINGS (stamp whole trees, houses,
+  rocks), layer switches, the little map and THE WHOLE WORLD view.
+- SPRITES: import your own characters from a PNG and fix any animation frame by frame.
+  MOVES - BUILD A MOVE with a live preview. COLORS presets (night, autumn, snow, ghost...).
+- CHECK: finds mistakes (doors into walls, missing things, broken events) and HISTORY keeps a copy at
+  every save to go back to.
+- MODS: mods from others stack (main menu - MODS), SHARE makes your work into a mod .zip. Three
+  example mods come with the game (switched off).
+- TOGETHER: edit the same world with friends at the same time over LAN or Hamachi, seeing each other.
+- FIXED: the sea around Earth was a green animated meadow - it is real water now.
+  (The first start of v34 imports your ROM once more, about half a minute.)
+
+New in v33
+- THE LEGACY OF GOKU'S MAPS: all 42 maps of Legacy of Goku 1 (with their walls and tiles) are in the DEV
+  TOOLS map list next to Buu's Fury's, read from your own LoG1 cartridge file. Already read the other
+  games in v32? Press OTHER GAMES once more.
+- COLORS: a new DEV TOOLS tab to change the colours of any character or foe (or make a colour
+  variant of it as a new sprite set) and of the tiles of every map. See "DEV TOOLS.txt".
+- Smaller download (about 13 MB): the game program itself is built without the parts it never uses
+  (3D, VR...). The game is LoG2Online.exe plus LoG2Online.pck - keep the two files together.
+
+New in v32
+- DEV TOOLS: your team's editors, inside the game (main menu - DEV TOOLS). A MAP EDITOR for EARTH
+  and for maps of your own (tiles on all 5 layers, walls, foes, people with their lines, treasure,
+  doors, copy and paste of whole places, NEW MAP) and editors for HEROES (new playable heroes too),
+  ENEMIES, MOVES, FORMS, BLASTS (with a tuner in the game) and MISSIONS. All of it is saved in the
+  "mods" and "content" folders next to the game: a new import of the ROM never loses it.
+  Read "DEV TOOLS.txt"; the tutorial video "DEV TOOLS tutorial.mp4" shows every tool.
+- OTHER GAMES: put your own Buu's Fury and Legacy of Goku cartridge files (.gba or .zip) next to
+  the game or in a "roms" folder and press OTHER GAMES in the map editor: all of Buu's Fury's maps
+  and tiles to copy from, and both games' characters as sprite sets for people, foes and heroes.
+  (Nothing of either game is shipped; Legacy of Goku's maps are not read yet, only its characters.)
+
+New in v31
+- WALLS ARE WALLS AGAIN: the game's own maps now keep exactly the game's own collision. Earlier
+  versions "opened" tiles that looked like ground elsewhere, and roads were cut through walls -
+  that is how you walked through walls and buildings. All of that is gone: only benches, planters
+  and the like that the old import let you walk through are closed. A building a map's edge cuts
+  in half is solid all through. Cliffs and rocks are never cut away any more.
+- The things scattered in the new land are only nature's (trees, bushes, flowers) and they are
+  solid. No more Capsule Corp pads, benches or bits of walls out in the grass.
+- No more hitch when new ground comes into view (the tiles are all made once while loading, in
+  small strips - quick).
+  (The first start of v31 imports your ROM once more, about half a minute.)
+
+New in v30
+- THE LAND BETWEEN PLACES REBUILT THE WAY THE GAME BUILDS ITS MAPS: no more glitchy patchwork.
+  Each place's own ground (the jungle's grass, the mountains' grass, sand, snow, the wasteland's
+  earth) laid the way the game lays it, with that place's own trees, rocks, bushes, stumps and
+  flowers copied WHOLE from its maps (never a piece of one): woods, clearings and meadows, and a
+  line of woods where two lands meet. Next to a city a little of its pavement, then nature.
+- FIXED: the game hung after PLAY ON THIS PC (it made all 43,000 tiles at once at the start).
+- The first-time import is much faster now (about half a minute instead of three).
+
+New in v29
+- NO MORE STUTTER: the game twitched every few steps. Two causes, both gone: thousands of far-away
+  foes were looked at every frame (now only the ones near you), and the ground was drawn in big
+  blocks all at once, with tiles made while you walked (now small blocks a few at a time, every tile
+  made once at the start). Measured: the worst frame went from up to 300 ms to under 17 ms.
+- INVISIBLE WALLS GONE: big stretches of road, pavement, desert and grass you could not walk on
+  (the game's own out-of-bounds parts and the new land between places) are walkable now - ground
+  that looks like ground is ground. Benches, planters, buildings, trees and cliffs stay solid.
+
+New in v28
+- YOUR OWN MUSIC ONLY: the music ripper is gone (no gba_bios.bin, nothing recorded in the
+  background). Put your songs in the "music" folder: title, field, cave, lair, boss, victory
+  (.ogg or .mp3), or name one after a place - "west city.ogg" plays in West City. Without a file a
+  little built-in tune plays. MENU - OPTIONS - MUSIC TEST plays them.
+- COLLISION FIXED EVERYWHERE: benches, planters, signs and fences are solid again (you walked
+  through them); no invisible walls - every tile that looks like ground you can walk on is
+  walkable, and every tile that looks like a wall or a thing is solid, checked against how the
+  game itself uses each tile in all its maps. The grown land between places is walkable where it
+  looks walkable.
+- NO BLACK BORDERS: the picture always fills the whole window or screen, also after switching to
+  fullscreen or another monitor.
+- NO BLACK INSIDE ROOMS: the dark round the game's rooms is filled with the room's own walls.
+- Buildings a map's edge cut in half are taken away (no half houses next to the new land); the
+  new land repeats itself much less and grows no bits of buildings.
+- Rooms the game only reaches through a story scene (Korin's Tower, the Cell Games rooms, Master
+  Roshi's island, the Tropical Islands caves, the ZZTV Studios, Dr. Gero's Lab and more: 38) now
+  have a door of their own in the place they belong to (yellow on the minimap).
+
+New in v27
+- EARTH IS ONE PLACE: no loading and no fade anywhere. Every house, shop, cave, lab and hall is
+  on the same map now; you step through a door and you are inside at once, and straight back out.
+- More of the game's outdoors set onto the planet (the rest of each land's stretches of road,
+  farms and fields), with the game's own ways between them now walked as roads (48 of them),
+  no more being thrown to another spot at a map edge.
+- Map fixes: houses you could leave but never enter (the way in was a script) get a door back
+  (27 of them); all the ground on the planet joins up (168 roads in all); no black tiles on the planet;
+  arrivals always on ground you can stand on; rooms carry their own floor and walls past their
+  edges instead of black; the game's flying world map is left out (Earth itself is the world).
+- Still to come: a few rooms the game only reaches through story scenes (a Capsule Corp ship,
+  the Cell Games rooms, some island caves) are on the map but have no door yet.
+  
+
+New in v26
+- EARTH, THE WHOLE PLANET AS ONE MAP: every land of the game on one planet you walk across with
+  no loading: the Northern Mountains up north, West City and the Triceratops Jungle in the middle,
+  East District 439 and Gingertown to the east, Capsule Corp to the west, the Southern Continent
+  and the Tropical Islands to the south, the Snowy Highlands and the Wastelands in the north
+  corners, Master Roshi's island out at sea, the ocean all round. No black edges anywhere.
+- Wide new country between the lands, grown from each land's own tiles (meadows and paths with
+  woods, cliffs and rocks between), roads joining every land, and foes of each land roaming it.
+- Every house, cave, lab and hall of the game is still there behind its door.
+- EARTH is the first choice in the menu. The original lands one by one are still there too.
+- Characters are saved per world as before (fighters_land_0.json for Earth).
+  (The first start of v26 imports your ROM once more, about 3 minutes: it builds the planet.)
+
+New in v25
+- FOES FIGHT LIKE THE GAME: every enemy now runs the game's own behaviour script, read from your
+  ROM when you import (soldiers line up and fire bazooka missiles, wolves circle, back off and
+  bite, T-Rexes shake then charge, hawks swoop, ninjas throw stars, bandits lob bombs, robots fire
+  lasers, Krillin and Tien punch and fire ki blasts). They use the game's real attack animations,
+  timing, reach and projectiles, and flinch, get knocked back or get dizzy the way the game does.
+  (The first start of v25 imports your ROM once more, about 20 seconds.)
+- FILLS ANY SCREEN: no black bars at any window size or resolution; a bigger or wider screen
+  shows more of the world, with sharp pixels. OPTIONS > VIEW SIZE picks the pixel size yourself
+  (AUTO fits the screen). Small places carry their own ground on past their edges.
+
+What this is
+- The PC co-op mod rebuilt as a real game in Godot 4: no GBA engine underneath, so no screen-size limits,
+  no two-games-out-of-step, no flicker. One world for everyone playing.
+- EARTH, the whole planet as one map, Planet Gatorra and Planet Dunara (the hand-made adventures), or a
+  RANDOM PLANET from a seed. Stories of your own made in DEV TOOLS.
+
+First start (once)
+1. Put your Legacy of Goku II (USA) .gba next to the game (or choose it when asked).
+2. Start the game (LoG2Online.exe on Windows, LoG2Online.app on Mac). It reads the pictures, maps and
+   enemies from YOUR ROM (about a minute) into the "imported" folder. Nothing of the game comes with
+   this download.
+   Mac: the first time, right-click LoG2Online.app, choose Open, then Open again.
+   Windows: if "Windows protected your PC" shows, press More info, then Run anyway.
+
+Playing together
+- LOCAL MULTIPLAYER: everyone on the same Wi-Fi. One hosts, the others join.
+- GLOBAL MULTIPLAYER: over the internet, with anyone on Android, Windows or Mac. Host a public game or a
+  private one with a password; the others find it in the list and join.
+- Go separate ways or together: each player can be in any area. Enemies are run by the host, so
+  everyone sees the same enemies, the same beaten foes, the same boss.
+
+Controls (pad or keyboard)
+- Move: d-pad / stick / arrows / WASD
+- A (Z or J): punch - a 4-hit chain. Hold A: the rushing strike.
+- B (X or K): ki blast. Hold B: charge your beam, let go to fire.
+- X (C or L): special move.  R1 (E or O): next special.  Y (V or I): transform.  L1 (F or U): item.
+- Sprint: click L3 (sprints until you stop; flying: a boost), or hold Shift. R2: sprint on / off.
+- L2 (G): fly / land (FREE PLAY).  START (H or Esc): menu.  SELECT (Tab or M): map.
+
+Your fighters are saved per world (on Windows in AppData\Roaming\Godot\..., on Mac in
+~/Library/Application Support/Godot/...).

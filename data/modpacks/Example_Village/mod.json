@@ -1,6 +1,6 @@
 {
-  "author": "LoG2 Co-op",
-  "description": "A tiny example near the start: an elder with a choice (EVENTS), a shop (SHOPS), a treasure and a field of foes that come back (ZONE). Open it in DEV TOOLS to see how it is made.",
-  "name": "Example - Little Village",
-  "version": "1.0"
+ "author": "LoG2 Co-op",
+ "description": "A tiny example near the start: an elder with a choice (EVENTS), a shop (SHOPS), a treasure and a field of foes that come back (ZONE). Open it in DEV TOOLS to see how it is made.",
+ "name": "Example - Little Village (FREE PLAY)",
+ "version": "1.0"
 }

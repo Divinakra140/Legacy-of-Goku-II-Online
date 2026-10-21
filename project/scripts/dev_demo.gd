@@ -129,7 +129,7 @@ func _run() -> void:
 	dev.cam.position = start
 	dev.cam.zoom = Vector2(2, 2)
 	dev.show_walls = false
-	say("DEV TOOLS - WHAT'S NEW IN v34", "Make maps, events, shops, characters and mods for LoG2 Co-op. No programming. Main menu - DEV TOOLS.")
+	say("DEV TOOLS - WHAT'S NEW IN v34", "Make maps, events, shops, characters and mods for LoG2 Online. No programming. Main menu - DEV TOOLS.")
 	await w(150)
 
 	# ---------------------------------------------------------------- help

@@ -140,7 +140,7 @@ bool load_src(const Rom& rom, int z, int a, SrcMap* m) {
         W.assign(cells, 0);
         const uint32_t p = rom.r32(var + 0x34 + 4u * k);
         if (!decode(rom, p, &buf) || buf.size() < 0x2000) continue;
-        if (const char* dw = getenv("MB_DUMPW")) { char nm[32]; snprintf(nm, sizeof nm, "%d_%d", z, a); if (std::string(dw) == nm) { FILE* f = fopen((std::string("/tmp/claude-0/etool/w_") + nm + (k ? "b" : "a") + ".bin").c_str(), "wb"); if (f) { fwrite(buf.data(), 1, buf.size(), f); fclose(f); } } }
+        if (const char* dw = getenv("MB_DUMPW")) { char nm[32]; snprintf(nm, sizeof nm, "%d_%d", z, a); if (std::string(dw) == nm) { FILE* f = fopen((std::string("/tmp/mb_dump_w_") + nm + (k ? "b" : "a") + ".bin").c_str(), "wb"); if (f) { fwrite(buf.data(), 1, buf.size(), f); fclose(f); } } }
         for (int y = 0; y < m->th && y < 256; ++y)
             for (int x = 0; x < m->tw && x < 256; ++x)
                 W[static_cast<size_t>(y) * m->tw + x] = (buf[y * 32 + (x >> 3)] >> (x & 7)) & 1;

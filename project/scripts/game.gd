@@ -18,7 +18,9 @@ signal social(k: int, from_pid: int, from_name: String, kind: String, data: Dict
 const PORT = 7777
 var cfg = {"mode": "solo", "ip": "127.0.0.1", "character": 4, "adventure": "gatorra", "seed": 12345, "difficulty": 1, "name": "PLAYER",
 	"local_players": 1, "character2": 0, "name2": "PLAYER 2"}
-const LOCAL_KEYS = ["character", "mode", "name", "local_players", "character2", "name2", "ip"]
+## (this device's own settings - a joined game's settings never replace them: your outfits, view size, buttons, ...)
+const LOCAL_KEYS = ["character", "mode", "name", "local_players", "character2", "name2", "ip",
+	"outfit", "view_zoom", "touch_mode", "fullscreen", "pad_layout"]
 ## every fighter has a player id: (network peer id) * 8 + (which player on that PC, 0 or 1)
 static func pid_of(peer: int, k: int) -> int:
 	return peer * 8 + k
@@ -136,6 +138,7 @@ func refused(why: String) -> void:
 	refused_why = why
 	lobby_changed.emit()
 var refused_why = ""
+var _lost_as = -1      # our old peer id while trying the same host again (then: the next in line takes over)
 
 ## the host went away: keep trying to get back in (the world is kept on their side)
 func _on_server_lost() -> void:
@@ -151,6 +154,14 @@ func _on_server_lost() -> void:
 	var me = my_peer_id
 	if multiplayer.has_multiplayer_peer():
 		multiplayer.multiplayer_peer = null
+	if in_game and not succession.is_empty() and not migrating:
+		# first back to the same host for a while: often it is only OUR connection that blinked (Wi-Fi), and taking
+		# over at once split one world into two (the player stood alone in a world of their own)
+		_lost_as = me
+		toast.emit("LOST THE HOST - RECONNECTING...", Color(1, 0.6, 0.4))
+		reconnect_tries = 5
+		reconnect_t = 1.0
+		return
 	if in_game and not succession.is_empty():
 		_migrate(me)
 		return
@@ -179,6 +190,14 @@ func _process(dt: float) -> void:
 				succession.pop_front()
 				_migrate(my_peer_id)
 				return
+			if reconnect_tries == 0 and _lost_as >= 0:
+				var me = _lost_as      # the host did not come back: the next in line takes over, as before
+				_lost_as = -1
+				if not succession.is_empty():
+					if multiplayer.has_multiplayer_peer():
+						multiplayer.multiplayer_peer = null
+					_migrate(me)
+					return
 			if reconnect_tries == 0:
 				migrating = false
 				toast.emit("COULD NOT REACH THE HOST - PLAYING ON ALONE (Q IN THE PAUSE MENU: BACK)", Color(1, 0.5, 0.5))
@@ -189,7 +208,7 @@ func _process(dt: float) -> void:
 			remote_states.erase(pid)
 
 func _ready() -> void:
-	load_options.call_deferred()
+	load_options()      # (at once: the title menu asks about the music only if you have not answered before)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected)
@@ -298,6 +317,7 @@ func host_game() -> bool:
 ## GLOBAL MULTIPLAYER: the same game over WebSocket (it rides the ZeroTier bridge as TCP - see online.gd)
 func host_game_online(password: String) -> bool:
 	var p = WebSocketMultiplayerPeer.new()
+	_ws_room(p)
 	var err = p.create_server(Online.PORT, "127.0.0.1")
 	if err != OK:
 		net_error = "COULD NOT START THE GAME SERVER"
@@ -310,12 +330,20 @@ func host_game_online(password: String) -> bool:
 	Online.host(password)
 	return true
 
+## room to wait in: on Earth the host sends a lot, and when the ZeroTier path slows for a moment the default 64 KB
+## filled up and the connection closed (a player dropped and came back every few minutes)
+func _ws_room(p: WebSocketMultiplayerPeer) -> void:
+	p.inbound_buffer_size = 4 << 20
+	p.outbound_buffer_size = 4 << 20
+	p.max_queued_packets = 16384
+
 ## port: the local end of the bridge to the host (Online.join)
 func join_game_online(port: int) -> bool:
 	if port <= 0:
 		net_error = "COULD NOT REACH THAT GAME"
 		return false
 	var p = WebSocketMultiplayerPeer.new()
+	_ws_room(p)
 	var err = p.create_client("ws://127.0.0.1:%d" % port)
 	if err != OK:
 		net_error = "COULD NOT REACH THAT GAME"
@@ -365,6 +393,7 @@ func lobby_name() -> String:
 func _on_connected() -> void:
 	my_peer_id = multiplayer.get_unique_id()
 	migrating = false
+	_lost_as = -1
 	if reconnect_tries > 0:
 		reconnect_tries = 0
 		net_error = ""
@@ -440,7 +469,10 @@ func start_game(c: Dictionary) -> void:
 		mine[k] = cfg.get(k)
 	cfg = c.duplicate()
 	for k in LOCAL_KEYS:
-		cfg[k] = mine[k]
+		if mine[k] != null:
+			cfg[k] = mine[k]
+		else:
+			cfg.erase(k)
 	Assets.load_data()
 	planet = Planet.new()
 	var adv: String = cfg["adventure"]
@@ -471,7 +503,8 @@ func sim_for(node: int, arrival: Vector2, levels_hint: int) -> AreaSim:
 	if not sims.has(key):
 		var s = AreaSim.new()
 		var spec: Dictionary = n["spec"].duplicate()
-		spec["level"] = maxi(int(spec["level"]), levels_hint)   # enemies keep up with the players (like the PC mod)
+		# (foes keep their own strength, as in the original game: no keeping up with the players - the tough ones
+		# are out at the edges of the world)
 		s.setup(key, Assets.area(key), spec)
 		s.make_enemies(arrival)
 		sims[key] = s
@@ -841,10 +874,32 @@ func apply_pad_layout() -> void:
 	InputMap.action_add_event("ui_accept", ev)
 
 # ------------------------------------------------------------------ options (volume) kept on this PC
+## Windows / Mac: fullscreen (the first start too), or a window that fits this screen (a fixed 1440 x 810 one hung
+## off a small laptop screen with its display scaled up); the choice is kept
+func set_fullscreen(on: bool, keep: bool = true) -> void:
+	if OS.has_feature("android") or DisplayServer.get_name() == "headless":
+		return
+	if not keep and "--devtools" in OS.get_cmdline_user_args():
+		return      # the DEV TOOLS (map editor) open in a window: their wide bars fit, BACK included
+	cfg["fullscreen"] = on
+	if on:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	else:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		var sc = DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
+		var sz = Vector2i(int(sc.size.x * 0.8), int(sc.size.y * 0.8))
+		DisplayServer.window_set_size(sz)
+		DisplayServer.window_set_position(sc.position + (sc.size - sz) / 2)
+	if keep:
+		save_options()
+
+func toggle_fullscreen() -> void:
+	set_fullscreen(DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_FULLSCREEN)
+
 func save_options() -> void:
 	var fa = FileAccess.open("user://options.json", FileAccess.WRITE)
 	if fa:
-		fa.store_string(JSON.stringify({"music": Music.volume, "sound": Sfx.volume, "view_zoom": int(cfg.get("view_zoom", 0)), "touch_mode": str(cfg.get("touch_mode", "auto")), "pad_layout": pad_layout(), "name": str(cfg.get("name", "PLAYER"))}))
+		fa.store_string(JSON.stringify({"music": Music.volume, "sound": Sfx.volume, "view_zoom": int(cfg.get("view_zoom", 0)), "touch_mode": str(cfg.get("touch_mode", "auto")), "pad_layout": pad_layout(), "name": str(cfg.get("name", "PLAYER")), "outfit": cfg.get("outfit", {}), "fullscreen": bool(cfg.get("fullscreen", true))}))
 		fa.close()
 
 func load_options() -> void:
@@ -858,11 +913,15 @@ func load_options() -> void:
 			cfg["touch_mode"] = str(t.get("touch_mode", "auto"))
 			if str(t.get("name", "")) != "":
 				cfg["name"] = str(t["name"])
+			if t.get("outfit") is Dictionary:
+				cfg["outfit"] = t["outfit"]
+			cfg["fullscreen"] = bool(t.get("fullscreen", true))
 			if t.has("pad_layout"):
 				cfg["pad_layout"] = str(t["pad_layout"])
 			var mn = get_tree().root.get_node_or_null("Main")
 			if mn and mn.has_method("_fit_view"):
 				mn._fit_view()
+	set_fullscreen.call_deferred(bool(cfg.get("fullscreen", true)), false)      # (Windows / Mac: as it was left; fullscreen the first time)
 
 # ------------------------------------------------------------------ saving (each player keeps their own fighter)
 static func _slot(f: FighterSim, k: int) -> String:

@@ -1,6 +1,6 @@
 {
-  "author": "LoG2 Co-op",
-  "description": "A short adventure of its own: THE MISSING KEY CAPSULE. Shows the STORY tab (title, slots, intro, credits) and the story steps: a cutscene with camera, walking and emotes, faces in the text box, a companion, numbers (3 clues) and a timer, a dark park (MOOD), a boss fight with a second phase, a locked door that needs an item, a crate you break with an attack, saving and THE END. Choose it on the main menu (PLAY THE STORY).",
-  "name": "Example - A Story Of Your Own",
-  "version": "1.0"
+ "author": "LoG2 Co-op",
+ "description": "A short adventure of its own: THE MISSING KEY CAPSULE. Shows the STORY tab (title, slots, intro, credits) and the story steps: a cutscene with camera, walking and emotes, faces in the text box, a companion, numbers (3 clues) and a timer, a dark park (MOOD), a boss fight with a second phase, a locked door that needs an item, a crate you break with an attack, saving and THE END. Choose it on the main menu (PLAY THE STORY).",
+ "name": "Example - A Story Of Your Own (STORY MODE)",
+ "version": "1.0"
 }

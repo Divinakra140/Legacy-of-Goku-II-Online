@@ -29,6 +29,34 @@
    "aura": "ffe050"
   },
   {
+   "id": "ssba_goku",
+   "name": "SUPER SAIYAN BLUE (AURA)",
+   "who": "GOKU",
+   "level": 40,
+   "set": 3103,
+   "str": 2.4,
+   "pwr": 2.4,
+   "end": 1.7,
+   "speed": 1.3,
+   "drain_ticks": 60,
+   "aura": "30e0d0",
+   "sparks": true
+  },
+  {
+   "id": "ssb_goku",
+   "name": "SUPER SAIYAN BLUE",
+   "who": "GOKU",
+   "level": 50,
+   "set": 3104,
+   "str": 3.0,
+   "pwr": 3.0,
+   "end": 2.0,
+   "speed": 1.4,
+   "drain_ticks": 50,
+   "aura": "b0e8ff",
+   "sparks": true
+  },
+  {
    "id": "ssj_gohan",
    "name": "SUPER SAIYAN",
    "who": "GOHAN",

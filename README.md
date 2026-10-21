@@ -1,13 +1,26 @@
-# LOG2II Android Coop Port
+# LoG2 Online 
 
-Android port of **Legacy of Goku II - Co-op (Godot)** by **Puni Puni**
-(YouTube: [@PuniPuni2026](https://www.youtube.com/@PuniPuni2026)), distributed with the developer's permission.
-Built for and tested on the Retroid Pocket Flip 2; works on 64-bit ARM Android devices (Android 7+).
+The Godot rebuild of **Legacy of Goku II** by **Puni Puni** and **Divinakra**
+(YouTube: [@PuniPuni2026](https://www.youtube.com/@PuniPuni2026), [@DivinakraCreations](https://www.youtube.com/@DivinakraCreations)),
+for **Android** (Retroid Pocket and phones), **Windows** and **Mac** (Apple Silicon and Intel). All three play
+GLOBAL multiplayer together. Formerly "Legacy of Goku II - Co-op".
 
-**No game data is included.** On first start the app asks for your own *Dragon Ball Z - The Legacy of Goku II (USA)*
-.gba (CHOOSE MY GAME) and reads its maps, sprites and sounds on the device (about 30 seconds).
+**This is not only an Android port.** LoG2 Online is a new and improved version of the whole game and its dev tools,
+on every system:
+- **The game:** global and local multiplayer across Android, Windows and Mac, GBA-style menus, flying, new playable heroes, 
+  villians and  outfits, a reworked Earth (Goku's House, Triceratops Jungle and West City improved by hand), the original 
+  game's balance (level cap 50), original game music recorded from your own cartridge, and shared saves.
+- **The dev tools:** a much better map editor (redo, brush sizes, mirrored copy and paste, keep-the-ground pasting,
+  save points in THINGS, a foe picture list, door jumping) and the Earth editor, with guides included
+  (DEV TOOLS.txt, Earth Editor Guide.txt).
 
-## What the port changes (from the v42 PC release)
+**No game data is included.** On first start the game asks for your own *Dragon Ball Z - The Legacy of Goku II (USA)*
+.gba (CHOOSE MY GAME) and reads its maps, sprites and sounds on your device. Earth ships as tile numbers only
+(builtin/earth): it is drawn with the tiles from your own game file.
+
+See [CHANGELOG.md](CHANGELOG.md) for what is new.
+
+## Android specifics (from the v42 PC release)
 - Runs the game importer on Android (built with the NDK, shipped as lib/arm64-v8a/libgodot_export.so)
 - CHOOSE MY GAME uses Android's file picker
 - Game folders (content, mod packs, adventures) unpacked into the app's storage on first start
@@ -21,7 +34,9 @@ Built for and tested on the Retroid Pocket Flip 2; works on 64-bit ARM Android d
 - project/ - the Godot project (Godot 4.7.2; originally made with 4.3)
 - data/ - Puni Puni's game folders packed into the APK: content/, modpacks/, adventures/, music/
 - importer/source/ - the game importer (plain C++17, no other libraries)
-- tools/ - make_pack.py (packs data/), export.sh (build + sign), run_on_device.sh (install via adb)
+- tools/ - make_pack.py (packs data/), export.sh (build + sign), run_on_device.sh (install via adb),
+  bake_earth.py (right before a release: lays the map editor's Earth edits into data/builtin/earth, the Earth that ships),
+  release_docs/ (READ ME.txt, DEV TOOLS.txt and Earth Editor Guide.txt shipped with the Windows / Mac builds)
 
 ## Building
 Needs Godot 4.7.2 with its Android export templates, the Android SDK (build-tools 34), the NDK, and JDK 17.
@@ -33,22 +48,4 @@ Needs Godot 4.7.2 with its Android export templates, the Android SDK (build-tool
    keys/keystore_password.txt as password: ...).
 5. Point the scripts at your tools, then build - the signed APK lands in out/LoG2Coop.apk:
    export GODOT=/path/to/godot ANDROID_SDK=/path/to/android-sdk JAVA_HOME=/path/to/jdk-17 then tools/export.sh
-   
-## Current State
-  This game is not a 1:1 port of the original GBA game and if you are thinking you will be able to play through the original story
-with a friend as a coop, that is not the case...At least not yet. I am considering porting the whole story over, but maybe not,
-that is a huge job. This game in its current state is a free-play style, where the developer, Puni Puni, took a bunch of 
-the LOG2 tiles and rearranged them in an open world that aims to emulate the original world, but with all the areas connected. 
-The combat mechanics and animations look and feel very good and the enemies and leveling up system is all pretty polished already.
-The environments themselves are not polished though, and need a lot of work before they feel like a real game.
-
-  The world is currently pretty open and flat and 2 dimensional feeling with a bunch of enemies scattered throughout that you can 
-kill to level up. There are moves you can unlock as you go, for each each character and each character has different special moves. 
-You can create your own story on the dev editor on the desktop version of this game and there is already a few custom stories
-that have been made for the game and you can play them in this android port. You can also create custom maps from the GBA tiles. 
-Think of the current state of the game as a sort of  Godot-LOG2 tech demo. We have the tools and the general layout here, we just
-need developers to polish the way the game rearranges the GBA tiles into a more playable and realistic environment, and possibly 
-integrate some story elements, and cutscenes ect.. Eventually the end game for this port is to have two modes: Freeplay and Story 
-Mode, each with coop and maybe even PVP in Freeplay. Freeplay is the most developed of the two and even then, there is still a lot 
-to go and we are open to any developers joining the team, just contact me, Divinakra or Puni Puni on Discord or Reddit or submit an 
-issue here. We will get back to you as soon as we can. Thanks for your patience. 
+  

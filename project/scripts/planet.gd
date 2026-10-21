@@ -140,25 +140,35 @@ func build_random(s: int) -> void:
 	var r = RandomNumberGenerator.new()
 	r.seed = s
 	var zones = [2, 3, 4, 6, 7, 8, 10, 12, 13]
-	var zone: int = zones[r.randi_range(0, zones.size() - 1)]
-	var pool = []
 	var d = DirAccess.open(Assets.base_dir.path_join("maps"))
 	if d == null:
 		return
-	for f in d.get_directories():
-		var parts = f.split("_")
-		if parts.size() != 2 or int(parts[0]) != zone:
-			continue
-		var a = Assets.area("maps/" + f)
-		if a.is_empty() or a["w"] < 320 or a["h"] < 240:
-			continue
-		var ex: Array = a["meta"].get("exits", [])
-		var en = 0
-		for o in a["meta"].get("objects", []):
-			if o["kind"] == "enemy":
-				en += 1
-		if ex.size() >= 2 and en >= 2:
-			pool.append(f)
+	var dirs = d.get_directories()
+	# the seed's land first; a land with too few fit maps (some have none: an empty planet, a grey screen) gives
+	# way to the next, and if none has enough, maps from every land together
+	var order = zones.duplicate()
+	for i in range(order.size() - 1, 0, -1):
+		var j = r.randi_range(0, i)
+		var tmp = order[i]; order[i] = order[j]; order[j] = tmp
+	var pool = []
+	for zone in order + [-1]:
+		pool = []
+		for f in dirs:
+			var parts = f.split("_")
+			if parts.size() != 2 or (zone >= 0 and int(parts[0]) != zone) or (zone < 0 and not zones.has(int(parts[0]))):
+				continue
+			var a = Assets.area("maps/" + f)
+			if a.is_empty() or a["w"] < 320 or a["h"] < 240:
+				continue
+			var ex: Array = a["meta"].get("exits", [])
+			var en = 0
+			for o in a["meta"].get("objects", []):
+				if o["kind"] == "enemy":
+					en += 1
+			if ex.size() >= 2 and en >= 2:
+				pool.append(f)
+		if pool.size() >= 3:
+			break
 	pool.sort()
 	for i in range(pool.size() - 1, 0, -1):
 		var j = r.randi_range(0, i)
@@ -229,7 +239,11 @@ func build_land(z: int, s: int) -> bool:
 		var exits = []
 		var ex: Array = reg["exits"]
 		for i in ex.size():
-			exits.append({"rect": ex[i]["rect"], "to": int(ex[i]["to"]), "arrive": ex[i]["arrive"], "role": i, "to_role": 0})
+			# a door's box covers the whole door: the game's is often one tile wide at its left edge (doors are 3 tiles)
+			var rc: Array = ex[i]["rect"].duplicate()
+			if float(rc[2]) - float(rc[0]) < 24.0:
+				rc[2] = float(rc[0]) + 24.0
+			exits.append({"rect": rc, "to": int(ex[i]["to"]), "arrive": ex[i]["arrive"], "role": i, "to_role": 0})
 		var nm = str(reg["name"])
 		if nm == "":
 			nm = "INSIDE" if not out else "THE WILDS"

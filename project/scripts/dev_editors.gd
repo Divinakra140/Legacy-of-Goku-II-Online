@@ -26,7 +26,7 @@ const TEMPLATES = {
 	"MISSIONS": {"id": "new_mission", "name": "NEW MISSION", "info": "Beat 10 foes.", "type": "kill", "target": "any", "count": 10, "level": 1, "reward": {"zeni": 100, "exp": 0.5, "items": {}, "forms": [], "states": []}},
 	"SHOPS": {"id": "new_shop", "name": "NEW SHOP", "info": "Welcome!", "items": [{"id": "senzu", "price": 150}, {"id": "power_pill", "price": 60}]},
 	"LOOT": {"id": "8", "name": "FOE 8", "replace": false, "drops": [{"item": "senzu", "chance": 0.05, "count": 1}], "zeni": 0},
-	"STORY": {"id": "story", "title": "MY STORY", "subtitle": "A LEGACY OF GOKU ADVENTURE", "hero": "GOKU", "start_map": "land/0/0", "x": 8088, "y": 9632, "intro_event": "", "credits": ["MY STORY", "", "MADE WITH LOG2 CO-OP DEV TOOLS", "", "THANKS FOR PLAYING!"], "credits_music": "victory"},
+	"STORY": {"id": "story", "title": "MY STORY", "subtitle": "A LEGACY OF GOKU ADVENTURE", "hero": "GOKU", "start_map": "land/0/0", "x": 8088, "y": 9632, "intro_event": "", "credits": ["MY STORY", "", "MADE WITH LOG2 ONLINE DEV TOOLS", "", "THANKS FOR PLAYING!"], "credits_music": "victory"},
 	"STATES": {"id": "new_state", "name": "NEW STATE", "msg": "SOMETHING HAPPENED!", "seconds": 10, "hp_per_sec": 0, "speed": 1.0, "str": 1.0, "pwr": 1.0, "end": 1.0, "color": "ffffff"},
 	"HEROES": {"id": "NEWHERO", "name": "NEWHERO", "base": "GOKU", "set": 60, "inherit": true, "stats": {"maxhp": 90, "maxep": 22, "str": 4.0, "pwr": 4.0, "end": 4.0}},
 }

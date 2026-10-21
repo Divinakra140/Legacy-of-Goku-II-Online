@@ -237,7 +237,7 @@ func stamps_dir() -> String:
 
 func list_stamps() -> Array:
 	var out = []
-	var dirs = [stamps_dir()]
+	var dirs = [Assets.builtin_dir().path_join("stamps"), stamps_dir()]      # the port's own (SAVE POINT) first
 	for d in Mods.pack_dirs():
 		dirs.append(d.path_join("content/stamps"))
 	for dd in dirs:
@@ -316,13 +316,7 @@ static func _is_obj(v: Array) -> bool:
 
 ## a stamp laid down with its top-left at c: only its own cells (the ground around stays)
 static func place_stamp(dev, st: Dictionary, c: Vector2i) -> void:
-	var w: int = st["w"]
-	var cells: Array = st["cells"]
-	var mask: Array = st.get("mask", [])
-	for j in cells.size():
-		if mask.size() > j and int(mask[j]) == 0:
-			continue
-		dev.put(c.x + j % w, c.y + j / w, cells[j])
+	dev._lay(c, int(st["w"]), st["cells"], st.get("mask", []), bool(st.get("keep_ground", false)))
 
 ## a small picture of a stamp (its top-most tiles)
 static func stamp_image(st: Dictionary, cell_px: int = 4) -> Image:
@@ -377,7 +371,16 @@ static func mini_image(a: Dictionary, max_px: int = 220) -> Image:
 	if str(a.get("key", "")) == "land/0/0":
 		var p = Assets.base_dir.path_join("kit/lands/0/0_mini.png")
 		if FileAccess.file_exists(p):
-			return Image.load_from_file(p)
+			var im = Image.load_from_file(p)
+			im.convert(Image.FORMAT_RGBA8)
+			var ch: Dictionary = Mods.merged("land/0/0")["cells"]      # the changes drawn in (the picture is the import's)
+			for k in ch:
+				var xy = str(k).split(",")
+				var x = int(xy[0]); var y = int(xy[1])
+				if x >= 0 and y >= 0 and x < im.get_width() and y < im.get_height():
+					var col = cell_color(ch[k]); col.a = 1.0
+					im.set_pixel(x, y, col)
+			return im
 	var tw: int = a["tw"]; var th: int = a["th"]
 	var step = maxi(1, int(ceil(maxf(tw, th) / float(max_px))))
 	var w = maxi(1, tw / step); var h = maxi(1, th / step)

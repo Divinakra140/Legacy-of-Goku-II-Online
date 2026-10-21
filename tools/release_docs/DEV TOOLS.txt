@@ -1,0 +1,306 @@
+LEGACY OF GOKU 2 ONLINE - DEV TOOLS (your team's editors)
+=========================================================
+
+Open them from the main menu: DEV TOOLS. (Or start the game as:  LoG2Online.exe -- --devtools)
+"DEV TOOLS tutorial v34.mp4" shows every tool in under four minutes.
+
+New to it? HELP (top right) > FIRST MAP - STEP BY STEP walks you through your first map: a map of your
+own, ground, walls, someone to talk to, a door in from Earth, SAVE, PLAY HERE. Every step ticks
+itself off. HELP > A TIP shows one of many tips (one shows each time you open the tools).
+
+Nothing needs programming. Everything your team changes is saved next to LoG2Online.exe, never in
+the imported ROM data, so a new import of the ROM never loses it:
+
+  mods\maps\          changes to the game's maps, and the maps your team makes (mods\maps\custom\)
+  content\            heroes, enemies, moves, forms, blasts, missions, events, shops, loot, colours,
+                      your own sprite sets (content\sprites\) (JSON text files and PNGs)
+  modpacks\           mods from other people (see 5. MODS AND SHARE), switched on in MODS
+  backups\            a copy of mods and content at every save (see 4. CHECK AND HISTORY)
+
+To work as a team: TOGETHER (top right) lets everyone edit the same world at once over LAN or
+Hamachi (see 6.). Or turn your work into a mod with SHARE and send the .zip.
+
+
+1. THE MAP EDITOR (tab MAP)
+---------------------------
+The map list (top left) has:
+  EARTH (THE WHOLE PLANET)   the game's world, one map, every house and cave on it
+  MY MAP: ...                maps your team made (NEW MAP, or MAKE IT MY MAP)
+  BUU'S FURY z-a             Buu's Fury's maps (after OTHER GAMES, see 3.)
+  LEGACY OF GOKU 0-n         The Legacy of Goku's maps (after OTHER GAMES)
+
+Moving round: right or middle mouse drag, WASD or the arrows. Wheel: zoom.
+Keys: 0-4 layer, Ctrl+Z undo, Ctrl+S save, Delete deletes the chosen foe / person / door / item.
+Check boxes: WALLS (red = you cannot walk there), GRID, OBJECTS.
+
+Layers: 0 ground, 1 and 2 things on the ground (under the heroes), 3 and 4 drawn over the heroes
+(roofs, tree tops). Every map cell = 5 layers + one wall bit.
+
+Tools
+  PAN      drag to move round
+  TILE     paint the tile chosen on the right on the chosen layer. The list above the tiles
+           switches between this game's tiles and Buu's Fury's.
+  STAMP    paint a whole cell (all 5 layers and its wall) - choose it with PICK
+  ERASE    take the tile off the chosen layer
+  PICK     click a cell on the map: it becomes the brush (STAMP), its tile the TILE brush
+  WALL     paint walls (where nobody can walk)
+  GROUND   paint walkable ground
+  SELECT   click a foe (red), person (blue), treasure (gold) or door (yellow); drag to move it,
+           DELETE on the right to take it away
+  COPY     drag a box: everything in it (all layers and walls) goes to the clipboard
+  PASTE    click: the clipboard is laid down with its top-left corner there. The clipboard stays
+           when you switch maps: copy from one map, paste on another (whole buildings, whole places)
+  FILL     drag a box: filled with the brush
+  FOE      click: a foe of that kind (the game's own enemy numbers 0-127), at its own level or the
+           level set on the right
+  PERSON   click: a person with a name, a sprite set and lines (they talk when you stand next to
+           them and press A; one line per text box)
+  ITEM     click: treasure lying there until someone takes it
+  DOOR     1. drag the door's box  2. choose the map it leads to in the list  3. click where you
+           arrive. Doors open at once, no loading. Make one back the same way.
+  SMART    paint ground that fits: it looks at what is round each cell (grass next to a path,
+           sand next to water...) and picks the game's own edge pieces. Brush size on the right.
+  LINE     drag: a straight line of the chosen brush (TILE, CELL, WALL or GROUND - on the right)
+  RECT     drag: a box of the brush, filled or just its edge
+  THINGS   whole objects to stamp: trees, houses, rocks, fences... The list has the ones saved by
+           your team; FIND THINGS IN VIEW adds everything on screen that stands on its own.
+           Click to put it down (with its walls). To keep one: COPY it, then SAVE THE COPY AS A THING.
+  ZONE     drag a box: a field of foes that come back - which kinds (e.g. 8,12,40), how many, their
+           level and how many seconds until a beaten one comes back
+  EVENT    drag a box: walking into it starts an event (choose which on the right; make events in
+           the EVENTS tab). ONLY BY AN ATTACK: only a punch or a blast landing in the box starts it -
+           a rock to break, a crate, a switch to hit.
+  MOOD     drag a box: inside it the place feels different - DARKNESS (with a light round each
+           fighter; the light size on the right), WEATHER (rain, snow, ash, dust) and its own MUSIC
+           (field, cave, lair, boss, title or a song file from your music folder). A dark cave, a
+           haunted wood, a snowstorm on the mountain. SELECT (click inside) to delete it.
+  DOOR     (also) LOCKED DOORS: on the right before you make it - NEEDS an item (and whether the item
+           is USED UP), NEEDS a flag (e.g. event:my_event), NEEDS a level, and the LOCKED TEXT shown
+           when it won't open. Once opened with a used-up key it stays open (saved).
+  PERSON   (also) a SHOP the person keeps, or an EVENT that starts when you talk to them
+
+VIEW (top bar)  LITTLE MAP (click it to jump), SHOW LAYER 0-4 (hide layers to see under roofs),
+                THE WHOLE WORLD (all of Earth at once with the place names - click to zoom there).
+                Zoom far out with the wheel and it switches to the whole-world view by itself.
+CHANGES         marks every cell your team changed (and the mods switched on) in colour.
+PLAY HERE       the game right where you are looking: choose the hero, the level and whether you
+                can be beaten. F10 in the game brings you back to the same spot in the tools.
+                (A play-test never touches your own saved heroes and starts fresh each time.)
+
+NEW MAP      a map of your own: name and size, it starts as one ground (the cell picked last).
+             Paint it, then put a DOOR to it on EARTH.
+SAVE         writes mods\maps\... (leaving a map or the editor also saves)
+UNDO         the last 60 strokes
+
+What the files look like (in case you want to script things):
+  mods\maps\land_0_0.json   {"cells": {"x,y": [layer0..layer4, walk]}, "enemies_add": [[kind, set,
+                            x, y, level]], "enemies_del": [[x, y]], "people_add": [{x, y, set, name,
+                            lines}], "people_del", "doors_add": [{rect: [x0,y0,x1,y1], to: map key,
+                            arrive: [x, y]}], "doors_del", "items": [{x, y, id, count}],
+                            "items_del": [[x, y]], "zones": [{rect, kinds, count, level,
+                            respawn}], "triggers": [{rect, event, attack}], "moods": [{rect,
+                            dark, light, weather, music}]}  (doors_add may have need_item,
+                            need_flag, need_level, locked_msg, take_item)
+                            x, y in pixels for things, in tiles for cells
+  mods\maps\custom\NAME.bin "LKR2", width, height (16 bit), 5 layers of 32-bit cells, a walk byte each
+  mods\maps\custom\NAME.json its name, size, arrival point, song
+
+
+2. THE OTHER EDITORS
+--------------------
+Every editor: a list on the left, the fields on the right, a preview of the sprite set.
+NEW makes a new entry from a template, COPY copies the chosen one, DELETE deletes it,
++ FIELD adds a field. SAVE writes the file; the game reads it the next time it starts a world.
+
+  HEROES    content\heroes.json   the playable heroes: name, sprite set, numbers (hp, ki, power,
+            defence, speed...). NEW: a hero of your own that plays like one of the game's ("base":
+            it gets that hero's moves and forms unless "inherit" is false).
+  ENEMIES   content\enemies.json  every kind of foe: level, hp, attack, exp, its behaviour (the
+            game's own scripts), its sprite set. Only what you change is written.
+  MOVES     content\skills.json   special moves: who learns them, from which level, power, ki,
+            range, its sprite set / effect
+  FORMS     content\forms.json    transformations: who, from which level, how much stronger, look
+  BLASTS    content\rom_specials.json  the heroes' own drawn attacks and where each part sits.
+            TUNE IN THE GAME starts a world with that hero and the BLAST TUNER on:
+              F9 on / off, [ ] the part, , . the attack, 1-4 the facing, arrows move the part
+              (Shift: 4 pixels), Ctrl+S saves. Fire it, nudge it until it sits right, save.
+  MISSIONS  content\quests.json   missions: beat foes, go somewhere, reach a level, talk to
+            someone - who gives it, the text, the reward (exp, zeni, items)
+
+  EVENTS    content\events.json   little scripts with no programming: when (talking to a person, walking
+            into an EVENT box, beating a foe kind, the world starting), only if (flags, level, a mission
+            done, an item), once or every time - and the steps, one under the other:
+              say, choice (answers jump to labels), label, goto, if_flag, flag, give, take, zeni, exp,
+              heal, quest (give a mission), finish_quest, wait, fade, warp (to a map and spot), spawn
+              (foes), shop, sound, music, toast, end
+            "%s" in a line is the hero's name, {var:coins} a number. A line too long for one text box is
+            marked; SPLIT INTO BOXES THAT FIT cuts it up. TEST IN THE GAME plays it at once.
+            STORY STEPS (for games of your own - see 7. GOOD TO KNOW
+---------------
+- Walls: the game's own collision is kept exactly. If you paint new things, paint their walls
+  too (WALL), and check with WALLS on - red is solid.
+- Foes, people and doors are matched by their spot: moving the game's own foe takes the old one
+  away and puts a new one in.
+- Everything is plain JSON: open the files in any text editor if the tools do not have a field.
+- A broken file? Delete it (or the line) and the game uses the game's own data again.
+
+
+8. MAKING A STORY):
+              scenes  move (someone - or PLAYER - walks to x, y; wait or not), face, pose (any pose of
+                      the sprite set: 18 = charging a beam...), camera (to a spot or a person, zoom,
+                      frames), camera_back, shake, show_person, hide_person, emote (! ? ... over a head),
+                      say / choice with a FACE (a sprite set shown left of the text box)
+              fights  boss_fight (kind, level, name, hp x, where; WIN label, LOSE label, phases like
+                      0.5:half,0.2:last - at that much health left the event jumps there, says its
+                      lines, and FIGHT ON goes back to the fight). The doors stay shut until it ends.
+              numbers var (set, add, sub, mul, random), if_var (=, !=, <, <=, >, >=), timer (seconds,
+                      shown on screen), if_timer (ran out?)
+              story   companion (a hero or a sprite set fights beside you; leave), switch_hero (play
+                      as another hero - each keeps their own level), open_area / close_area (a box of
+                      the map becomes walkable or a wall - a boulder smashed, a bridge built; kept
+                      after saving), save, the_end (the credits)
+            LINES FROM THE GAME... (on a say step): every line the game's people say, searchable -
+            click one and it goes into the step with its speaker. X, Y FROM THE MAP VIEW fills a
+            spot with the middle of what the MAP tab shows.
+  SHOPS     content\shops.json    a shop: its name, greeting and what it sells at what price. Give it
+            to a person with the PERSON tool (or open it from an event).
+  LOOT      content\loot.json     what a foe kind drops: items with a chance and count, zeni, and
+            whether it replaces the game's own drops
+  SPRITES   your own characters:
+            - IMPORT: a PNG sheet, one row per pose x direction (stand, walk, punch... facing down, up,
+              right, left), frame width and height, where the feet are. GBA COLOURS and the colour
+              limit make it look like the game. Left can be the right side mirrored. It becomes a new
+              sprite set (4000 and up) for heroes, foes and people.
+            - ANIMATIONS: open any set (the game's too) and fix each frame: move it, change the order,
+              double one, delete, mirror. COPY X,Y + PASTE puts many frames at one place; MOVE BY shifts
+              a pose, all its directions or the whole set. TAKE FRAMES FROM A SET shows every pose of any set as
+              pictures: click the frames you want (several at once), then ADD or REPLACE. SAVE keeps it as your
+              version; BACK TO THE GAME'S OWN undoes all of it.
+  STATES    content\states.json   RPG-style states on a fighter for a while: poison, regeneration, slow,
+            haste, weakened, rage, iron skin, blind, paralysed, ki sealed, confused - and your own.
+            Fields: seconds (0 = until something takes it off), hp_per_sec / ep_per_sec (minus hurts),
+            can_kill, str / pwr / end / speed (multiplied), blind, stun, no_ki, no_transform, confuse,
+            form (turned into that form while it lasts), tint, aura, msg, color.
+            Who gives them: events (STATE step - and take them off: off, or id "all"), moves
+            ("self_state": on you; "inflict": {"state": "poison", "chance": 0.5, "seconds": 8} on the
+            foes hit), foe kinds (ENEMIES + FIELD "inflict": {"state": "slow", "chance": 0.25}),
+            items ("state", "cure": "all" or a list) and missions (reward "states"). Foes feel poison,
+            regeneration, paralysis and slow.
+  FORMS     (also) "unlock": level (at its level), reward (a mission's reward "forms" or an event's
+            UNLOCK FORM step gives it - e.g. Ultra Blue, SSJ4 Limit Breaker), event (never on the
+            TRANSFORM button: only the TRANSFORM step, a move's "then_form" or a state's form).
+            A form can be given to any hero, not only its "who".
+  MOVES     (also) BUILD A MOVE: choose a kind (beam, ball, volley, wave, dash, slash, stretch, flash,
+            heal, power up), the numbers and the colour, and watch it in the preview.
+  COLORS    (also) PRESETS: NIGHT, AUTUMN, SNOW, NAMEK, OLD PHOTO, EVIL, GHOST and your own
+            (SAVE AS PRESET) - one click for a whole new look of a set or the tiles.
+
+Sprite set numbers: this game's 0-299, Buu's Fury's 1000 and up, The Legacy of Goku's 2000 and up,
+your colour variants 3000 and up (see COLORS), your imported sets 4000 and up (see SPRITES).
+
+  COLORS    content\colors.json   change the colours of anything:
+            - a sprite set: type its number, OPEN. Click one of its colours, choose the new colour with
+              ITS NEW COLOUR - only that colour changes (Goku's orange suit blue, hair blond...). Or move
+              HUE / SATURATION / BRIGHTNESS for all of it. This changes that set everywhere.
+            - NEW VARIANT: a copy of a set with its own colours, a new sprite set (3000, 3001...) - a red
+              Saibaman next to the green one, a dark Goku. Give its number to a foe kind (ENEMIES "set"),
+              a person or a hero (HEROES "set").
+            - TILES: this game's, Buu's Fury's or Legacy of Goku's tile sheet - every map using them
+              changes (autumn trees, night, snow...). SHEET up / down shows more of the sheet.
+            BEFORE and AFTER show the change at once; SAVE keeps it (and the game uses it).
+Any of them works for heroes, foes, people and moves.
+
+
+3. OTHER GAMES: BUU'S FURY AND THE LEGACY OF GOKU
+-------------------------------------------------
+Put your own cartridge files next to LoG2Online.exe or in a "roms" folder there (the .gba or the
+.zip it came in; your Downloads folder and the folder of your LoG2 ROM are looked in too):
+  Dragon Ball Z - Buu's Fury (USA)
+  Dragon Ball Z - The Legacy of Goku (any version)
+Then press OTHER GAMES in the map editor (the first import of the game also reads them).
+Nothing of these games is shipped with LoG2 Online; they are read from your files.
+
+  Buu's Fury     all its maps (in the map list, to look at, PICK and COPY from - or MAKE IT MY MAP
+                 to copy one whole as a map of your own), all its tiles (the TILE palette) and its
+                 characters and effects as sprite sets 1000+
+  Legacy of Goku all its 42 maps (Kame House, Goku's house, the cities, Namek, the snow, the
+                 dinosaur valley... in the map list as LEGACY OF GOKU 0-n, with their walls), all its
+                 tiles (the TILE palette) and its characters as sprite sets 2000+
+
+The other games' maps cannot be changed in place (they come from the ROM): copy what you need
+onto EARTH or onto a map of your own.
+
+
+4. CHECK AND HISTORY (tab CHECK)
+--------------------------------
+CHECK EVERYTHING looks over all your team's work and lists what will not work (red) or is probably
+not what you want (yellow): doors that lead nowhere or arrive inside a wall, people or foes stuck in
+walls, sprite sets, items, shops or events that are not there, events that jump to a missing label
+or have lines too long for the text box, maps nobody can get into, foe kinds that don't exist,
+mods that change the same cells. Choose one and GO THERE (or double click).
+
+HISTORY: every SAVE (at most one every two minutes) keeps a copy of mods and content in "backups"
+(the newest 40). RESTORE puts everything back as it was then - what you had is backed up first, so
+a restore can be undone too. BACK UP NOW makes one at once.
+
+
+5. MODS AND SHARE
+-----------------
+Main menu - MODS (or the SHARE tab): the mods you have, switched on or off, in their order (the
+lower one wins where two change the same thing - the arrows move them; overlaps are listed).
+ADD A MOD takes a .zip (or drop the .zip in the "modpacks" folder). Your own edits always lie over
+every mod.
+
+SHARE: name, author, version and a few words, then MAKE THE MOD FILE - your changed maps, content and
+sprite sets go into modpacks_made\NAME.zip (only what you changed, never anything from the ROM).
+Send it to anyone: they ADD A MOD and switch it on. Several mods stack.
+
+The example mods come with the game (in "modpacks", switched off - switch them on in MODS and
+open them in the tools to see how they are made):
+  Example - Little Village       an elder with a choice event, a shop, a treasure, a field of foes
+  Example - The Farmer's Quest   a mission that opens when you talk to the farmer
+  Example - Shadow Goku          a new playable hero in a recoloured sprite set
+  Example - Forms & States       a form as a mission reward, a move that ends in a form, poison, slow
+  Example - A Story Of Your Own  a short story: cutscene, clues, a timer, a dark park, a boss with
+                                 two phases, a locked door, a companion, credits (see 8.)
+
+
+6. TOGETHER: EDITING AT THE SAME TIME
+-------------------------------------
+TOGETHER (top right): one of you presses HOST, the others type the host's address and JOIN (on the
+same network the PC's address, with Hamachi the host's Hamachi IPv4; port 7778 - one up from the
+game's own). Joining gives you the host's world (what you had goes to HISTORY first).
+Then everyone sees the others' mouse with their name and tool, and every tile, wall, foe, person,
+door, treasure, zone and event box anyone changes, as they change it. Events, shops, loot, colours,
+sprite sets and new maps go across each time someone saves them. Everyone presses SAVE for their
+own copy. If the host leaves, everyone keeps what they have.
+
+
+8. MAKING A STORY (a single-player game of your own)
+----------------------------------------------------
+STORY tab: give it a TITLE and the main menu shows your story on top with 3 save slots, PLAY THE
+STORY and ERASE SLOT. Fields: subtitle, hero (who you play), start_map + x, y (where a new game
+starts - X, Y from the MAP tab), intro_event (an EVENTS id played once at the start), credits (the
+lines THE END scrolls) and credits_music. A story keeps its own saves (not your normal heroes):
+where you stood, flags, numbers, companions, opened places, who was shown or sent away.
+
+How the game's own story feels, step by step:
+  1. A cutscene: SHOW PERSON, CAMERA to them (zoom 1.5), EMOTE !, MOVE them to you, SAY with a FACE,
+     CAMERA BACK.
+  2. Asking around: people (PERSON tool) with an EVENT each that adds 1 to a number (VAR add), and
+     IF VAR >= 3 sets a flag.
+  3. A place you may only enter later: an EVENT box with "only when flags set", a locked DOOR that
+     needs an item, a boulder (ONLY BY AN ATTACK box + OPEN AREA).
+  4. A boss: BOSS FIGHT with a WIN, a LOSE and a phase (0.5:angry) - a SAY and a TRANSFORM at half
+     health, then FIGHT ON.
+  5. SAVE, and at the very end THE END.
+F8 in the game: the EVENT DEBUGGER - the running event and its step, every flag, number, timer and
+state. F7 (with F8 on) jumps over the step it waits on. CHECK finds steps naming people that are not
+there, labels that are missing, boss phases written wrong, a story intro that is not an event.
+
+The example mod "Example - A Story Of Your Own" (THE MISSING KEY CAPSULE, about 5 minutes) uses all
+of it - switch it on in MODS, then look at its events in the EVENTS tab.
+
+Good to know: the story camera zoom is for one player (with two on one PC it only moves);
+companions don't get hurt; the game's own story scenes can't be read from the ROM (they are
+compiled code), but every line its people say is in LINES FROM THE GAME.

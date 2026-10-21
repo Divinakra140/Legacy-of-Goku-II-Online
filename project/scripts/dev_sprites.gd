@@ -142,6 +142,7 @@ func _choose_png() -> void:
 	fd.access = FileDialog.ACCESS_FILESYSTEM
 	fd.filters = PackedStringArray(["*.png ; PNG pictures"])
 	fd.size = Vector2i(700, 420)
+	fd.use_native_dialog = true      # the computer's own file picker
 	fd.file_selected.connect(func(p): load_sheet(p); fd.queue_free())
 	fd.canceled.connect(func(): fd.queue_free())
 	add_child(fd)

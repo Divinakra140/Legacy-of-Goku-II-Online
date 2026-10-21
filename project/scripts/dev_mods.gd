@@ -100,6 +100,7 @@ func _add() -> void:
 	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	fd.access = FileDialog.ACCESS_FILESYSTEM
 	fd.filters = PackedStringArray(["*.zip ; Mod packages"])
+	fd.use_native_dialog = true      # the computer's own file picker
 	if OS.has_feature("android"):
 		fd.use_native_dialog = true      # Android's own file picker (Godot's is tiny there and B cannot leave it)
 		fd.filters = PackedStringArray()

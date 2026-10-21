@@ -1,10 +1,204 @@
 {
-  "_help": "Heroes that come with the Android port. They play like their base hero. Your own content/heroes.json and mods lie over these.",
-  "heroes": [
-    {"id": "SS GOKU", "name": "SS GOKU", "base": "GOKU", "inherit": true, "set": 3101},
-    {"id": "SHIRTLESS", "name": "SHIRTLESS", "base": "GOKU", "inherit": true, "set": 3102},
-    {"id": "SS BLUE GOKU", "name": "SS BLUE", "base": "GOKU", "inherit": true, "set": 3103},
-    {"id": "SHADOWGOKU", "name": "SHADOW", "base": "GOKU", "inherit": true, "set": 3100,
-     "stats": {"end": 3.6, "maxep": 26, "maxhp": 85, "pwr": 4.6, "str": 4}}
-  ]
+ "_help": "Heroes that come with the Android port. outfits: the looks L / R switch between on the character screen (set: a sprite set or a look from colors.json; none = the hero's own). The level and the save belong to the hero, whatever the outfit. Your own content/heroes.json and mods lie over these.",
+ "heroes": [
+  {
+   "id": "GOKU",
+   "outfits": [
+    {
+     "name": "GOKU"
+    },
+    {
+     "name": "SS GOKU",
+     "set": 3101
+    },
+    {
+     "name": "SHIRTLESS",
+     "set": 3102
+    },
+    {
+     "name": "SS BLUE",
+     "set": 3104
+    },
+    {
+     "name": "SSBA",
+     "set": 3103
+    },
+    {
+     "name": "SHADOW",
+     "set": 3100
+    }
+   ]
+  },
+  {
+   "id": "PICCOLO",
+   "outfits": [
+    {
+     "name": "PICCOLO"
+    },
+    {
+     "name": "NO WEIGHTS",
+     "set": 104
+    },
+    {
+     "name": "YELLOW",
+     "set": 3105
+    },
+    {
+     "name": "TORN",
+     "set": 3106
+    }
+   ]
+  },
+  {
+   "id": "GOHAN",
+   "outfits": [
+    {
+     "name": "GOHAN"
+    },
+    {
+     "name": "CASUAL",
+     "set": 57
+    },
+    {
+     "name": "NAMEK ARMOR",
+     "set": 55
+    },
+    {
+     "name": "BATTLE SUIT",
+     "set": 56
+    },
+    {
+     "name": "SS2",
+     "set": 58
+    },
+    {
+     "name": "SS",
+     "set": 59
+    }
+   ]
+  },
+  {
+   "id": "VEGETA",
+   "outfits": [
+    {
+     "name": "VEGETA"
+    },
+    {
+     "name": "SS VEGETA",
+     "set": 139
+    }
+   ]
+  },
+  {
+   "id": "TRUNKS",
+   "outfits": [
+    {
+     "name": "TRUNKS"
+    },
+    {
+     "name": "TEEN",
+     "set": 3207
+    },
+    {
+     "name": "BATTLE SUIT",
+     "set": 129
+    },
+    {
+     "name": "SS",
+     "set": 134
+    },
+    {
+     "name": "SS BATTLE SUIT",
+     "set": 130
+    }
+   ]
+  },
+  {
+   "id": "CELL",
+   "name": "CELL",
+   "base": "GOKU",
+   "inherit": false,
+   "set": 3206,
+   "outfits": [
+    {
+     "name": "CELL",
+     "set": 3206
+    },
+    {
+     "name": "SEMI CELL",
+     "set": 29
+    },
+    {
+     "name": "IMPERFECT",
+     "set": 28
+    }
+   ]
+  },
+  {
+   "id": "FRIEZA",
+   "name": "FRIEZA",
+   "base": "VEGETA",
+   "inherit": false,
+   "set": 48,
+   "outfits": [
+    {
+     "name": "FRIEZA",
+     "set": 48
+    },
+    {
+     "name": "MECHA",
+     "set": 49
+    }
+   ]
+  },
+  {
+   "id": "COOLER",
+   "name": "COOLER",
+   "base": "VEGETA",
+   "inherit": false,
+   "set": 34
+  },
+  {
+   "id": "KING COLD",
+   "name": "KING COLD",
+   "base": "PICCOLO",
+   "inherit": false,
+   "set": 74
+  },
+  {
+   "id": "YAMCHA",
+   "name": "YAMCHA",
+   "base": "GOKU",
+   "inherit": false,
+   "set": 3200
+  },
+  {
+   "id": "KRILLIN",
+   "name": "KRILLIN",
+   "base": "GOKU",
+   "inherit": false,
+   "set": 3201
+  },
+  {
+   "id": "TIEN",
+   "name": "TIEN",
+   "base": "PICCOLO",
+   "inherit": false,
+   "set": 3202
+  },
+  {
+   "id": "ANDROID 18",
+   "name": "ANDROID 18",
+   "base": "VEGETA",
+   "inherit": false,
+   "set": 3203
+  },
+  {
+   "id": "ANDROID 17",
+   "name": "ANDROID 17",
+   "base": "VEGETA",
+   "inherit": false,
+   "set": 3204
+  }
+ ]
 }

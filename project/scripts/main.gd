@@ -27,6 +27,7 @@ var test_t = 0
 
 func _ready() -> void:
 	print("[main] ready, import found: ", Assets.base_dir)
+	get_window().title = "LoG2 Online"      # the name shown (the project's own name stays: it names the save folder)
 	get_window().size_changed.connect(_fit_view)
 	_fit_view()
 	for a in OS.get_cmdline_user_args():
@@ -61,7 +62,11 @@ func _ready() -> void:
 			_menu()
 			if test.has("screen"):        # test aid: open one of the menu screens (--screen=_char_screen)
 				if str(test["screen"]) in ["_char_screen", "_map_screen", "_name_screen"]:
+					if test.has("ch"):
+						Game.cfg["character"] = int(test["ch"])
 					call(str(test["screen"]), _menu, func(): pass)
+					for k in int(test.get("cycle", "0")):      # test aid: the highlighted hero's next outfit, k times
+						_outfit_cycle.call(1)
 				else:
 					call(str(test["screen"]))
 			if test.has("lmp"):
@@ -76,7 +81,7 @@ func _ready() -> void:
 func _on_permission(permission: String, granted: bool) -> void:
 	if permission == Assets.ANDROID_AUDIO and granted:
 		_make_music_dirs()
-		Music._files.clear()       # songs looked for before are looked for again
+		Music.refresh_files()       # songs looked for before are looked for again
 		var playing = Music.current
 		Music.current = ""
 		Music.play(playing)        # (your title song at once)
@@ -109,7 +114,7 @@ func _clear() -> void:
 		g.texture = Assets.texture(Assets.base_dir.path_join("ui/galaxy.png"))
 		g.stretch_mode = TextureRect.STRETCH_TILE
 		g.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		g.scale = Vector2(1.5, 1.5); g.size = Vector2(320, 180)
+		g.scale = Vector2(1.5, 1.5); g.size = Vector2(2560, 1440)      # (tiled far enough for any screen)
 		g.modulate = Color(0.7, 0.7, 0.7)
 		ui.add_child(g)
 
@@ -119,7 +124,20 @@ func _box() -> VBoxContainer:
 	v.size = Vector2(456, 254)
 	v.add_theme_constant_override("separation", 2)
 	ui.add_child(v)
+	_old_box = v
+	_place_box()
 	return v
+
+## the older text screens (first start, ...) grow with the screen like the GBA menus (they sat small in the top-left corner)
+var _old_box: Control
+var _typing: Callable      # the letter boards: what a typed key does (a letter, "\b" delete, "\n" DONE)
+func _place_box() -> void:
+	if _old_box == null or not is_instance_valid(_old_box):
+		return
+	var vp = get_viewport().get_visible_rect().size
+	var k = maxf(1.0, floorf(minf(vp.x / 480.0, vp.y / 270.0) * 2.0) / 2.0)      # half steps: the text stays sharp
+	_old_box.scale = Vector2(k, k)
+	_old_box.position = (((vp - Vector2(480, 270) * k) / 2.0) + Vector2(12, 8) * k).floor()
 
 func _label(parent: Node, t: String, size = 8, col = Color(1, 1, 1)) -> Label:
 	var l = Label.new()
@@ -143,12 +161,17 @@ func _button(parent: Node, t: String, f: Callable) -> Button:
 func _import_screen() -> void:
 	_clear()
 	var v = _box()
-	_label(v, "LEGACY OF GOKU II - CO-OP (GODOT)", 12, Color(1, 0.85, 0.3))
+	_label(v, "LEGACY OF GOKU 2 ONLINE", 12, Color(1, 0.85, 0.3))
 	if Assets.base_dir != "" and Assets.import_version() < Assets.IMPORT_VERSION:
-		_label(v, "NEW: each land is ONE world you walk through (roads join its parts), and the heroes' special moves use the game's own effects. Your game is read once more (a minute or two). Your fighters and the recorded music are kept.", 8, Color(0.6, 1, 0.8))
+		_label(v, "NEW IN v44: EARTH comes ready made, the same for everybody. Your game is read once more (a minute or so - longer on a slow computer). Your fighters and settings are kept.", 8, Color(0.6, 1, 0.8))
 	_label(v, "First start: choose your own Legacy of Goku II (USA) .gba file. Its pictures, maps and enemies are read from it once (about a minute) - nothing of the game comes with this download.", 8)
 	_button(v, "CHOOSE MY GAME...", _pick_rom)
 	status = _label(v, "", 8, Color(0.7, 1, 0.7))
+	import_bar = Control.new()      # the loading bar: filled as far as the import is, with a light running along it
+	import_bar.custom_minimum_size = Vector2(0, 10)
+	import_bar.visible = false
+	import_bar.draw.connect(_draw_import_bar)
+	v.add_child(import_bar)
 	# a phone / tablet: the files can also come from your PC (where the game was read and the music recorded)
 	_label(v, "OR FROM A PC: open the game on your PC (it must have read your game), connect both to the same Wi-Fi, type the PC's address (shown in the PC's menu) and press GET:", 7, Color(0.75, 0.85, 1))
 	var hf = HBoxContainer.new()
@@ -167,6 +190,7 @@ func _import_screen() -> void:
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	file_dialog.filters = PackedStringArray(["*.gba ; GBA game"])
 	file_dialog.size = Vector2i(360, 200)
+	file_dialog.use_native_dialog = true      # the computer's own file picker (Windows Explorer, the Mac's Finder)
 	if OS.has_feature("android"):
 		# Android's own file picker (it knows no ".gba" type: every file is shown, the game is checked after)
 		file_dialog.use_native_dialog = true
@@ -184,6 +208,25 @@ func _import_screen() -> void:
 func _pick_rom() -> void:
 	print("[main] CHOOSE MY GAME")
 	file_dialog.popup_centered()
+
+var import_bar: Control
+var _bar_shown = 0.0
+func _draw_import_bar() -> void:
+	var r = Rect2(Vector2.ZERO, import_bar.size)
+	var t = Time.get_ticks_msec() / 1000.0
+	import_bar.draw_rect(r, Color(0.1, 0.12, 0.2))
+	var fw = r.size.x * clampf(_bar_shown, 0.0, 1.0)
+	var pulse = 0.82 + 0.18 * sin(t * 4.0)      # the fill breathes
+	import_bar.draw_rect(Rect2(0, 0, fw, r.size.y), Color(0.25, 0.7, 1.0) * pulse)
+	# a light running along the whole bar, round and round
+	var band = r.size.x * 0.18
+	var bx = fmod(t * r.size.x * 0.45, r.size.x + band) - band
+	for i in 12:
+		var k = 1.0 - absf(i - 5.5) / 6.0
+		var seg = Rect2(bx + band * i / 12.0, 0, band / 12.0 + 1, r.size.y).intersection(r)      # (inside the bar)
+		if seg.size.x > 0:
+			import_bar.draw_rect(seg, Color(1, 1, 1, 0.22 * k))
+	import_bar.draw_rect(r, Color(0.6, 0.8, 1, 0.8), false, 1.0)
 
 func _rom_chosen(path: String) -> void:
 	print("[main] game chosen: ", path)
@@ -203,7 +246,7 @@ func _rom_chosen(path: String) -> void:
 			fa.store_buffer(gba)
 			fa.close()
 		path = copy
-	status.text = "Reading your game... (about a minute)"
+	status.text = "Reading your game..."
 	Assets.start_import(path)
 	set_process(true)
 
@@ -225,6 +268,21 @@ func _process(_dt: float) -> void:
 			return
 		elif is_instance_valid(status):
 			status.text = Assets.fetch_status
+	if is_instance_valid(_music_bar) and _music_bar.is_inside_tree():
+		_music_bar.queue_redraw()
+		_music_lab.text = "RECORDING THE GAME'S SONGS:  %d OF %d" % [mini(Assets.music_done + 1, Assets.music_total), Assets.music_total]
+		if Assets.music_thread != null and not Assets.music_thread.is_alive():
+			_music_bar = null      # every song tried (one that failed is tried again another time, in the background)
+			_music_tried = true
+			_menu()
+	if Assets.import_thread != null and Assets.import_result < 0 and is_instance_valid(status):
+		# the import running: the bar, the step, its count and the time so far (so it never looks stuck)
+		var secs = (Time.get_ticks_msec() - Assets.import_ms0) / 1000
+		status.text = "%s%s   %d%%   %d:%02d" % [Assets.import_step, ("  -  " + Assets.import_count) if Assets.import_count != "" else "", roundi(Assets.import_frac * 100.0), secs / 60, secs % 60]
+		if is_instance_valid(import_bar):
+			import_bar.visible = true
+			_bar_shown = lerpf(_bar_shown, Assets.import_frac, 0.08)
+			import_bar.queue_redraw()
 	if Assets.import_thread != null and Assets.import_result >= 0:
 		if Assets.import_result == 0:
 			Assets.import_thread = null
@@ -249,7 +307,7 @@ func _menu_classic() -> void:
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	logo.custom_minimum_size = Vector2(34, 34); head.add_child(logo)
 	var tv = VBoxContainer.new(); head.add_child(tv)
-	var tl = _label(tv, "LEGACY OF GOKU II - CO-OP", 12, Color(1, 0.85, 0.3)); tl.custom_minimum_size = Vector2(0, 0); tl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	var tl = _label(tv, "LEGACY OF GOKU 2 ONLINE", 12, Color(1, 0.85, 0.3)); tl.custom_minimum_size = Vector2(0, 0); tl.autowrap_mode = TextServer.AUTOWRAP_OFF
 	var by = HBoxContainer.new(); tv.add_child(by)
 	var bl = _label(by, "by Puni Puni", 8, Color(0.85, 0.75, 1)); bl.custom_minimum_size = Vector2(0, 0); bl.autowrap_mode = TextServer.AUTOWRAP_OFF
 	var yt = Button.new(); yt.text = "YOUTUBE: @PuniPuni2026"; yt.add_theme_font_size_override("font_size", 7)
@@ -359,7 +417,7 @@ func _menu_classic() -> void:
 		if not ips.is_empty():
 			_label(v, "PHONE / TABLET: this PC's address is %s - type it on the phone (to get the game files, and to JOIN)." % ", ".join(PackedStringArray(ips)), 7, Color(0.7, 0.85, 1))
 	if OS.has_feature("mobile"):
-		_label(v, "CONTROLS: d-pad / stick move.  A punch (hold: rushing strike).  B ki blast (hold: your beam).  X special.  Y transform.  L1 item.  R1 next special.  R2 or L3 run.  START menu.  SELECT map.  MENUS: d-pad + A, or tap.\nLOCAL MULTIPLAYER: play with people on the same Wi-Fi.  GLOBAL MULTIPLAYER: play with anyone over the internet - public games, or private ones with a password.", 7, Color(0.75, 0.75, 0.8))
+		_label(v, "CONTROLS: d-pad / stick move.  A punch (hold: rushing strike).  B ki blast (hold: your beam).  X special.  Y transform.  L1 item.  R1 next special.  L3 sprints until you stop (and boosts while flying), R2 turns sprint on / off.  START menu.  SELECT map.  MENUS: d-pad + A, or tap.\nLOCAL MULTIPLAYER: play with people on the same Wi-Fi.  GLOBAL MULTIPLAYER: play with anyone over the internet - public games, or private ones with a password.", 7, Color(0.75, 0.75, 0.8))
 	else:
 		_label(v, "ONE PLAYER: arrows / WASD / pad.  A = Z or J (punch, hold: rushing strike).  B = X or K (ki blast, hold: your beam).  ESC / START: pause.\nTWO ON THIS PC: P1 = WASD + J / K, P2 = arrows + . / (or numpad 1 / 2). With pads: one pad - P1 keyboard, P2 pad; two pads - one each. F2 in the game: player 2 joins / leaves.\nLOCAL MULTIPLAYER: play together with people on the same network - host a game, join one, or host a server. Split screen and multiplayer mix: up to 2 on each PC.", 7, Color(0.75, 0.75, 0.8))
 
@@ -395,6 +453,7 @@ func _mods_screen() -> void:
 ## DEV TOOLS: the map, hero, enemy, move, form, blast and mission editors for your team
 var dev: Node
 func _dev_tools() -> void:
+	Game.set_fullscreen(false, false)      # (the DEV TOOLS in a window: their bars are wider than a fullscreen game's view)
 	if char_pick and is_instance_valid(char_pick):
 		_read()
 	if ui:
@@ -484,6 +543,13 @@ func _story_id() -> String:
 	for ch in t:
 		out += ch if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9") else "_"
 	return out.left(24)
+
+## the story's place and save slot set up (the game is started by whoever calls this: alone, hosting, split screen)
+func _story_cfg(slot: int) -> void:
+	var st: Dictionary = Content.story
+	Game.cfg["adventure"] = "land:0"
+	Game.cfg["story"] = "%s_%d" % [_story_id(), slot]
+	Game.cfg["start_at"] = {"key": str(st.get("start_map", "land/0/0")), "x": float(st.get("x", 8088)), "y": float(st.get("y", 9632))}
 
 func _play_story(slot: int, story_hero: bool = true) -> void:
 	var st: Dictionary = Content.story
@@ -758,12 +824,11 @@ func _on_started() -> void:
 ## The world lives on this PC: players JOIN with its IP whenever they like, the world is saved every 10 s.
 func _start_server() -> void:
 	if not Assets.ready_to_play():
-		print("[server] no imported folder: start LoG2Coop.exe once normally and choose your game first")
+		print("[server] no imported folder: start LoG2Online.exe once normally and choose your game first")
 		get_tree().quit(1)
 		return
 	Assets.load_data()
-	Game.cfg["mode"] = "server"
-	Game.cfg["name"] = "SERVER"
+	Game.cfg["mode"] = "server"       # (the server shows as SERVER in the lists; your own name is kept)
 	Game.cfg["adventure"] = test.get("adv", "gatorra")
 	Game.cfg["seed"] = int(test.get("seed", "12345"))
 	Game.cfg["difficulty"] = int(test.get("difficulty", "1"))
@@ -818,11 +883,51 @@ func _start_test() -> void:
 		Game.begin()
 
 func _input(ev: InputEvent) -> void:
+	# a name / world name / password board with a keyboard: just type (letters, numbers, space, Backspace, Enter = DONE)
+	if _typing.is_valid() and world == null and ev is InputEventKey and ev.pressed and not ev.ctrl_pressed and not ev.meta_pressed and not ev.alt_pressed:
+		var t = ""
+		if ev.keycode == KEY_BACKSPACE or ev.keycode == KEY_DELETE:
+			t = "\b"
+		elif (ev.keycode == KEY_ENTER or ev.keycode == KEY_KP_ENTER) and not ev.echo:
+			t = "\n"
+		elif ev.unicode > 0:
+			var ch = char(ev.unicode).to_upper()
+			if ch == " " or "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-".contains(ch):
+				t = ch
+		if t != "":
+			_typing.call(t)
+			get_viewport().set_input_as_handled()
+			return
+	# the GBA menus with a keyboard: Enter / Space / J / Z press the chosen button (the game's A)
+	if world == null and ev is InputEventKey and ev.pressed and not ev.echo and not ev.alt_pressed and ev.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_J, KEY_Z]:
+		var fo = get_viewport().gui_get_focus_owner()
+		if fo is BaseButton and fo.is_visible_in_tree() and not fo.disabled:
+			fo.pressed.emit()
+			get_viewport().set_input_as_handled()
+			return
 	# fullscreen: F11 or Alt+Enter (the picture stays sharp: whole-number scaling)
 	if ev is InputEventKey and ev.pressed and not ev.echo and (ev.keycode == KEY_F11 or (ev.keycode == KEY_ENTER and ev.alt_pressed)):
-		var full = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+		Game.toggle_fullscreen()
 		get_viewport().set_input_as_handled()
+	# CHOOSE YOUR CHARACTER: L / R (bumpers, triggers, Q / E) change the highlighted hero's outfit
+	if _outfit_cycle.is_valid() and ui != null and is_instance_valid(ui):
+		var step = 0
+		if ev is InputEventJoypadButton and ev.pressed:
+			if ev.button_index == JOY_BUTTON_LEFT_SHOULDER: step = -1
+			elif ev.button_index == JOY_BUTTON_RIGHT_SHOULDER: step = 1
+		elif ev is InputEventJoypadMotion and (ev.axis == JOY_AXIS_TRIGGER_LEFT or ev.axis == JOY_AXIS_TRIGGER_RIGHT):
+			var down = ev.axis_value > 0.6
+			if down and not _trig_prev.get(ev.axis, false):
+				step = -1 if ev.axis == JOY_AXIS_TRIGGER_LEFT else 1
+			_trig_prev[ev.axis] = down
+		elif ev is InputEventKey and ev.pressed and not ev.echo:
+			if ev.keycode == KEY_Q: step = -1
+			elif ev.keycode == KEY_E: step = 1
+
+		if step != 0:
+			_outfit_cycle.call(step)
+			get_viewport().set_input_as_handled()
+			return
 	# GLOBAL MULTIPLAYER screens: B (or ESC) goes back
 	if _global_back.is_valid() and ui != null and is_instance_valid(ui) and ((ev is InputEventJoypadButton and ev.pressed and ev.button_index == Game.pad_btn("b")) or (ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_ESCAPE)):
 		get_viewport().set_input_as_handled()
@@ -894,6 +999,19 @@ func _physics_process(_dt: float) -> void:
 			L.fighter.ep = L.fighter.maxep + 60
 			L.fighter.maxep += 60
 			L.fighter.zeni = 1000
+			print("[test] moves ", L.fighter.unlocked_skills().map(func(k): return k["id"]))
+			if test.has("skill"):
+				L.fighter.skill_i = int(test["skill"])
+	if test.has("skill") and test_t == 3:      # test aid: the special to use, by its id
+		var tf = world.locals[0].fighter
+		var u = tf.unlocked_skills()
+		for i in u.size():
+			if str(u[i]["id"]) == str(test["skill"]):
+				tf.skill_i = i
+	if test.has("ko") and test_t == int(test["ko"]):      # test aid: the player is beaten at this frame
+		var kf = world.locals[0].fighter
+		kf.hp = 1; kf.invuln = 0; kf.flying = false
+		kf.take_hit(999, 0.0, 0.0)
 	if _script_keys(test.get("keys", "")).has("toggle"):
 		world._toggle_player2()
 	var tk = []
@@ -1341,7 +1459,10 @@ func _fit_view() -> void:
 	if ws.x <= 0 or ws.y <= 0:
 		return
 	var z = int(Game.cfg.get("view_zoom", 0)) if Game.cfg is Dictionary else 0
-	var k = z if z > 0 else maxi(1, int(ws.y / 256))
+	# the biggest whole-number pixel size that still leaves the menus their 480 x 270 (a 1366 x 768 laptop: 2x, not 3x
+	# - at 3x the menus' edges were cut off); a VIEW SIZE chosen in OPTIONS is held to that too
+	var kmax = maxi(1, mini(int(ws.x / 480), int(ws.y / 270)))
+	var k = z if z > 0 else kmax      # AUTO: the biggest that leaves the menus room; PIXELS xN: as chosen
 	var sz = Vector2i(maxi(240, ws.x / k), maxi(160, ws.y / k))
 	win.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 	win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
@@ -1349,6 +1470,7 @@ func _fit_view() -> void:
 	win.content_scale_stretch = Window.CONTENT_SCALE_STRETCH_FRACTIONAL
 	win.content_scale_size = sz
 	_fit_size = ws
+	_place_gba.call_deferred()
 
 # ------------------------------------------------------------------ GBA-STYLE MENUS (Android port, v44 "console-like")
 ## Every screen is drawn in the GBA's own pixels: a 320x180 room scaled 1.5 (whole screen pixels on a 1080p handheld),
@@ -1362,28 +1484,58 @@ var gba: Control
 var _gal: TextureRect
 var _gal_t = 0.0
 
+## the GBA menus fill the screen: as big as fits (in half steps - the pixel fonts stay sharp), in the middle
+## (fixed at 1.5 they sat small in the top-left corner of a bigger view - a laptop window, a big monitor)
+var _gal_holder: Control
+func _place_gba() -> void:
+	_place_box()
+	if gba == null or not is_instance_valid(gba):
+		return
+	var vp = get_viewport().get_visible_rect().size
+	# exactly as big as fits (a 16:9 screen: all of it) - or, behind the title picture, as big as covers the screen
+	var k = maxf(vp.x / GW, vp.y / GH) if gba.has_meta("cover") else minf(vp.x / GW, vp.y / GH)
+	gba.scale = Vector2(k, k)
+	gba.position = ((vp - Vector2(GW, GH) * k) / 2.0).floor()
+	if _gal_holder != null and is_instance_valid(_gal_holder):
+		_gal_holder.scale = Vector2(k, k)
+		_gal_holder.position = Vector2.ZERO
+		_gal_holder.size = vp / k
+		if _gal != null and is_instance_valid(_gal):
+			_gal.size = vp / k + Vector2(128, 128)
+
 func _gba_screen(galaxy: bool = true) -> Control:
 	_global_back = Callable()
+	_outfit_cycle = Callable()
+	_typing = Callable()
 	in_local_mp = false
 	finding = false
 	_clear()
 	gba = Control.new()
 	gba.size = Vector2(GW, GH)
-	gba.scale = Vector2(1.5, 1.5)
+	_place_gba()
 	gba.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	ui.add_child(gba)
+	Music.play("rom:%d" % Assets.MENU_SONG)      # the game's title song on every menu
 	_gal = null
+	_gal_holder = null
 	set_process(true)
 	if galaxy:
-		var clip = Control.new(); clip.size = Vector2(GW, GH); clip.clip_contents = true; gba.add_child(clip)
+		# the galaxy fills the whole screen behind the menu (inside the menu's own box it showed as a second frame)
+		var bk2 = ColorRect.new(); bk2.color = Color.BLACK; bk2.set_anchors_preset(Control.PRESET_FULL_RECT); bk2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ui.add_child(bk2)
+		_gal_holder = Control.new(); _gal_holder.clip_contents = true; _gal_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_gal_holder.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		ui.add_child(_gal_holder)
 		_gal = TextureRect.new()
 		_gal.texture = Assets.texture(Assets.base_dir.path_join("ui/galaxy.png"))
 		_gal.stretch_mode = TextureRect.STRETCH_TILE
-		_gal.size = Vector2(GW + 128, GH + 128)
-		clip.add_child(_gal)
+		_gal.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_gal_holder.add_child(_gal)
 		_gal.position = Vector2(-fmod(_gal_t * GAL_SPEED.x, 128.0), -fmod(_gal_t * GAL_SPEED.y, 128.0))
 	else:
+		gba.set_meta("cover", true)      # the title picture covers the whole screen (a different shape: a sliver trimmed)
 		var bk = ColorRect.new(); bk.color = Color.BLACK; bk.size = Vector2(GW, GH); gba.add_child(bk)
+	ui.add_child(gba)
+	_place_gba()
 	lobby_label = _gtext(gba, "", Vector2(0, GH - 14))
 	lobby_label.size = Vector2(GW, 14)
 	lobby_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1421,8 +1573,10 @@ func _gbutton(p: Node, t: String, f: Callable, head: bool = false, w: float = GW
 	if fo:
 		b.add_theme_font_override("font", fo)
 		b.add_theme_font_size_override("font_size", 16)
+	var se = StyleBoxEmpty.new()
+	se.content_margin_bottom = 6      # the text sits up in its row (the font hangs low: the bottom of a word chose the row below)
 	for st in ["normal", "hover", "pressed", "focus", "disabled"]:
-		b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		b.add_theme_stylebox_override(st, se)
 	b.add_theme_color_override("font_color", Color.WHITE)
 	for st in ["font_hover_color", "font_focus_color", "font_pressed_color", "font_hover_pressed_color"]:
 		b.add_theme_color_override(st, G_PICK)
@@ -1431,13 +1585,14 @@ func _gbutton(p: Node, t: String, f: Callable, head: bool = false, w: float = GW
 	b.size = b.custom_minimum_size
 	b.pressed.connect(f)
 	p.add_child(b)
-	if w >= 60:
+	if w >= 60 and not _no_balls:
 		_ball_cursor(b, fo)
 	return b
 
 ## the GBA's little Dragon Balls either side of the picked choice (the title menu's own, from the game file)
 var _ball_tex: Texture2D
 var _balls_both = false
+var _no_balls = false
 func _ball_cursor(b: Button, fo: Font) -> void:
 	if _ball_tex == null:
 		_ball_tex = Assets.texture(Assets.base_dir.path_join("ui/ball.png"))
@@ -1455,7 +1610,8 @@ func _ball_cursor(b: Button, fo: Font) -> void:
 		var tw = fo.get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
 		for e in balls:
 			var cx = b.size.x / 2.0 + e[1] * (tw / 2.0 + 8.0)
-			e[0].position = Vector2(roundf(cx - 4.0), roundf(b.size.y / 2.0 - 4.0))
+			var lift = b.get_theme_stylebox("normal").content_margin_bottom if b.has_theme_stylebox("normal") else 0.0
+			e[0].position = Vector2(roundf(cx - 4.0), roundf((b.size.y - lift) / 2.0 - 4.0))      # (level with the text, which sits up in its row)
 	b.focus_entered.connect(func():
 		place.call()
 		for e in balls: e[0].visible = true)
@@ -1526,12 +1682,70 @@ func _gba_frame(picked: bool) -> StyleBoxTexture:
 	return st
 
 ## a hero's standing picture cut to its own pixels (so it sits in the middle of its box)
+## the hero walking towards you on the character screen: his walk frames, all cut from one box (no jitter)
+func _hero_walk(i: int) -> Array:
+	var d = Assets.sprite_set(Assets.character_set(i))
+	if d.is_empty() or d["tex"] == null:
+		return []
+	var slots: Array = d["slots"]
+	var s = 4 if slots.size() > 4 and slots[4].size() > 1 else 0
+	if slots.size() <= s or slots[s].size() == 0:
+		return []
+	var cell: int = d["cell"]
+	var img: Image = d["img"] if d.has("img") else d["tex"].get_image()
+	var u = Rect2i()
+	for f in slots[s].size():
+		var r = img.get_region(Rect2i(f * cell, s * cell, cell, cell)).get_used_rect()
+		if r.size.x > 0:
+			u = r if u.size.x == 0 else u.merge(r)
+	if u.size.x <= 0:
+		return []
+	var out = []
+	for f in slots[s].size():
+		var at = AtlasTexture.new(); at.atlas = d["tex"]; at.region = Rect2(u.position + Vector2i(f * cell, s * cell), u.size)
+		out.append(at)
+	return out
+
+var _walk_t = 0
+func _walk_tick() -> void:
+	_walk_t += 1
+	for i in _char_cells:
+		var c = _char_cells[i]
+		if not is_instance_valid(c[2]):
+			continue
+		var fr = _hero_walk(i) if not c[2].has_meta("walk") or c[2].get_meta("walk_set") != Assets.character_set(i) else c[2].get_meta("walk")
+		c[2].set_meta("walk", fr); c[2].set_meta("walk_set", Assets.character_set(i))
+		if not fr.is_empty():
+			_fit_picture(c[2], fr[_walk_t % fr.size()])
+
+## a hero's name on one line: shrunk to fit its box when it is long (no second line pushing the box down)
+func _one_line(l: Label, w: float) -> void:
+	# the name is drawn by a label of its own inside this fixed box, shrunk to fit: the box never changes size
+	var inner: Label = l.get_node_or_null("inner")
+	if inner == null:
+		inner = l.duplicate()
+		inner.name = "inner"
+		inner.custom_minimum_size = Vector2.ZERO
+		l.add_child(inner)
+		l.add_theme_color_override("font_color", Color(0, 0, 0, 0))
+		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0))
+		l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
+	l.clip_text = true
+	inner.autowrap_mode = TextServer.AUTOWRAP_OFF
+	inner.text = l.text
+	inner.size = Vector2.ZERO
+	var tw = inner.get_combined_minimum_size().x
+	var k = minf(1.0, (w - 2.0) / maxf(1.0, tw))
+	inner.scale = Vector2(k, k)
+	inner.size = Vector2(tw, l.custom_minimum_size.y)
+	inner.position = Vector2((w - tw * k) * 0.5, l.custom_minimum_size.y * (1.0 - k))
+
 func _hero_picture(i: int) -> Texture2D:
 	var d = Assets.sprite_set(Assets.character_set(i))
 	if d.is_empty() or d["tex"] == null or d["slots"].size() == 0 or d["slots"][0].size() == 0:
 		return null
 	var cell: int = d["cell"]
-	var img: Image = d["tex"].get_image()
+	var img: Image = d["img"] if d.has("img") else d["tex"].get_image()
 	var r = img.get_region(Rect2i(0, 0, cell, cell)).get_used_rect()
 	if r.size.x <= 0:
 		return null
@@ -1547,39 +1761,115 @@ func _gal_scroll(dt: float) -> void:
 
 # ---- the title picture: the game's own, with its tiny "TM" and copyright line drawn again in sharp white text
 var _title_tex: Texture2D
-func _title_texture() -> Texture2D:
-	if _title_tex:
+var _title_wide_tex: Texture2D
+## wide: the box round the choices drawn wider (SINGLE PLAYER / MULTIPLAYER are longer words than START / OPTIONS)
+func _title_texture(wide: bool = false) -> Texture2D:
+	if wide and _title_wide_tex:
+		return _title_wide_tex
+	if not wide and _title_tex:
 		return _title_tex
 	var img = Assets.image(Assets.base_dir.path_join("ui/title.png"))
 	if img == null:
 		return null
 	img.convert(Image.FORMAT_RGBA8)
 	# the old letters are painted out: each column of their band blends from the picture just above to just below
-	for r in [Rect2i(204, 68, 8, 5), Rect2i(27, 148, 184, 9)]:
+	# the copyright band: only the old letters are filled in from the picture round them - the rest stays as drawn
+	_unletter(img, Rect2i(20, 146, 196, 13))
+	for r in [Rect2i(204, 68, 8, 5)]:
 		for x in range(r.position.x, r.end.x):
 			var top = img.get_pixel(x, r.position.y - 1); var bot = img.get_pixel(x, r.end.y)
 			for y in range(r.position.y, r.end.y):
 				img.set_pixel(x, y, top.lerp(bot, float(y - r.position.y + 1) / (r.size.y + 1)))
+	if wide:
+		_widen_box(img, 14)
+		_title_wide_tex = ImageTexture.create_from_image(img)
+		return _title_wide_tex
 	_title_tex = ImageTexture.create_from_image(img)
 	return _title_tex
+
+## the game's tiny copyright letters (white, edged in neutral grey) taken out of the picture: each letter pixel is filled
+## from the picture's own pixels next to it, working inwards, so the art round them is untouched
+func _unletter(img: Image, r: Rect2i) -> void:
+	var todo = {}
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			var c = img.get_pixel(x, y)
+			if absf(c.r - c.g) < 0.02 and absf(c.g - c.b) < 0.02 and c.r > 0.35:
+				todo[Vector2i(x, y)] = true
+	for _pass in 12:
+		if todo.is_empty():
+			break
+		var fill = {}
+		for p in todo:
+			var sum = Color(0, 0, 0, 0)
+			var n = 0
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var q = p + d
+				if not todo.has(q) and q.x >= 0 and q.y >= 0 and q.x < img.get_width() and q.y < img.get_height():
+					sum += img.get_pixel(q.x, q.y)
+					n += 1
+			if n > 0:
+				fill[p] = sum / n
+		for p in fill:
+			img.set_pixelv(p, fill[p])
+			todo.erase(p)
+
+## the title's box (a one-pixel bevel: light top and left, black bottom and right) painted out and drawn again wider
+const BOX_L = 80
+const BOX_R = 159
+const BOX_T = 104
+const BOX_B = 143
+func _widen_box(img: Image, by: int) -> void:
+	var light = img.get_pixel(100, BOX_T)
+	var src: Image = img.duplicate()
+	for x in range(BOX_L, BOX_R + 1):          # the old lines take the picture just outside them
+		img.set_pixel(x, BOX_T, src.get_pixel(x, BOX_T - 1))
+		img.set_pixel(x, BOX_B, src.get_pixel(x, BOX_B + 1))
+	for y in range(BOX_T, BOX_B + 1):
+		img.set_pixel(BOX_L, y, src.get_pixel(BOX_L - 1, y))
+		img.set_pixel(BOX_L + 1, y, src.get_pixel(BOX_L - 1, y) if y >= BOX_B - 2 else img.get_pixel(BOX_L + 1, y))
+		img.set_pixel(BOX_R, y, src.get_pixel(BOX_R + 1, y))
+		img.set_pixel(BOX_R - 1, y, src.get_pixel(BOX_R + 1, y) if y <= BOX_T + 1 or y >= BOX_B - 1 else img.get_pixel(BOX_R - 1, y))
+	var l = BOX_L - by; var r = BOX_R + by
+	for x in range(l + 3, r - 1):
+		img.set_pixel(x, BOX_T, light)
+	for x in range(l + 2, r - 1):
+		img.set_pixel(x, BOX_B, Color.BLACK)
+	for y in range(BOX_T + 1, BOX_B - 1):
+		img.set_pixel(l, y, light)
+		img.set_pixel(r, y, Color.BLACK)
+	img.set_pixel(r - 1, BOX_T + 1, light)
+	img.set_pixel(r - 1, BOX_B - 1, Color.BLACK)
+	img.set_pixel(l + 1, BOX_B - 1, Color.BLACK)
 
 ## the title stretched over the whole screen (the user's choice: no bars)
 const TSX = GW / 240.0
 const TSY = GH / 160.0
 const TS = TSY
-func _title_art() -> void:
+func _title_art(wide: bool = false) -> void:
 	var t = TextureRect.new()
-	t.texture = _title_texture()
+	t.texture = _title_texture(wide)
 	t.scale = Vector2(TSX, TSY)
 	gba.add_child(t)
-	var ff = ThemeDB.fallback_font
-	var tm = Label.new(); tm.text = "TM"
-	tm.add_theme_font_override("font", ff); tm.add_theme_font_size_override("font_size", 4)
-	tm.scale = Vector2(TSX, TSY); tm.position = Vector2(204 * TSX, 66.5 * TSY); gba.add_child(tm)
-	var cp = Label.new(); cp.text = "© 2003 Bird Studios/SHUEISHA, Toei Animation"
-	cp.add_theme_font_override("font", ff); cp.add_theme_font_size_override("font_size", 8)
-	var tw = ff.get_string_size(cp.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x
-	cp.scale = Vector2(TSX, TSY); cp.position = Vector2((118.5 - tw / 2) * TSX, 146 * TSY); gba.add_child(cp)     # where the game's own line was
+	# the "TM" and the copyright line in the GBA's own menu letters (white, outlined in black), half size
+	var fs = Assets.gba_font("font_small")
+	var small = func(text: String, x_center: float, y: float, w: float, k: float = 0.5) -> void:
+		var holder = Control.new()
+		holder.scale = Vector2(TSX * k, TSY * k)
+		holder.position = Vector2((x_center - w * k / 2.0) * TSX, y * TSY)
+		gba.add_child(holder)
+		for o in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1), Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1), Vector2.ZERO]:
+			var l = Label.new()
+			l.text = text
+			if fs:
+				l.add_theme_font_override("font", fs)
+				l.add_theme_font_size_override("font_size", 16)
+			l.add_theme_color_override("font_color", Color.WHITE if o == Vector2.ZERO else Color.BLACK)
+			l.position = o
+			holder.add_child(l)
+	var tw = fs.get_string_size("(C) 2003 BIRD STUDIOS/SHUEISHA, TOEI ANIMATION", HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x if fs else 240.0
+	small.call("(C) 2003 BIRD STUDIOS/SHUEISHA, TOEI ANIMATION", 120.0, 145.0, tw, minf(0.7, 232.0 / maxf(1.0, tw)))
+	small.call("TM", 207.0, 64.5, 18.0)
 	_title_shine()
 
 ## the Dragon Ball in "DRAGON" catches the light every few seconds: a soft glint sweeps across it
@@ -1629,36 +1919,115 @@ func _outline(b: Button) -> void:
 		l.add_theme_color_override("font_color", Color.BLACK)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		l.size = b.size
+		var lift = b.get_theme_stylebox("normal").content_margin_bottom if b.has_theme_stylebox("normal") else 0.0
+		l.size = b.size - Vector2(0, lift)      # (level with the text, which sits up in its row)
 		l.position = o
 		l.show_behind_parent = true
 		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(l)
 
+## the game's songs are recorded from the cartridge once: on a slow computer that takes a while - ask how
+## (in the background with a stand-in tune meanwhile, or all now with a bar); asked once, kept in options
+func _music_question() -> bool:
+	if Assets.base_dir == "" or Assets.songs_missing() == 0:
+		return false
+	var mode = Assets.music_mode()
+	if mode == "play":
+		return false
+	if mode == "now" and not _music_tried:
+		_music_now_screen()
+		return true
+	if mode == "now":
+		Assets.start_music_render()
+		return false
+	_gba_screen()
+	_gheading("Music")
+	var lines = ["THE GAME'S MUSIC IS RECORDED FROM", "YOUR CARTRIDGE NEXT (%d SONGS)." % Assets.songs_missing(), "ON A SLOWER DEVICE IT CAN TAKE A WHILE."]
+	for li in lines.size():
+		var t = _gtext(gba, lines[li], Vector2(0, 32 + li * 12))
+		t.size = Vector2(GW, 12); t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var bs = _glist([["RECORD WHILE I PLAY", func():
+		Assets.set_music_mode("play"); Assets.start_music_render(); _menu()],
+		["RECORD ALL NOW (WAIT)", func():
+		Assets.set_music_mode("now"); _music_now_screen()]], 88, 18)
+	var b1 = bs[0]
+	for li in 2:
+		var n = _gtext(gba, ["WHILE YOU PLAY: A STAND-IN TUNE UNTIL", "EACH SONG IS READY (WHERE YOU ARE: FIRST)"][li], Vector2(0, 132 + li * 12), false, Color(0.75, 0.85, 1))
+		n.size = Vector2(GW, 12); n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b1.grab_focus.call_deferred()
+	return true
+
+## RECORD ALL NOW: the bar fills song by song; the title when they are all there
+var _music_tried = false
+var _music_bar: Control
+var _music_lab: Label
+func _music_now_screen() -> void:
+	_gba_screen()
+	_gheading("Recording Music")
+	Assets.start_music_render()
+	_music_lab = Label.new(); _music_lab.position = Vector2(24, 70); _music_lab.size = Vector2(GW - 48, 20)
+	_music_lab.add_theme_font_size_override("font_size", 8); gba.add_child(_music_lab)
+	_music_bar = Control.new(); _music_bar.position = Vector2(24, 92); _music_bar.size = Vector2(GW - 48, 8)
+	_music_bar.draw.connect(func(): _draw_bar(_music_bar, float(Assets.music_done) / maxf(1.0, float(Assets.music_total))))
+	gba.add_child(_music_bar)
+	set_process(true)
+
+func _draw_bar(c: Control, frac: float) -> void:
+	var r = Rect2(Vector2.ZERO, c.size)
+	var t = Time.get_ticks_msec() / 1000.0
+	c.draw_rect(r, Color(0.1, 0.12, 0.2))
+	c.draw_rect(Rect2(0, 0, r.size.x * clampf(frac, 0.0, 1.0), r.size.y), Color(0.25, 0.7, 1.0) * (0.82 + 0.18 * sin(t * 4.0)))
+	var band = r.size.x * 0.18
+	var bx = fmod(t * r.size.x * 0.45, r.size.x + band) - band
+	for i in 12:
+		var seg = Rect2(bx + band * i / 12.0, 0, band / 12.0 + 1, r.size.y).intersection(r)
+		if seg.size.x > 0:
+			c.draw_rect(seg, Color(1, 1, 1, 0.22 * (1.0 - absf(i - 5.5) / 6.0)))
+	c.draw_rect(r, Color(0.6, 0.8, 1, 0.8), false, 1.0)
+
 # ---- start screen: the title with START / OPTIONS in its box
 func _menu() -> void:
+	if _music_question():
+		return
 	_gba_screen(false)
 	Game.cfg.erase("story")
+	Music.play("rom:%d" % Assets.MENU_SONG)
 	Game.cfg.erase("start_at")
+	Game.cfg.erase("home_at")
 	if Mods.story_pack != "":
 		Mods.story_pack = ""
 		Mods.reload()
 	Game.cfg["local_players"] = 1
-	Music.play("title")
 	Music.prepare(["field", "cave", "lair", "boss", "victory"])
 	_title_art()
 	_title_choices([["START", _mode_screen], ["OPTIONS", _options_screen]])
+	_prewarm_heroes()
+
+## every hero's picture (and each outfit's) made on another thread while you are still on the menus: the character
+## screen opens without a hitch
+func _prewarm_heroes() -> void:
+	if Assets.base_dir == "":
+		return
+	var ids = []
+	for i in Assets.CHARACTERS.size():
+		ids.append(Assets.character_set(i))
+		for o in Assets.outfits(i):
+			if int(o.get("set", -1)) >= 0:
+				ids.append(int(o["set"]))
+	Assets.prewarm_sets(ids)
 
 func _mode_screen() -> void:
 	_gba_screen(false)
 	_global_back = _menu
-	_title_art()
-	_title_choices([["SINGLE PLAYER", _single_screen], ["MULTIPLAYER", _mp_choice]])
+	_title_art(true)
+	_title_choices([["SINGLE PLAYER", _single_screen], ["MULTIPLAYER", _mp_kind]])
 
 func _single_screen() -> void:
 	_gba_screen()
 	_global_back = _mode_screen
 	_gheading("Single Player")
+	_mp_flow = false
+	_mp_story_slot = 0
 	Game.cfg["mode"] = "solo"
 	if Mods.story_pack != "":       # (back from a story: its mod is put away before FREE PLAY)
 		Mods.story_pack = ""
@@ -1667,7 +2036,7 @@ func _single_screen() -> void:
 		["STORY MODE", _story_screen]], 70, 22, true)
 
 # ---- SELECT MAP: the planets and the game's own lands; difficulty on the last line
-const G_MAPS = [["PLANET GATORRA", "gatorra"], ["PLANET DUNARA", "dunara"], ["EARTH", "land:0"], ["WEST CITY & TRICERATOPS JUNGLE", "land:4"], ["NORTHERN MOUNTAINS", "land:8"], ["EAST DISTRICT 439", "land:2"],
+const G_MAPS = [["EARTH", "land:0"], ["GOKU'S HOUSE", "land:0", {"key": "land/0/0", "x": 13230, "y": 22972}], ["PLANET GATORRA", "gatorra"], ["PLANET DUNARA", "dunara"], ["WEST CITY & TRICERATOPS JUNGLE", "land:4"], ["NORTHERN MOUNTAINS", "land:8"],
 	["SOUTHERN CONTINENT", "land:7"], ["GINGERTOWN", "land:10"], ["NORTHERN WASTELANDS", "land:3"], ["TROPICAL ISLANDS", "land:12"],
 	["SNOWY HIGHLANDS", "land:13"], ["CAPSULE CORP & NEW NAMEK", "land:6"], ["RANDOM PLANET", "random"]]
 var _map_then: Callable
@@ -1683,7 +2052,7 @@ func _map_screen(back: Callable, then: Callable) -> void:
 	for m in G_MAPS:
 		if str(m[1]).begins_with("land:") and not Assets.has_kit():
 			continue
-		items.append([m[0], _map_chosen.bind(m[1])])
+		items.append([m[0], _map_chosen.bind(m[1], m[2] if m.size() > 2 else {})])
 	var diffs = ["EASY", "NORMAL", "HARD"]
 	_gscroll(items, 22, 128)
 	var d = _gbutton(gba, "DIFFICULTY: " + diffs[clampi(int(Game.cfg.get("difficulty", 1)), 0, 2)], func(): pass)
@@ -1692,8 +2061,14 @@ func _map_screen(back: Callable, then: Callable) -> void:
 		Game.cfg["difficulty"] = (int(Game.cfg.get("difficulty", 1)) + 1) % 3
 		d.text = "DIFFICULTY: " + diffs[int(Game.cfg["difficulty"])])
 
-func _map_chosen(adv: String) -> void:
+func _map_chosen(adv: String, start: Dictionary = {}) -> void:
 	Game.cfg["adventure"] = adv
+	if start.is_empty():      # GOKU'S HOUSE: EARTH, starting in Gohan's bedroom (Goku's Home) - and beaten, back there
+		Game.cfg.erase("start_at")
+		Game.cfg.erase("home_at")
+	else:
+		Game.cfg["start_at"] = start
+		Game.cfg["home_at"] = start
 	Game.cfg["seed"] = randi() % 1000000
 	_map_then.call()
 
@@ -1708,8 +2083,12 @@ func _char_screen(back: Callable, then: Callable, who: int = 1) -> void:
 		var e = Game.shared_entry(str(i))
 		if not e.is_empty():
 			levels[str(i)] = e
-	var sc = ScrollContainer.new(); sc.position = Vector2(9, 25); sc.size = Vector2(GW - 9, GH - 25)
-	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER; sc.follow_focus = true
+	var cells = {}
+	_outfit_shoulders(cells)
+	var sc = ScrollContainer.new(); sc.position = Vector2(9, 26); sc.size = Vector2(GW - 9, GH - 28)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	_char_sc = sc
+	_char_top = 0
 	gba.add_child(sc)
 	var grid = GridContainer.new(); grid.columns = 5
 	grid.add_theme_constant_override("h_separation", 3); grid.add_theme_constant_override("v_separation", 4)
@@ -1719,38 +2098,162 @@ func _char_screen(back: Callable, then: Callable, who: int = 1) -> void:
 		var cell = VBoxContainer.new(); cell.add_theme_constant_override("separation", 0)
 		cell.custom_minimum_size = Vector2(58, 0)
 		grid.add_child(cell)
-		var nm = Assets.CHARACTERS[i]
-		var h = Mods.hero_entry(nm)
-		var name_l = _gtext(cell, str(h.get("name", nm)), Vector2.ZERO)
+		var name_l = _gtext(cell, Assets.hero_shown_name(i), Vector2.ZERO)
 		name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		name_l.custom_minimum_size = Vector2(58, 14)
-		name_l.autowrap_mode = TextServer.AUTOWRAP_WORD
 		name_l.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-		name_l.add_theme_constant_override("line_spacing", -6)
+		_one_line(name_l, 58)
 		var b = Button.new()
 		b.custom_minimum_size = Vector2(44, 44)
 		b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		var sb = _gba_frame(false); var sf = _gba_frame(true)
 		for st in ["normal", "disabled"]: b.add_theme_stylebox_override(st, sb)
 		for st in ["hover", "pressed", "focus"]: b.add_theme_stylebox_override(st, sf)
-		b.pressed.connect(func(): Game.cfg[ckey] = i; _name_screen(func(): _char_screen(back, then, who), then, who))
+		b.pressed.connect(func():
+			if _hero_locked(i, levels):      # not earned yet: a beep, nothing else
+				Sfx.play("error")
+				return
+			Game.cfg[ckey] = i; _name_screen(func(): _char_screen(back, then, who), then, who))
 		cell.add_child(b)
-		var pic = _hero_picture(i)
-		if pic:
-			var tr = TextureRect.new(); tr.texture = pic; tr.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
-			tr.set_anchors_preset(Control.PRESET_FULL_RECT); tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			b.add_child(tr)
+		var tr = TextureRect.new()
+		tr.set_anchors_preset(Control.PRESET_FULL_RECT); tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_fit_picture(tr, _hero_picture(i))
+		b.add_child(tr)
+		cells[i] = [name_l, b, tr]
+		b.focus_entered.connect(func(): _char_focus = i; _char_page.call_deferred(i))
 		var lv = "NEW"
 		if levels.has(str(i)) and levels[str(i)] is Dictionary:
 			lv = "LV %d" % int(levels[str(i)].get("level", 1))
+		if _hero_locked(i, levels):
+			lv = "LOCKED"
 		var lv_l = _gtext(cell, lv, Vector2.ZERO, false, Color(0.75, 0.9, 1))
 		lv_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		lv_l.custom_minimum_size = Vector2(58, 13)
 		if i == int(Game.cfg.get(ckey, 0)):
 			first = b
+			_char_focus = i
 	if first:
 		first.add_to_group("first_focus")
 		first.grab_focus.call_deferred()
+	# L / R (bumpers or triggers, Q / E on a keyboard, or a tap on the corners): the highlighted hero's next outfit
+	_char_cells = cells
+	# up / down between the rows by hand: the row out of sight would not be found by the automatic search
+	var keys = cells.keys()
+	keys.sort()
+	for n in keys.size():
+		var bt: Button = cells[keys[n]][1]
+		if n + 5 < keys.size():
+			bt.focus_neighbor_bottom = cells[keys[n + 5]][1].get_path()
+		if n - 5 >= 0:
+			bt.focus_neighbor_top = cells[keys[n - 5]][1].get_path()
+	var ids = []
+	for i in Assets.CHARACTERS.size():      # every outfit's picture made ahead, off the screen's thread
+		for o in Assets.outfits(i):
+			if int(o.get("set", -1)) >= 0:
+				ids.append(int(o["set"]))
+	Assets.prewarm_sets(ids)
+	var wt = Timer.new(); wt.wait_time = 0.16; wt.autostart = true
+	wt.timeout.connect(_walk_tick)
+	gba.add_child(wt)
+	_outfit_cycle = func(step: int):
+		var i = _char_focus
+		if not cells.has(i) or Assets.outfits(i).size() < 2:
+			return
+		Assets.set_outfit(i, Assets.outfit_index(i) + step)
+		cells[i][0].text = Assets.hero_shown_name(i)
+		_one_line(cells[i][0], 58)
+		_fit_picture(cells[i][2], _hero_picture(i))
+		_walk_tick()
+
+## the GBA's grey shoulder buttons in the top corners, "< OUTFIT >" under each (a tap works too)
+## heroes to earn: the level any of your other heroes must reach first (-1: not playable yet at all). Locked: "LOCKED", A beeps
+const LOCKED_HEROES = {"KING COLD": -1}
+func _hero_locked(i: int, levels: Dictionary) -> bool:
+	var need = int(LOCKED_HEROES.get(Assets.CHARACTERS[i], 0))
+	if need == 0:
+		return false
+	if need < 0:
+		return true
+	var best = 0
+	for k in levels:      # the best of the heroes you can always play (a villain does not unlock himself)
+		var ki = int(k)
+		if ki >= 0 and ki < Assets.CHARACTERS.size() and not LOCKED_HEROES.has(Assets.CHARACTERS[ki]) and levels[k] is Dictionary:
+			best = maxi(best, int(levels[k].get("level", 1)))
+	return best < need
+var _char_focus = 0
+## two whole rows at a time (names and levels with them): the list moves a row when the cursor leaves the two shown
+var _char_sc: ScrollContainer
+var _char_top = 0
+func _char_page(i: int) -> void:
+	if _char_sc == null or not is_instance_valid(_char_sc) or _char_sc.get_child_count() == 0:
+		return
+	var grid: GridContainer = _char_sc.get_child(0)
+	if grid.get_child_count() == 0:
+		return
+	var rh = grid.get_child(0).size.y + grid.get_theme_constant("v_separation")
+	var r = i / grid.columns
+	if r < _char_top:
+		_char_top = r
+	elif r > _char_top + 1:
+		_char_top = r - 1
+	_char_sc.scroll_vertical = int(_char_top * rh)
+var _char_cells = {}
+var _outfit_cycle: Callable = Callable()
+var _trig_prev = {}
+func _outfit_shoulders(cells: Dictionary) -> void:
+	for side in [-1, 1]:
+		var b = Button.new()
+		b.icon = _shoulder_icon(side < 0)
+		for st in ["normal", "focus", "disabled", "hover", "pressed"]: b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		b.focus_mode = Control.FOCUS_NONE
+		b.position = Vector2(4, 1) if side < 0 else Vector2(GW - 32, 1)
+		b.size = Vector2(28, 10)
+		b.pressed.connect(func(): if _outfit_cycle.is_valid(): _outfit_cycle.call(side))
+		gba.add_child(b)
+		var t = _gtext(gba, "< OUTFITS" if side < 0 else "OUTFITS >", Vector2(1, 12) if side < 0 else Vector2(GW - 61, 12), false, Color(0.8, 0.85, 0.95))
+		t.size = Vector2(60, 10)
+		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if side < 0 else HORIZONTAL_ALIGNMENT_RIGHT
+
+## a hero's picture in its box: pixel for pixel, or shrunk to fit when bigger than the box (King Cold, Cell...)
+func _fit_picture(tr: TextureRect, pic: Texture2D) -> void:
+	tr.texture = pic
+	var big = pic != null and (pic.get_width() > 36 or pic.get_height() > 36)
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE if big else TextureRect.EXPAND_KEEP_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED if big else TextureRect.STRETCH_KEEP_CENTERED
+	tr.offset_left = 4 if big else 0; tr.offset_top = 4 if big else 0; tr.offset_right = -4 if big else 0; tr.offset_bottom = -4 if big else 0
+
+## a GBA shoulder button: a grey cap with a rounded outer corner and its letter
+func _shoulder_icon(left: bool) -> ImageTexture:
+	var rows = [
+		"....kkkkkkkkkkkkkkkkkkkkkkkk",
+		"..kkwwwwwwwwwwwwwwwwwwwwwwwk",
+		".kwwggggggggggggggggggggggwk",
+		"kwggggggggggggggggggggggggdk",
+		"kwggggggggggkggggggggggggddk",
+		"kwggggggggggkggggggggggggddk",
+		"kwggggggggggkggggggggggggddk",
+		"kwggggggggggkkkggggggggggddk",
+		"kddddddddddddddddddddddddddk",
+		"kkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+	var letter_r = ["kkk", "k.k", "kkk", "kk.", "k.k"]
+	var img = Image.create(28, 10, false, Image.FORMAT_RGBA8)
+	var c = {"k": Color(0.12, 0.12, 0.16), "w": Color(0.88, 0.88, 0.92), "g": Color(0.6, 0.6, 0.66), "d": Color(0.38, 0.38, 0.44)}
+	for y in 10:
+		for x in 28:
+			var ch = rows[y][x]
+			if c.has(ch):
+				img.set_pixel(x, y, c[ch])
+	if not left:
+		img.flip_x()
+		# the letter R over the flipped L
+		for y in range(3, 8):
+			for x in range(12, 17):
+				img.set_pixel(x, y, c["g"])
+		for y in 5:
+			for x in 3:
+				if letter_r[y][x] == "k":
+					img.set_pixel(13 + x, 3 + y, c["k"])
+	return ImageTexture.create_from_image(img)
 
 # ---- the loading screen: shown while the world is built (the game is busy for a moment)
 func _gload(f: Callable) -> void:
@@ -1758,15 +2261,22 @@ func _gload(f: Callable) -> void:
 	_gheading("Loading")
 	_gpanel(Rect2(60, 84, 200, 12))
 	var fill = ColorRect.new(); fill.color = G_CYAN; fill.position = Vector2(62, 86); fill.size = Vector2(0, 8); gba.add_child(fill)
-	for k in 8:
-		fill.size.x = 196.0 * (k + 1) / 10.0
+	Music.preload_game_songs()        # every song of the game read now: no song is read while you play
+	var t0 = Time.get_ticks_msec()
+	var k = 0
+	while Music.preloading() and Time.get_ticks_msec() - t0 < 8000:
+		k += 1
+		fill.size.x = 196.0 * minf(0.8, k / 120.0)
+		await get_tree().process_frame
+	for j in 4:
+		fill.size.x = 196.0 * (0.8 + 0.05 * (j + 1))
 		await get_tree().process_frame
 	f.call()
 
 # ---- STORY MODE: the stories in the mods, and the original story (still to come)
 func _story_screen() -> void:
 	_gba_screen()
-	_global_back = _single_screen
+	_global_back = _mp_kind if _mp_flow else _single_screen
 	_gheading("Story Mode")
 	var items = []
 	for p in Mods.installed_packs():
@@ -1783,7 +2293,8 @@ func _original_story() -> void:
 	_gba_screen()
 	_global_back = _story_screen
 	_gheading("Original Story")
-	var l = _gtext(gba, "THE ORIGINAL STORY IS STILL BEING PORTED TO ANDROID.\n\nCOME BACK IN A LATER UPDATE!\n\n\nB: BACK", Vector2(10, 50))
+	Music.play("rom:7")      # Era of Darkness: the story's own song
+	var l = _gtext(gba, "THE ORIGINAL STORY IS STILL BEING REBUILT IN GODOT.\n\nCOME BACK IN A LATER UPDATE!\n\n\nB: BACK", Vector2(10, 50))
 	l.size = Vector2(GW - 20, 100)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
@@ -1809,7 +2320,9 @@ func _story_slots() -> void:
 				saved = clampi(int(d.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)
 				txt = "%s  LV %d" % [Assets.CHARACTERS[saved], int(d.get("level", 1))]
 		var slot = i + 1
-		if saved >= 0:
+		if _mp_flow:
+			items.append([txt, func(): _mp_story_slot = slot; _mp_choice()])
+		elif saved >= 0:
 			items.append([txt, func(): Game.cfg["character"] = saved; _gload(_play_story.bind(slot, false))])
 		else:
 			items.append([txt, func(): _char_screen(_story_slots, func(): _gload(_play_story.bind(slot, false)))])
@@ -1817,12 +2330,29 @@ func _story_slots() -> void:
 	var st = _gtext(gba, str(Content.story.get("title", "")).to_upper(), Vector2(0, 130), false, Color(0.75, 0.9, 1))
 	st.size = Vector2(GW, 14); st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
-# ---- MULTIPLAYER: over the internet or on this Wi-Fi
-func _mp_choice() -> void:
+# ---- MULTIPLAYER: FREE PLAY or STORY MODE first, then over the internet, on this Wi-Fi or split screen
+var _mp_flow = false        # the story screens are on the way to MULTIPLAYER (a slot leads to GLOBAL / LOCAL / SPLIT SCREEN)
+var _mp_story_slot = 0      # 0: FREE PLAY; 1-3: the story slot everyone plays together
+func _mp_kind() -> void:
 	_gba_screen()
 	_global_back = _mode_screen
 	_gheading("Multiplayer")
+	_mp_flow = true
+	_mp_story_slot = 0
+	Game.cfg.erase("story")
+	if Mods.story_pack != "":
+		Mods.story_pack = ""
+		Mods.reload()
+	_glist([["FREE PLAY", func(): _mp_story_slot = 0; Game.cfg.erase("story"); _mp_choice()],
+		["STORY MODE", _story_screen]], 70, 22, true)
+
+func _mp_choice() -> void:
+	_gba_screen()
+	_global_back = _mp_kind if _mp_story_slot == 0 else _story_slots
+	_gheading("Story Co-op" if _mp_story_slot > 0 else "Multiplayer")
+	_no_balls = true      # (the pictures beside these choices: the gold letters show the pick)
 	var bs = _glist([["GLOBAL", _global_multiplayer], ["LOCAL", _local_multiplayer], ["SPLIT SCREEN", _split_screen]], 26, 50, true)
+	_no_balls = false
 	bs[0].icon = _globe_icon(); bs[1].icon = _wifi_icon(); bs[2].icon = _split_icon()
 	for b in bs:
 		b.add_theme_constant_override("h_separation", 6)
@@ -1854,13 +2384,49 @@ func _globe_icon() -> ImageTexture:
 		{"k": Color(0, 0, 0), "b": Color(0.2, 0.45, 1), "g": Color(0.25, 0.85, 0.3)})
 
 func _wifi_icon() -> ImageTexture:
-	return _pix_icon([
-		"....wwwwww....", "..ww......ww..", ".w..wwwwww..w.", "...w......w...", ".....wwww.....", "......ww......", "..............",
-		"kkkkk....kkkkk", "kpppk....kpppk", "kpspk....kpspk", "kpppk....kpppk", "kpopk....kpopk", "kkkkk....kkkkk", ".............."],
-		{"w": Color(0.6, 0.9, 1), "k": Color(0.1, 0.1, 0.15), "p": Color(0.5, 0.35, 0.8), "s": Color(0.7, 0.9, 0.6), "o": Color(1, 0.7, 0.2)})
+	# a big Wi-Fi signal over two of the game's own purple GBAs (the one on a table in a West City home)
+	var gba = _game_handheld()
+	var w = 40; var h = 32
+	var img = Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var cx = w / 2.0; var cy = 15.0
+	for r in [3.0, 7.0, 11.0]:          # three arcs and a dot, like the signal on a phone
+		for k in 200:
+			var ang = deg_to_rad(-135.0 + 90.0 * k / 199.0)
+			for t in [0.0, 0.8]:
+				var px = int(roundf(cx + cos(ang) * (r + t))); var py = int(roundf(cy + sin(ang) * (r + t)))
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, Color(0.6, 0.9, 1))
+	for dy in 2:
+		for dx in 2:
+			img.set_pixel(int(cx) - 1 + dx, int(cy) - 1 + dy, Color(0.6, 0.9, 1))
+	if gba != null:
+		img.blend_rect(gba, Rect2i(Vector2i.ZERO, gba.get_size()), Vector2i(0, 16))
+		img.blend_rect(gba, Rect2i(Vector2i.ZERO, gba.get_size()), Vector2i(w - 10, 16))
+	return ImageTexture.create_from_image(img)       # (its own size: the game's pixels as they are)
+
+## the purple GBA lying on a table in a West City home (map 4_33): cut out of the player's own import
+func _game_handheld() -> Image:
+	var src = Assets.image(Assets.base_dir.path_join("maps/4_33/layer2.png"))
+	if src == null or src.get_width() < 162 or src.get_height() < 160:
+		return null
+	src.convert(Image.FORMAT_RGBA8)
+	var out = Image.create(10, 16, false, Image.FORMAT_RGBA8)
+	for y in 16:
+		for x in 10:
+			var c = src.get_pixel(152 + x, 144 + y)
+			var r8 = c.r8; var g8 = c.g8; var b8 = c.b8
+			var purple = b8 >= 240 and r8 < 235 and g8 < 215
+			var screen = (r8 == g8 and g8 == b8) and (r8 == 40 or r8 == 88 or r8 == 120)
+			if c.a > 0 and (purple or screen):
+				out.set_pixel(x, y, c)
+	return out
 
 ## host flows: SELECT MAP, then CHOOSE YOUR CHARACTER, then go (B goes back to where it started)
 func _pick_map_char(back: Callable, go: Callable) -> void:
+	if _mp_story_slot > 0:      # a story together: the story says where it starts
+		_story_cfg(_mp_story_slot)
+		_char_screen(back, go)
+		return
 	_map_screen(back, func(): _char_screen(func(): _map_screen(back, Callable()), go))
 
 # ---- OPTIONS: mods (and your own music), credits
@@ -1868,10 +2434,151 @@ func _options_screen() -> void:
 	_gba_screen()
 	_global_back = _menu
 	_gheading("Options")
-	var items = [["MODS", _gmods_screen], ["CREDITS", _credits_screen]]
+	var items = [["OPTIONS", _game_options_screen], ["MODS", _gmods_screen], ["SAVE FILES", _saves_screen], ["CREDITS", _credits_screen]]
 	if not OS.has_feature("android"):
 		items.append(["DEV TOOLS", _dev_tools])
-	_glist(items, 60, 22, true)
+	items.append(["QUIT GAME", func(): Game.save_options(); get_tree().quit()])
+	_glist(items, 46, 22, true)
+
+## OPTIONS - SAVE FILES: see and delete your saves - STORY MODE (each story's 3 slots) and FREE PLAY (each hero)
+func _saves_screen() -> void:
+	_gba_screen()
+	_global_back = _options_screen
+	_gheading("Save Files")
+	_glist([["STORY MODE", _story_saves_screen], ["FREE PLAY", _free_saves_screen]], 60, 22, true)
+
+func _save_label(e: Variant) -> String:
+	if not (e is Dictionary):
+		return "?"
+	var ch = clampi(int(e.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)
+	return "%s  LV %d" % [Assets.CHARACTERS[ch], int(e.get("level", 1))]
+
+func _story_saves_screen() -> void:
+	_gba_screen()
+	_global_back = _saves_screen
+	_gheading("Story Mode")
+	var items = []
+	var files = Array(DirAccess.get_files_at("user://"))
+	files.sort()
+	for fn in files:
+		if not fn.begins_with("fighters_story_") or not fn.ends_with(".json"):
+			continue
+		var id = fn.trim_prefix("fighters_story_").trim_suffix(".json")
+		var cut = id.rfind("_")
+		var story = id.left(cut).replace("_", " ").strip_edges().to_upper() if cut > 0 else id.to_upper()
+		var slot = id.substr(cut + 1) if cut > 0 else "1"
+		var t = JSON.parse_string(FileAccess.get_file_as_string("user://" + fn))
+		var who = _save_label(t.values()[0]) if t is Dictionary and not t.is_empty() else "EMPTY"
+		var txt = "%s  SLOT %s  %s" % [story.left(14), slot, who]
+		items.append([txt, _confirm_delete.bind(txt, func(): DirAccess.remove_absolute("user://" + fn), _story_saves_screen)])
+	if items.is_empty():
+		var l = _gtext(gba, "NO STORY SAVES YET", Vector2(0, 70), false, Color(0.75, 0.85, 1))
+		l.size = Vector2(GW, 12); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		return
+	_gscroll(items, 30, 120)
+
+## free play: every hero's shared save (and any copy of it in the older one-file-per-map saves, or it comes back)
+func _free_play_files() -> Array:
+	var out = []
+	for fn in DirAccess.get_files_at("user://"):
+		if fn.begins_with("fighters_") and fn.ends_with(".json") and not fn.begins_with("fighters_story") and fn != "fighters_playtest.json":
+			out.append("user://" + fn)
+	return out
+
+func _free_saves_screen() -> void:
+	_gba_screen()
+	_global_back = _saves_screen
+	_gheading("Free Play")
+	var best = {}
+	for path in _free_play_files():
+		var t = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if not (t is Dictionary):
+			continue
+		for key in t:
+			if t[key] is Dictionary and t[key].has("level") and (not best.has(key) or int(t[key].get("level", 1)) > int(best[key].get("level", 1)) or path == Game.SHARED_SAVE):
+				best[key] = t[key]
+	var keys = best.keys()
+	keys.sort_custom(func(x, y): return int(x.get_slice("_", 0)) * 10 + int(x.get_slice("_p", 1)) < int(y.get_slice("_", 0)) * 10 + int(y.get_slice("_p", 1)))
+	var items = []
+	for key in keys:
+		var txt = _save_label(best[key]) + ("  (PLAYER %s)" % key.get_slice("_p", 1) if "_p" in key else "")
+		items.append([txt, _confirm_delete.bind(txt, _delete_free_hero.bind(key), _free_saves_screen)])
+	if items.is_empty():
+		var l = _gtext(gba, "NO FREE PLAY SAVES YET", Vector2(0, 70), false, Color(0.75, 0.85, 1))
+		l.size = Vector2(GW, 12); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		return
+	_gscroll(items, 30, 120)
+
+func _delete_free_hero(key: String) -> void:
+	for path in _free_play_files():
+		var t = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if t is Dictionary and t.has(key):
+			t.erase(key)
+			var fa = FileAccess.open(path, FileAccess.WRITE)
+			if fa:
+				fa.store_string(JSON.stringify(t)); fa.close()
+
+func _confirm_delete(what: String, del: Callable, back: Callable) -> void:
+	_gba_screen()
+	_global_back = back
+	_gheading("Delete?")
+	var l = _gtext(gba, what, Vector2(0, 50), false, Color(1, 0.85, 0.4))
+	l.size = Vector2(GW, 12); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var w = _gtext(gba, "THIS CANNOT BE UNDONE", Vector2(0, 64), false, Color(1, 0.5, 0.5))
+	w.size = Vector2(GW, 12); w.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var bs = _glist([["NO, KEEP IT", back], ["YES, DELETE", func(): del.call(); back.call()]], 90, 22, true)
+	bs[0].grab_focus.call_deferred()
+
+## OPTIONS - OPTIONS: the game's own options (the same as in the game's menu), before you play. A changes a row.
+var _opt_row = 0
+func _game_options_screen() -> void:
+	_gba_screen()
+	_global_back = _options_screen
+	_gheading("Options")
+	var zoom = int(Game.cfg.get("view_zoom", 0))
+	var rows = [["MUSIC  %d%%" % roundi(Music.volume * 100), func(): _opt_set(0)],
+		["SOUND  %d%%" % roundi(Sfx.volume * 100), func(): _opt_set(1)],
+		["VIEW SIZE  " + ("AUTO" if zoom == 0 else "PIXELS X%d" % zoom), func(): _opt_set(2)],
+		["ON-SCREEN BUTTONS  " + {"auto": "AUTO", "on": "ON", "off": "OFF"}.get(str(Game.cfg.get("touch_mode", "auto")), "AUTO"), func(): _opt_set(3)],
+		["A/B BUTTONS  " + ("NINTENDO" if Game.pad_layout() == "nintendo" else "XBOX"), func(): _opt_set(4)]]
+	if not OS.has_feature("mobile"):
+		rows.append(["FULLSCREEN  " + ("ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF"), func(): _opt_set(5)])
+	var out = _glist(rows, 30, 16, true)
+	out[clampi(_opt_row, 0, out.size() - 1)].grab_focus.call_deferred()
+	# what VIEW SIZE means, in plain numbers: your screen, and how much of the world fits on it
+	var ws = get_window().size
+	var kmax = maxi(1, mini(int(ws.x / 480), int(ws.y / 270)))
+	var k = zoom if zoom > 0 else kmax
+	var info = "YOUR SCREEN %d X %d - %s" % [ws.x, ws.y, "AUTO FITS IT" if zoom == 0 else "EACH GAME PIXEL %dX BIGGER" % k]
+	var info2 = "YOU SEE %d X %d OF THE WORLD" % [maxi(240, ws.x / k), maxi(160, ws.y / k)]
+	for i in 2:
+		var l = _gtext(gba, [info, info2][i], Vector2(0, 30 + rows.size() * 16 + 4 + i * 10), false, Color(0.75, 0.85, 1))
+		l.size = Vector2(GW, 10); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var hint = _gtext(gba, "A: CHANGE   B: BACK", Vector2(0, GH - 14), false, Color(0.7, 0.75, 0.9))
+	hint.size = Vector2(GW, 10); hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+func _opt_set(row: int) -> void:
+	_opt_row = row
+	match row:
+		0:
+			Music.volume = 0.0 if Music.volume > 0.95 else clampf(snappedf(Music.volume + 0.1, 0.1), 0.0, 1.0)
+		1:
+			Sfx.volume = 0.0 if Sfx.volume > 0.95 else clampf(snappedf(Sfx.volume + 0.1, 0.1), 0.0, 1.0)
+			Sfx.play("menu")
+		2:
+			var zs = [0, 2, 3, 4, 5, 6]
+			Game.cfg["view_zoom"] = zs[(zs.find(int(Game.cfg.get("view_zoom", 0))) + 1) % zs.size()]
+			_fit_view()      # at once, not only when the game starts
+		3:
+			var tm = ["auto", "on", "off"]
+			Game.cfg["touch_mode"] = tm[(tm.find(str(Game.cfg.get("touch_mode", "auto"))) + 1) % tm.size()]
+		4:
+			Game.cfg["pad_layout"] = "xbox" if Game.pad_layout() == "nintendo" else "nintendo"
+			Game.apply_pad_layout()
+		5:
+			Game.toggle_fullscreen()
+	Game.save_options()
+	_game_options_screen()
 
 func _gmods_screen() -> void:
 	_gba_screen()
@@ -1883,76 +2590,146 @@ func _credits_screen() -> void:
 	_gba_screen()
 	_global_back = _options_screen
 	_gheading("Credits")
-	var lines = [["ORIGINAL GODOT REBUILD BY PUNI PUNI", Color.WHITE], ["", Color.WHITE], ["ORIGINAL GAME BY WEBFOOT TECHNOLOGIES,", Color.WHITE],
-		["PUBLISHED BY ATARI", Color.WHITE], ["", Color.WHITE], ["DRAGON BALL Z (C) BIRD STUDIO / SHUEISHA,", Color(0.85, 0.85, 0.9)], ["TOEI ANIMATION", Color(0.85, 0.85, 0.9)],
-		["", Color.WHITE], ["ANDROID PORT BY DIVINAKRA", Color(0.75, 0.9, 1)]]
-	for i in lines.size():
-		var l = _gtext(gba, lines[i][0], Vector2(0, 24 + i * 11), false, lines[i][1])
-		l.size = Vector2(GW, 11); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var yt = _glist([["YOUTUBE: @PUNIPUNI2026", func(): OS.shell_open("https://www.youtube.com/@PuniPuni2026")]], 30, 16)
-	yt[0].add_theme_color_override("font_color", Color(1, 0.45, 0.45))
-	yt[0].position.y = 24 + lines.size() * 11 + 4
+	# one list that scrolls (UP / DOWN): the lines, the two YouTube links (A opens them), then the art credits
+	var none = func(): pass
+	var W = Color.WHITE
+	var G = Color(0.85, 0.85, 0.9)
+	var Y = Color(1, 0.45, 0.45)
+	var A = Color(0.75, 0.9, 1)
+	var rows = [
+		["GODOT REBUILD BY PUNI PUNI AND DIVINAKRA", none, W],
+		["ORIGINAL GAME BY WEBFOOT TECHNOLOGIES,", none, W], ["PUBLISHED BY ATARI", none, W],
+		["DRAGON BALL Z (C) BIRD STUDIO / SHUEISHA,", none, G], ["TOEI ANIMATION", none, G],
+		["YOUTUBE: @PUNIPUNI2026", func(): OS.shell_open("https://www.youtube.com/@PuniPuni2026"), Y],
+		["YOUTUBE: @DIVINAKRACREATIONS", func(): OS.shell_open("https://www.youtube.com/@DivinakraCreations"), Y],
+		["SPRITE ART", none, Color(1, 0.85, 0.35)],
+		["FIXED CELL WALKING ANIMATION BY CHRIS RUOK", none, A],
+		["MECHA FRIEZA REDESIGN BY DIVINAKRA", none, A],
+		["SUPERNOVA, DEATH BALL, DEATH BEAM, DESTRUCTO DISK", none, A],
+		["AND DARKNESS EYE BEAM ANIMATIONS BY DIVINAKRA", none, A],
+		["FLYING LEFT AND RIGHT ANIMATIONS FOR COOLER,", none, A],
+		["MR. SATAN AND TEEN TRUNKS BY DIVINAKRA", none, A]]
+	var bs = _gscroll(rows.map(func(r): return [r[0], r[1]]), 24, GH - 28)
+	for k in bs.size():
+		bs[k].add_theme_color_override("font_color", rows[k][2])
 
-# ---- MY OWN MUSIC: where songs go, and a picker that copies a song in under the right name
-const G_SONGS = ["title", "field", "cave", "lair", "boss", "victory"]
+# ---- MY OWN MUSIC: the game's own songs play everywhere; any one of them can be replaced by a song of yours
 var _song_dialog: FileDialog
 var _song_path = ""
+var _song_target = ""
 func _music_screen() -> void:
 	_gba_screen()
 	_global_back = _gmods_screen
 	_gheading("My Own Music")
 	var l = Label.new()
-	l.text = _music_text()
-	l.add_theme_font_size_override("font_size", 5)
+	l.text = "The game's own songs play everywhere, read from your game file (the first time, they are made in the background - a few minutes). Pick one of them below to replace it with a song of yours (.mp3 or .ogg), or bring a replaced one back."
+	l.add_theme_font_size_override("font_size", 6)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD
-	l.position = Vector2(12, 22); l.size = Vector2(GW - 24, 96)
+	l.position = Vector2(14, 26); l.size = Vector2(GW - 28, 60)
 	gba.add_child(l)
-	_glist([["PICK A SONG TO ADD...", _pick_song], ["USE THE GAME'S OWN SONG...", _song_reset_screen]], 120, 15)
+	_glist([["REPLACE A SONG...", _song_list_screen], ["USE THE GAME'S OWN SONG...", _song_reset_screen]], 96, 18)
 	_song_dialog = FileDialog.new()
 	_song_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	_song_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	_song_dialog.filters = PackedStringArray(["*.ogg, *.mp3 ; Songs"])
 	_song_dialog.size = Vector2i(360, 200)
+	_song_dialog.use_native_dialog = true
 	if OS.has_feature("android"):
 		_song_dialog.use_native_dialog = true
 		_song_dialog.filters = PackedStringArray()
-	_song_dialog.file_selected.connect(func(p): _song_path = p; _song_slot_screen())
+	_song_dialog.file_selected.connect(func(p): _song_path = p; _song_copy(_song_target))
 	ui.add_child(_song_dialog)
 
-## a song picked here goes away again: that part of the game plays its own song
+## a game song's name: where the game plays it (the title, or the place most of its maps are)
+var _song_names = {}
+func _song_label(n: int) -> String:
+	if _song_names.is_empty():
+		var cnt = {}
+		var km = Assets.json(Assets.base_dir.path_join("kit/maps.json"))
+		if km != null:
+			for mm in km["maps"]:
+				var sg = int(mm.get("song", -1)); var nm = str(mm.get("name", "")).strip_edges()
+				if sg < 0 or nm == "" or nm.begins_with("*"):
+					continue
+				if not cnt.has(sg):
+					cnt[sg] = {}
+				cnt[sg][nm] = cnt[sg].get(nm, 0) + 1
+		for sg in cnt:
+			var best = ""; var bn = 0
+			for nm in cnt[sg]:
+				if cnt[sg][nm] > bn:
+					bn = cnt[sg][nm]; best = nm
+			_song_names[sg] = best.to_upper()
+		_song_names[Assets.MENU_SONG] = "TITLE & MENUS"
+		_song_names[7] = "ERA OF DARKNESS (INTRO)"
+	return "%02d  %s" % [n, _song_names.get(n, "SONG")]
+
+func _song_file(slot: String) -> String:
+	for e in ["ogg", "mp3"]:
+		var f = Assets.picked_music_dir().path_join("%s.%s" % [slot, e])
+		if FileAccess.file_exists(f):
+			return f
+	return ""
+
+func _song_list_screen() -> void:
+	_gba_screen()
+	_global_back = _music_screen
+	_gheading("Replace A Song")
+	var items = []
+	for n in 44:
+		var slot = "rom_%d" % n
+		items.append([_song_label(n) + ("  (YOURS)" if _song_file(slot) != "" else ""), func(): _song_target = slot; _song_dialog.popup_centered()])
+	_gscroll(items, 24, 140)
+	_song_dialog = _song_dialog if is_instance_valid(_song_dialog) else null
+	if _song_dialog == null:
+		_music_dialog_only()
+
+func _music_dialog_only() -> void:
+	_song_dialog = FileDialog.new()
+	_song_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_song_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_song_dialog.filters = PackedStringArray(["*.ogg, *.mp3 ; Songs"])
+	_song_dialog.size = Vector2i(360, 200)
+	_song_dialog.use_native_dialog = true
+	if OS.has_feature("android"):
+		_song_dialog.use_native_dialog = true
+		_song_dialog.filters = PackedStringArray()
+	_song_dialog.file_selected.connect(func(p): _song_path = p; _song_copy(_song_target))
+	ui.add_child(_song_dialog)
+
+## the replaced songs: picking one brings the game's own song back
 func _song_reset_screen() -> void:
 	_gba_screen()
 	_global_back = _music_screen
 	_gheading("Game's Own Song")
 	var items = []
-	for sl in G_SONGS:
-		var has = FileAccess.file_exists(Assets.picked_music_dir().path_join(sl + ".ogg")) or FileAccess.file_exists(Assets.picked_music_dir().path_join(sl + ".mp3"))
-		items.append([sl.to_upper() + ("  (YOURS)" if has else ""), _song_reset.bind(sl)])
-	_glist(items, 26, 17, true)
+	for n in 44:
+		var slot = "rom_%d" % n
+		if _song_file(slot) != "":
+			items.append([_song_label(n), _song_reset.bind(slot)])
+	if items.is_empty():
+		var l = _gtext(gba, "NO SONGS ARE REPLACED", Vector2(0, 80), false, Color(0.75, 0.9, 1))
+		l.size = Vector2(GW, 14); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		return
+	_gscroll(items, 24, 140)
 
 func _song_reset(slot: String) -> void:
 	for e in ["ogg", "mp3"]:
 		DirAccess.remove_absolute(Assets.picked_music_dir().path_join("%s.%s" % [slot, e]))
-	Music._files.clear()
-	if slot == "title":
-		Music.current = ""
-		Music.play("title")
+	_replay_music()
 	_music_screen()
-	lobby_label.text = "%s: BACK TO THE GAME'S OWN SONG" % slot.to_upper()
+	lobby_label.text = "BACK TO THE GAME'S OWN SONG"
 
-func _pick_song() -> void:
-	_song_dialog.popup_centered()
-
-func _song_slot_screen() -> void:
-	_gba_screen()
-	_global_back = _music_screen
-	_gheading("Use It For")
-	var items = []
-	for s in G_SONGS:
-		items.append([s.to_upper(), _song_copy.bind(s)])
-	_glist(items, 26, 17, true)
+func _replay_music() -> void:
+	Music.refresh_files()
+	Music.made.clear()
+	var c = Music.current
+	Music.current = ""
+	Music.play(c)
 
 func _song_copy(slot: String) -> void:
+	if slot == "":
+		return
 	var data = FileAccess.get_file_as_bytes(_song_path)
 	var ext = "ogg" if data.size() > 4 and data.slice(0, 4).get_string_from_ascii() == "OggS" else "mp3"
 	var msg = ""
@@ -1969,11 +2746,8 @@ func _song_copy(slot: String) -> void:
 		var fa = FileAccess.open(md.path_join("%s.%s" % [slot, ext]), FileAccess.WRITE)
 		if fa:
 			fa.store_buffer(data); fa.close()
-			Music._files.clear()
-			msg = "ADDED AS %s.%s" % [slot.to_upper(), ext.to_upper()]
-			if slot == "title":
-				Music.current = ""
-				Music.play("title")
+			_replay_music()
+			msg = "SONG REPLACED"
 		else:
 			msg = "COULD NOT SAVE THE SONG (%d)." % FileAccess.get_open_error()
 	_music_screen()
@@ -1986,6 +2760,8 @@ func _name_screen(back: Callable, then: Callable, who: int = 1) -> void:
 	_gheading("Your Name" if who == 1 else "Player 2: Name")
 	var nkey = "name" if who == 1 else "name2"
 	var cur = str(Game.cfg.get(nkey, "PLAYER" if who == 1 else "PLAYER 2")).to_upper().left(10)
+	if cur == "SERVER":
+		cur = "PLAYER" if who == 1 else "PLAYER 2"
 	if cur == "PLAYER" or cur == "PLAYER 2":
 		cur = ""
 	_gpanel(Rect2(100, 22, 120, 18))
@@ -2016,25 +2792,41 @@ func _name_screen(back: Callable, then: Callable, who: int = 1) -> void:
 	_gbutton(row, "DELETE", func():
 		name_ref[0] = name_ref[0].left(-1)
 		shown.text = name_ref[0] + "_", false, 80)
-	_gbutton(row, "DONE", func():
+	var done = _gbutton(row, "DONE", func():
 		Game.cfg[nkey] = name_ref[0].strip_edges() if name_ref[0].strip_edges() != "" else ("PLAYER" if who == 1 else "PLAYER 2")
 		Game.save_options()
 		then.call(), false, 80)
-	first.add_to_group("first_focus")
-	first.grab_focus.call_deferred()
+	_typing = func(t: String):
+		if t == "\n":
+			done.pressed.emit()
+			return
+		if t == "\b":
+			name_ref[0] = name_ref[0].left(-1)
+		elif name_ref[0].length() < 10 and not (t == " " and name_ref[0] == ""):
+			name_ref[0] += t
+		shown.text = name_ref[0] + "_"
+	# a name already there (the one you used before): the cursor waits on DONE - A, and you are in
+	var start_on = done if cur != "" else first
+	start_on.add_to_group("first_focus")
+	start_on.grab_focus.call_deferred()
 
 # ---- SPLIT SCREEN: two players on this device - a map, then each player's hero and name
 func _split_screen() -> void:
 	Game.cfg["mode"] = "solo"
 	Game.cfg["local_players"] = 2
 	var p2 = func(): _char_screen(func(): _split_screen(), func(): _gload(_solo), 2)
+	if _mp_story_slot > 0:
+		_story_cfg(_mp_story_slot)
+		_char_screen(func(): Game.cfg["local_players"] = 1; _mp_choice(), p2)
+		return
 	_map_screen(func(): Game.cfg["local_players"] = 1; _mp_choice(), func(): _char_screen(func(): _map_screen(_mp_choice, Callable()), p2))
 
+## a television with its picture split in two (one player each side)
 func _split_icon() -> ImageTexture:
 	return _pix_icon([
-		"kkkkkkkkkkkkkk", "kbbbbbbkggggggk".left(14), "kbbbbbbkggggk.", "kbbbbbbkggggk.", "kbbbwbbkggwggk", "kbbwwwbkgwwwgk", "kbbbwbbkggwggk",
-		"kbbbbbbkggggk.", "kbbbbbbkggggk.", "kkkkkkkkkkkkkk", "..............", "..............", "..............", ".............."],
-		{"k": Color(0.1, 0.1, 0.15), "b": Color(0.3, 0.5, 1), "g": Color(0.35, 0.85, 0.4), "w": Color(1, 1, 1)})
+		"kkkkkkkkkkkkkk", "kbbbbbkwkggggk".left(14), "kbbbbbkwkggggk", "kbbbbbkwkggggk", "kbbbbbkwkggggk", "kbbbbbkwkggggk", "kbbbbbkwkggggk",
+		"kbbbbbkwkggggk", "kbbbbbkwkggggk", "kkkkkkkkkkkkkk", ".....kkkk.....", "....kkkkkk....", "..............", ".............."],
+		{"k": Color(0.15, 0.15, 0.2), "b": Color(0.3, 0.5, 1), "g": Color(0.35, 0.85, 0.4), "w": Color(1, 1, 1)})
 
 # ---- MULTIPLAYER screens in the GBA's look (the same workings as before underneath)
 ## a choice with its line of explanation under it
@@ -2104,10 +2896,19 @@ func _gboard(title: String, initial: String, maxlen: int, back: Callable, done: 
 	_gbutton(row, "DELETE", func():
 		word[0] = word[0].left(-1)
 		shown.text = word[0] + "_", false, 80)
-	_gbutton(row, "DONE", func():
+	var ok = _gbutton(row, "DONE", func():
 		var err = str(done.call(word[0].strip_edges()))
 		if err != "" and is_instance_valid(lobby_label):
 			lobby_label.text = err, false, 80)
+	_typing = func(t: String):
+		if t == "\n":
+			ok.pressed.emit()
+			return
+		if t == "\b":
+			word[0] = word[0].left(-1)
+		elif word[0].length() < maxlen and not (t == " " and word[0] == ""):
+			word[0] += t
+		shown.text = word[0] + "_"
 	first.add_to_group("first_focus")
 	first.grab_focus.call_deferred()
 

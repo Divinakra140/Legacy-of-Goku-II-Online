@@ -50,3 +50,11 @@ android_custom/*.aar
 
 # art taken from the game file (copyrighted) - never in the repo
 art_work/
+
+# --- release builds and local backups (the zips go on the GitHub release page, not in the repo) ---
+release/
+build_mac/
+build_win/
+data/backups/
+data/imported_*/
+__pycache__/

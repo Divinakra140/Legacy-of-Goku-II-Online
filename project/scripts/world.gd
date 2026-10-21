@@ -67,6 +67,10 @@ class Local:
 	var talk_hold = false         # A still held from a talk press (it must not punch)
 	var near_npc = -1             # the person close enough to talk with (-1: nobody)
 	var near_save = false         # standing on a Capsule Corp save point
+	var mouse_ok = false          # the menu: a mouse click (A) / right click (B) waiting
+	var mouse_back = false
+	var pvp_ask = false           # R2 on a save point: "ENTER PVP MODE?" waiting for A / B
+	var run_toggle = false        # R2 (off a save point): sprint stays on until R2 again
 	var party = {}                # player id -> name: your party (shares exp and kills across the world)
 	var invites = []              # asked by others: [kind, player id, name, ticks left]
 	var duel = {}                 # a friendly duel: {with, name, t (countdown), over}
@@ -79,6 +83,7 @@ class AreaView:
 	var root: Node2D
 	var ents: Node2D
 	var shots_view: Node2D
+	var back_shots_view: Node2D      # under the fighters: an eye beam fired upward starts behind the head
 	var pops_view: Node2D
 	var offset = Vector2.ZERO
 	var area = {}
@@ -171,7 +176,7 @@ func _ready() -> void:
 	hud.add_child(hud_draw)
 	chat_box = LineEdit.new()
 	chat_box.visible = false
-	chat_box.placeholder_text = "SAY SOMETHING (ENTER: SEND, ESC: CANCEL)"
+	chat_box.placeholder_text = "SAY SOMETHING (ENTER: SEND, R3: CANCEL)" if OS.has_feature("android") else "SAY SOMETHING (ENTER: SEND, ESC: CANCEL)"
 	chat_box.max_length = 80
 	chat_box.add_theme_font_size_override("font_size", 8)
 	chat_box.position = Vector2(6, 200)
@@ -326,11 +331,16 @@ func _view_for(n: int) -> AreaView:
 	var bg = ColorRect.new()
 	var bd: Array = meta.get("backdrop", [0, 0, 0])
 	bg.color = Color8(int(bd[0]), int(bd[1]), int(bd[2]))
-	# a wide border of the backdrop colour: a camera that looks past the map edge sees calm colour, not other places
-	bg.position = Vector2(-1200, -1200)
-	bg.size = Vector2(av.area["w"] + 2400, av.area["h"] + 2400)
+	# the backdrop colour under the map itself; past the map's edge a wide black border, like the GBA (no other places show)
+	bg.size = Vector2(av.area["w"], av.area["h"])
 	bg.z_index = -100
 	av.root.add_child(bg)
+	var edge = ColorRect.new()
+	edge.color = Color.BLACK
+	edge.position = Vector2(-1200, -1200)
+	edge.size = Vector2(av.area["w"] + 2400, av.area["h"] + 2400)
+	edge.z_index = -101
+	av.root.add_child(edge)
 	var pri: Array = meta.get("pri", [0, 0, 0, 0])
 	var order = [0, 1, 2, 3]
 	order.sort_custom(func(a, b): return int(pri[a]) > int(pri[b]) if int(pri[a]) != int(pri[b]) else a > b)
@@ -358,22 +368,6 @@ func _view_for(n: int) -> AreaView:
 			s.centered = false
 			s.z_index = zz
 			av.root.add_child(s)
-			# past the map's edge: the map's own ground mirrored all round (a little darker - you can't go there),
-			# so a big screen never shows black around a small place
-			var aw = float(av.area["w"]); var ah = float(av.area["h"])
-			for oy in [-1, 0, 1]:
-				for ox in [-1, 0, 1]:
-					if ox == 0 and oy == 0:
-						continue
-					var m = Sprite2D.new()
-					m.texture = tex
-					m.centered = false
-					m.flip_h = ox != 0
-					m.flip_v = oy != 0
-					m.position = Vector2(ox * aw, oy * ah)
-					m.z_index = zz
-					m.modulate = Color(0.62, 0.62, 0.7)
-					av.root.add_child(m)
 		var at = AnimTiles.new()
 		at.setup(av.area, k)
 		at.z_index = zz
@@ -387,6 +381,10 @@ func _view_for(n: int) -> AreaView:
 	av.shots_view.z_index = 15
 	av.shots_view.draw.connect(_draw_shots.bind(av))
 	av.root.add_child(av.shots_view)
+	av.back_shots_view = Node2D.new()
+	av.back_shots_view.z_index = -1
+	av.back_shots_view.draw.connect(_draw_shots.bind(av, true))
+	av.root.add_child(av.back_shots_view)
 	av.pops_view = Node2D.new()
 	av.pops_view.z_index = 90
 	av.pops_view.draw.connect(_draw_pops.bind(av))
@@ -582,8 +580,11 @@ func _input_for(L: Local) -> Dictionary:
 		k["down"] = k["down"] or Input.is_joy_button_pressed(p, JOY_BUTTON_DPAD_DOWN) or Input.get_joy_axis(p, JOY_AXIS_LEFT_Y) > 0.5
 		k["left"] = k["left"] or Input.is_joy_button_pressed(p, JOY_BUTTON_DPAD_LEFT) or Input.get_joy_axis(p, JOY_AXIS_LEFT_X) < -0.5
 		k["right"] = k["right"] or Input.is_joy_button_pressed(p, JOY_BUTTON_DPAD_RIGHT) or Input.get_joy_axis(p, JOY_AXIS_LEFT_X) > 0.5
-		k["run"] = k["run"] or Input.get_joy_axis(p, JOY_AXIS_TRIGGER_RIGHT) > 0.5 or Input.is_joy_button_pressed(p, JOY_BUTTON_LEFT_STICK)
+		k["l3"] = k.get("l3", false) or Input.is_joy_button_pressed(p, JOY_BUTTON_LEFT_STICK)      # L3 clicked: sprint until you stop
+		k["runt"] = k.get("runt", false) or Input.get_joy_axis(p, JOY_AXIS_TRIGGER_RIGHT) > 0.5      # R2: sprint on / off
 		k["fly"] = k["fly"] or Input.get_joy_axis(p, JOY_AXIS_TRIGGER_LEFT) > 0.5      # L2: fly / land (FREE PLAY)
+	if i == 0 and not typing:
+		k["ok"] = Input.is_key_pressed(KEY_ENTER) or Input.is_key_pressed(KEY_KP_ENTER) or Input.is_key_pressed(KEY_SPACE)      # (the menu: OK)
 	if i == 0 and touch != null and touch.shown and not map_open:
 		for b in touch.keys:
 			k[b] = k.get(b, false) or touch.keys[b]
@@ -616,13 +617,59 @@ func _touch_tick() -> void:
 		map_pick = 0
 	touch_prev = tk.duplicate()
 
+## the menu with the mouse (Windows / Mac): pointing chooses the row, a click is A, a right click B, a tab is clicked
+var menu_hits = {}
+func _menu_mouse(ev: InputEvent) -> bool:
+	if not (ev is InputEventMouseButton or ev is InputEventMouseMotion):
+		return false
+	for i in locals.size():
+		var L: Local = locals[i]
+		if L.menu.is_empty() or not menu_hits.has(i):
+			continue
+		var h: Dictionary = menu_hits[i]
+		var c: Control = h["c"]
+		if not is_instance_valid(c):
+			continue
+		var p = c.get_local_mouse_position() / float(h.get("s", 1.0))
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
+			L.mouse_back = true
+			return true
+		for t in h["tabs"].size():
+			if (h["tabs"][t] as Rect2).has_point(p) and ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+				L.menu["tab"] = t; L.menu["row"] = 0; L.menu["mode"] = ""; Sfx.play("move")
+				return true
+		for hr in h["rows"]:
+			if (hr[0] as Rect2).has_point(p):
+				if int(L.menu["row"]) != int(hr[1]):
+					L.menu["row"] = int(hr[1])
+				if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+					L.mouse_ok = true
+				return true
+	return false
+
+var perf_on = false
 func _unhandled_input(ev: InputEvent) -> void:
+	if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_F3:
+		perf_on = not perf_on
+	if _menu_mouse(ev):
+		get_viewport().set_input_as_handled()
+		return
 	if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_F8:
 		debug_on = not debug_on       # the EVENT DEBUGGER: flags, numbers, timers, states, the running event
 	if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_F7 and debug_on and not locals.is_empty() and not locals[0].ev.is_empty():
 		var L0: Local = locals[0]
 		L0.ev["wait"] = 0; L0.ev["say"] = {}; L0.ev["choice"] = []; L0.ev["until"] = ""
 		events_rt._run(L0)          # (F7: go on to the next step now)
+	# Android: R3 (click the right stick) opens the chat with the phone keyboard, and R3 again closes it (Enter sends)
+	if OS.has_feature("android") and ev is InputEventJoypadButton and ev.pressed and ev.button_index == JOY_BUTTON_RIGHT_STICK:
+		if chat_open:
+			_chat_close()
+			get_viewport().set_input_as_handled()
+			return
+		if not _any_menu() and not map_open:
+			_chat_open()
+			get_viewport().set_input_as_handled()
+			return
 	if chat_open:
 		if ev is InputEventKey and ev.pressed and ev.keycode == KEY_ESCAPE:
 			_chat_close()
@@ -632,10 +679,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_T and not _any_menu():
-		chat_open = true
-		chat_box.visible = true
-		chat_box.text = ""
-		chat_box.grab_focus()
+		_chat_open()
 		get_viewport().set_input_as_handled()
 		return
 	if (ev is InputEventKey and ev.pressed and not ev.echo and (ev.keycode == KEY_TAB or ev.keycode == KEY_M)) or (ev is InputEventJoypadButton and ev.pressed and ev.button_index == JOY_BUTTON_BACK and Input.get_connected_joypads().size() >= 1 and ev.device == Input.get_connected_joypads()[0]):
@@ -747,6 +791,7 @@ func _physics_process(_dt: float) -> void:
 			sp[1] -= 1
 		av.sparks = av.sparks.filter(func(sp): return sp[1] > 0)
 		av.shots_view.queue_redraw()
+		av.back_shots_view.queue_redraw()
 		av.pops_view.queue_redraw()
 	save_t += 1
 	if save_t >= 600:
@@ -813,6 +858,12 @@ func _step_local(L: Local) -> void:
 		inp = {}
 	inp = _talk_step(L, raw, inp, elist)
 	inp = _save_step(L, raw, inp, elist)
+	if not L.near_save and L.menu.is_empty() and _pressed(L, raw, "runt"):
+		L.run_toggle = not L.run_toggle
+		toasts.append(["%s: SPRINT %s" % [L.name, "ON (R2 AGAIN: OFF)" if L.run_toggle else "OFF"], Color(0.7, 0.9, 1), 90])
+	if L.run_toggle and not inp.is_empty():
+		inp = inp.duplicate()
+		inp["run"] = true
 	L.mprev = raw.duplicate()
 	f.can_fly = not Game.cfg.has("story")      # flying is a FREE PLAY thing (stories keep their walls)
 	f.step(inp, elist)
@@ -826,6 +877,9 @@ func _step_local(L: Local) -> void:
 			"hit":
 				if int(ev["enemy"]) == DUEL_ID:
 					_duel_hit_out(L, ev)
+					continue
+				if int(ev["enemy"]) <= PVP_ID:
+					_pvp_hit_out(L, PVP_ID - int(ev["enemy"]), ev)
 					continue
 				Game.hit_enemy(L.node_i, ev["enemy"], ev["dmg"], ev["kx"], ev["ky"], ev["crit"], int(ev.get("stun", 12)), ev.get("inflict", {}) if ev.get("inflict") is Dictionary else {})
 				for e in elist:
@@ -864,6 +918,9 @@ func _step_local(L: Local) -> void:
 		events_rt.check_area(L)
 	if f.state == "down" and f.down_t <= 0:
 		var back = Game.planet.arrival(L.node_i, 0) if L.node_i != Game.planet.start else Game.planet.start_point()
+		var home = Game.cfg.get("home_at")      # a map that starts in a room of its own (GOKU'S HOUSE: Gohan's room)
+		if home is Dictionary and str(Game.planet.nodes[L.node_i]["key"]) == str(home.get("key", "")):
+			back = Vector2(float(home["x"]), float(home["y"]))
 		f.revive(back.x, back.y)
 		toasts.append(["%s: KNOCKED OUT! BACK ON YOUR FEET" % L.name, Color(1, 0.6, 0.5), 150])
 	# walking from one of the original areas into another inside a land: its name shows
@@ -881,6 +938,8 @@ func _step_local(L: Local) -> void:
 		var inside = false
 		for ex in Game.planet.nodes[L.node_i]["exits"]:
 			var r: Array = ex["rect"]
+			if f.flying and r[0] > 16 and r[1] > 16 and r[2] < int(L.area["tw"]) * 8 - 16 and r[3] < int(L.area["th"]) * 8 - 16:
+				continue      # flying: no going in through a door (the map's edges still lead on)
 			if f.x >= r[0] - 2 and f.x <= r[2] + 2 and f.y >= r[1] - 2 and f.y <= r[3] + 2:
 				inside = true
 				if L.exits_armed and not _door_open(L, ex):
@@ -962,19 +1021,44 @@ func _save_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) -> Dic
 	var f: FighterSim = L.fighter
 	var saves: Array = L.area.get("saves", [])
 	var near = false
+	var on_pad = false
 	if not saves.is_empty() and f.state != "down" and L.menu.is_empty() and L.fade_dir == 0 and L.ev.is_empty():
 		for p in saves:
-			if (p as Vector2).distance_to(Vector2(f.x, f.y)) < 26.0:
+			# the whole pad counts: 8 x 7 cells round its middle tile (3 to the left and up, 4 right, 3 down)
+			var pad = Rect2((p as Vector2) + Vector2(-24, -24), Vector2(64, 56))
+			var at = Vector2(f.x, f.y)
+			if pad.grow(6.0).has_point(at):
 				near = true
+				on_pad = on_pad or pad.has_point(at)
 				break
 	if near and not L.near_save:
-		toasts.append(["CAPSULE CORP SAVE POINT - A: SAVE AND HEAL", Color(0.6, 0.85, 1), 150])
+		toasts.append(["CAPSULE CORP SAVE POINT - A: SAVE AND HEAL   R2: PVP MODE", Color(0.6, 0.85, 1), 150])
 	L.near_save = near
+	if L.pvp_ask:
+		if not near or _pressed(L, raw, "b"):
+			L.pvp_ask = false
+			toasts.append(["PVP MODE: NOTHING CHANGED", Color(0.8, 0.85, 1), 120])
+		elif _pressed(L, raw, "a"):
+			L.pvp_ask = false
+			f.pvp = not f.pvp
+			toasts.append(["%s: PVP MODE %s" % [L.name, "ON - OTHER PVP PLAYERS CAN HIT YOU, AND YOU THEM" if f.pvp else "OFF - NO PLAYER CAN HURT YOU"], Color(1, 0.6, 0.4) if f.pvp else Color(0.6, 1, 0.7), 240])
+			Sfx.play("levelup" if f.pvp else "menu", 0.7)
+			L.talk_hold = true
+		inp = inp.duplicate()
+		inp["a"] = false; inp["b"] = false
+		return inp
+	if near and _pressed(L, raw, "runt"):
+		L.pvp_ask = true
+		toasts.append(["%s PVP MODE?   A: YES   B: NO" % ("LEAVE" if f.pvp else "ENTER"), Color(1, 0.85, 0.4), 600])
+		Sfx.play("menu", 0.7)
+		inp = inp.duplicate()
+		inp["run"] = false
+		return inp
 	if not near or not inp.get("a", false) or not _pressed(L, raw, "a"):
 		return inp
 	for e in elist:
-		if e["alive"] and Vector2(e["x"] - f.x, e["y"] - f.y).length() < 44.0:
-			return inp      # a foe right here: A punches
+		if not on_pad and e["alive"] and Vector2(e["x"] - f.x, e["y"] - f.y).length() < 44.0:
+			return inp      # a foe right here and you are not on the pad itself: A punches (the farm's animals no longer stop a save)
 	f.hp = f.maxhp
 	f.ep = f.maxep
 	save_all()
@@ -1159,9 +1243,10 @@ func _update_view(av: AreaView) -> void:
 			av.ents.add_child(v)
 			av.local_views[L.k] = v
 		var f: FighterSim = L.fighter
-		if v.set_id != f.set_id:
-			v.set_id = f.set_id
-			v.set_sprite_set(Assets.sprite_set(f.set_id))
+		var shown = f.shape_set if f.shape_set >= 0 else f.set_id
+		if v.set_id != shown:
+			v.set_id = shown
+			v.set_sprite_set(Assets.sprite_set(shown))
 		var au = f.aura()
 		v.aura = Color.hex(au) if au != 0 else Color(0, 0, 0, 0)
 		v.tint = f.tint()
@@ -1170,9 +1255,13 @@ func _update_view(av: AreaView) -> void:
 		if f.state == "down" and (locals.size() > 1 or not Game.remote_states.is_empty()):
 			v.label = "DOWN %d" % ceili(f.down_t / 60.0)
 		v.label_color = Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6)
+		v.hero = true
 		v.position = Vector2(roundf(f.x) + f.draw_dx, roundf(f.y))
 		v.z_index = 110 if f.flying else 0      # flying: above the trees and roofs
-		v.show_frame(f.anim, f.dir, f.frame)
+		if f.flying and f.dir >= 2 and not Assets.has_side_fly(f.set_id):
+			v.show_frame(Rules.A_WALK, f.dir, f.frame % maxi(1, v.frames_of(Rules.A_WALK, f.dir).size()))
+		else:
+			v.show_frame(f.anim, f.dir, f.frame)
 		v.concealed = f.invuln > 0 and (f.invuln / 3) % 2 == 0 and f.state != "down" and f.state != "transform" and f.state != "skill"
 		var b = bubbles.get(Game.pid_of(Game.my_id(), L.k))
 		v.bubble = b[0] if b != null else ""
@@ -1229,6 +1318,7 @@ func _update_view(av: AreaView) -> void:
 		if v == null:
 			v = ActorView.new()
 			v.set_sprite_set(Assets.sprite_set(Assets.character_set(int(st["ch"]))))
+			v.hero = true
 			v.label_color = Color(0.6, 0.9, 1)
 			av.ents.add_child(v)
 			av.remote_views[pid] = v
@@ -1249,7 +1339,10 @@ func _update_view(av: AreaView) -> void:
 		v.hp_frac = float(st.get("hp", 1)) / maxf(1.0, float(st.get("maxhp", 1)))
 		v.position = v.position.lerp(Vector2(float(st["x"]) + float(st.get("dx", 0)), st["y"]), 0.5)
 		v.z_index = 110 if st.get("fly", false) else 0
-		v.show_frame(int(st["anim"]), int(st["dir"]), int(st["frame"]))
+		if st.get("fly", false) and int(st["dir"]) >= 2 and not Assets.has_side_fly(int(st.get("set", 0))):
+			v.show_frame(Rules.A_WALK, int(st["dir"]), int(st["frame"]) % maxi(1, v.frames_of(Rules.A_WALK, int(st["dir"])).size()))
+		else:
+			v.show_frame(int(st["anim"]), int(st["dir"]), int(st["frame"]))
 		v.queue_redraw()
 	for pid in av.remote_views.keys():
 		if not here.has(pid):
@@ -1656,10 +1749,20 @@ func _chat_send(t: String) -> void:
 	Game.say(locals[0].name, t, 0)
 	_chat_close()
 
+func _chat_open() -> void:
+	chat_open = true
+	chat_box.visible = true
+	chat_box.text = ""
+	chat_box.grab_focus()
+	if OS.has_feature("android"):
+		DisplayServer.virtual_keyboard_show("")
+
 func _chat_close() -> void:
 	chat_open = false
 	chat_box.visible = false
 	chat_box.release_focus()
+	if OS.has_feature("android"):
+		DisplayServer.virtual_keyboard_hide()
 
 func _on_chat(from: String, text: String, pid: int) -> void:
 	bubbles[pid] = [text, 300]
@@ -1812,22 +1915,32 @@ func _on_victory(t: String) -> void:
 		Game.save_fighter(f, L.k)
 
 # ------------------------------------------------------------------ drawing
-func _draw_shots(av: AreaView) -> void:
-	var n: Node2D = av.shots_view
+const CHARGE_FX = ["rfx", "xcharge", "glow", "gather"]
+func _draw_shots(av: AreaView, back: bool = false) -> void:
+	var n: Node2D = av.back_shots_view if back else av.shots_view
 	var ki = Assets.fx("kiblast")
 	var all = []
 	var fxs = []
+	var back_fx = []
 	for L in locals:
 		if L.node_i == av.node_i:
 			for e in L.fighter.snapshot()["shots"]:
 				all.append(e)
-			fxs.append_array(L.fighter.fx)
+			if L.fighter.dir == 1:
+				back_fx.append_array(L.fighter.fx.filter(func(x): return str(x[0]) in CHARGE_FX))
+				fxs.append_array(L.fighter.fx.filter(func(x): return not str(x[0]) in CHARGE_FX))
+			else:
+				fxs.append_array(L.fighter.fx)
 	for pid in Game.remote_states:
 		var st: Dictionary = Game.remote_states[pid]
 		if int(st.get("node", -1)) == av.node_i:
 			for e in st.get("shots", []):
 				all.append(e)
-			fxs.append_array(st.get("fx", []))
+			if int(st.get("dir", 0)) == 1:
+				back_fx.append_array(st.get("fx", []).filter(func(x): return str(x[0]) in CHARGE_FX))
+				fxs.append_array(st.get("fx", []).filter(func(x): return not str(x[0]) in CHARGE_FX))
+			else:
+				fxs.append_array(st.get("fx", []))
 	var tt = Engine.get_physics_frames()
 	var fr = (tt / 8) % 4
 	for e in all:
@@ -1835,10 +1948,19 @@ func _draw_shots(av: AreaView) -> void:
 		var col = Color.hex(int(e[4])) if e.size() > 4 and int(e[4]) != 0 else Color(1, 1, 1)
 		var p = Vector2(float(e[0]), float(e[1]))
 		var look = str(e[9]) if e.size() > 9 else ""
+		if back != ((kind == 1 or kind == 5) and int(e[2]) == 1):
+			continue      # (a beam fired upward is drawn under the fighters - it leaves from behind the head - everything else over them)
 		if kind == 5:
 			_draw_rom_beam(n, e)
 			continue
 		if kind == 6:
+			if float(e[5]) > 0:
+				# a ball grown with the levels: a glow of its colour around the game's own ball
+				var hc = Vector2(float(e[0]) + float(e[6]), float(e[1]) + float(e[7]))
+				var hr = float(e[5]) * (1.0 + 0.06 * sin(tt * 0.9))
+				n.draw_circle(hc, hr * 1.25, Color(col.r, col.g, col.b, 0.22))
+				n.draw_circle(hc, hr, Color(col.r, col.g, col.b, 0.5))
+				n.draw_circle(hc, hr * 0.6, Color(1, 1, 1, 0.35))
 			_efx_tl(n, look, int(e[8]), Vector2(roundf(float(e[0])), roundf(float(e[1]))))
 			continue
 		if kind == 1 and look != "" and _beam_sprite(n, e, look, tt):
@@ -1870,8 +1992,22 @@ func _draw_shots(av: AreaView) -> void:
 			for k in 8:
 				var a = k * TAU / 8.0 + tt * 0.25
 				n.draw_line(p + Vector2.from_angle(a) * hr * 0.9, p + Vector2.from_angle(a) * hr * (1.5 + 0.4 * sin(tt + k)), Color(1, 1, 1, 0.7), 1.0)
-			n.draw_circle(o, w * 0.9, Color(1, 1, 1, 0.85))
-			n.draw_circle(o, w * 1.4, Color(col.r, col.g, col.b, 0.3))
+			if look != "eyes":
+				n.draw_circle(o, w * 0.9, Color(1, 1, 1, 0.85))
+				n.draw_circle(o, w * 1.4, Color(col.r, col.g, col.b, 0.3))
+			if w > 15.0:      # a great beam (the Tri Beam): sparks thrown off all along it
+				for k2 in 14:
+					var u2 = fmod(float(tt * 5 + k2 * 53), maxf(1.0, L)) / maxf(1.0, L)
+					var q2 = o.lerp(p, u2) + side * (w * 0.7 + float((k2 * 7 + tt) % 9)) * (1.0 if k2 % 2 == 0 else -1.0)
+					n.draw_line(q2, q2 + Vector2.from_angle(float(k2) * 1.7 + tt * 0.3) * 4.0, Color(1, 0.9, 0.4, 0.9), 1.5)
+			else:
+				# an eye beam: a half-round flare opening forward from the eye - nothing drawn back over the face
+				var fr0 = w * (1.5 + 0.2 * sin(tt * 1.9))
+				for ring in [[1.0, Color(col.r, col.g, col.b, 0.45)], [0.7, col], [0.4, Color(1, 1, 1, 0.95)]]:
+					var pts = PackedVector2Array()
+					for k in 13:
+						pts.append(o + dirv.rotated(-PI / 2 + PI * k / 12.0) * fr0 * float(ring[0]))
+					n.draw_colored_polygon(pts, ring[1])
 		elif kind == 2:
 			var r = maxf(4.0, float(e[8]))
 			n.draw_circle(p, r * 1.5, Color(col.r, col.g, col.b, 0.3))
@@ -1886,6 +2022,10 @@ func _draw_shots(av: AreaView) -> void:
 		else:
 			n.draw_circle(p, 6, Color(col.r, col.g, col.b, 0.35))
 			n.draw_circle(p, 3.5, col)
+	if back:
+		for e in back_fx:      # charging while facing up: the glow is in front of the hero, so behind him on screen
+			_draw_fx(n, e)
+		return
 	for e in fxs:
 		_draw_fx(n, e)
 	var key: String = Game.planet.nodes[av.node_i]["key"]
@@ -2115,16 +2255,18 @@ func _beam_sprite(n: Node2D, e: Array, look: String, tt: int) -> bool:
 	var horiz = d >= 2
 	var dv = (p - o).normalized() if p.distance_to(o) > 1 else Rules.dir_vec(d)
 	var sc = clampf(w / 5.0, 1.0, 3.0)
-	var step = 8.0 * sc * 0.85
+	var step = 6.0                   # the game's beam pieces are drawn 1:1 (8 px): overlapping, never a gap
 	var L = o.distance_to(p)
 	var body: int = lk[1][1 if horiz else 0]
 	var tint: Color = lk[4]
-	var i = 0.0
-	while i < L:
-		var q = o + dv * i
-		var wob = 1.0 + 0.06 * sin(tt * 0.9 + i * 0.2)
-		_efx_c(n, lk[0], body, q, sc * wob, tint)
-		i += step
+	var lanes = maxi(1, int(w / 10.0))     # a very wide beam (Solar Kamehameha): more rows of pieces side by side
+	var across = Vector2(-dv.y, dv.x)
+	for ln in lanes:
+		var off = across * (ln - (lanes - 1) * 0.5) * 6.0
+		var i = 0.0
+		while i < L:
+			_efx_c(n, lk[0], body, o + dv * i + off, sc, tint)
+			i += step
 	if look == "red":
 		# the Special Beam Cannon's spiral: sparks winding round the beam
 		var side = Vector2(-dv.y, dv.x)
@@ -2141,22 +2283,113 @@ func _beam_sprite(n: Node2D, e: Array, look: String, tt: int) -> bool:
 	_efx_c(n, lk[0], bi, p, sc * 1.1, tint, d == 2, d == 0)
 	return true
 
+## how strongly a ball's sphere of colour shows: always for a huge ball; for a smaller one only as it grows with
+## the levels (from nothing when learned to full at a third bigger) - the game's ball itself is drawn 1:1
+func _sphere_alpha(size: float, base: float) -> float:
+	if base <= 0.0:
+		return 1.0 if size > 14.0 else 0.0
+	if base > 14.0:
+		return 1.0
+	return clampf((size - base) / (base * 0.33), 0.0, 1.0)
+
+## balls drawn by our artists (data/builtin/sprites): rows of [y, cell size, frames] - charge, flying, burst
+const SHEET_LOOKS = {"deathball": {"file": "fx_death_ball.png", "rows": [[0, 32, 3], [32, 32, 4], [64, 48, 4]]},
+	"disk": {"file": "fx_destructo_disk.png", "rows": [[0, 32, 3], [32, 32, 4], [64, 48, 4]]},
+	"supernova": {"file": "fx_supernova.png", "rows": [[0, 128, 3], [128, 128, 4], [256, 192, 4]], "icon": [0, 0], "grow": 14}}
+## a charge that grows smoothly (the Supernova): "grow" steps made from the artist's charge frames, each one scaled from its
+## own size up to the next frame's, the first starting at a quarter
+var _sheet_area = {}
+func _charge_grow(n: Node2D, look: String, k: float, p: Vector2) -> bool:
+	var L: Dictionary = SHEET_LOOKS[look]
+	var tex = Assets.texture(Assets.builtin_dir().path_join("sprites/" + str(L["file"])))
+	if tex == null:
+		return false
+	var rw: Array = L["rows"][0]
+	var c = int(rw[1]); var nf = int(rw[2])
+	if not _sheet_area.has(look):      # how big each charge frame looks: the square root of its solid pixels
+		var img: Image = tex.get_image()
+		var sizes = []
+		for f in nf:
+			var cnt = 0
+			for y in c:
+				for x in c:
+					if img.get_pixel(f * c + x, int(rw[0]) + y).a > 0.5:
+						cnt += 1
+			sizes.append(sqrt(float(maxi(1, cnt))))
+		_sheet_area[look] = sizes
+	var sz: Array = _sheet_area[look]
+	var steps = int(L["grow"])
+	var st = clampi(int(k * steps), 0, steps - 1)
+	var u = float(st) / float(steps - 1) * float(nf - 1)      # where this step lies between the drawn frames
+	var f = mini(int(u), nf - 1)
+	var t = u - f
+	var sc: float
+	if f >= nf - 1:
+		sc = 1.0
+	else:
+		var start = 0.25 if f == 0 else 1.0
+		sc = lerpf(start, float(sz[f + 1]) / float(sz[f]), t)
+	var d = Vector2(c, c) * sc
+	n.draw_texture_rect_region(tex, Rect2(p.round() - d * 0.5, d), Rect2(f * c, int(rw[0]), c, c))
+	return true
+func _disk_draw(n: Node2D, p: Vector2, r: float, tt: int, col: Color) -> void:
+	var w = r * (1.0 + 0.12 * sin(tt * 0.8))
+	n.draw_set_transform(p, 0.0, Vector2(1.0, 0.35))
+	n.draw_circle(Vector2.ZERO, w * 1.3, Color(col.r, col.g, col.b, 0.3))
+	n.draw_circle(Vector2.ZERO, w, col)
+	n.draw_circle(Vector2.ZERO, w * 0.55, Color(1, 1, 1, 0.9))
+	n.draw_arc(Vector2.ZERO, w * 0.8, tt * 0.6, tt * 0.6 + 2.0, 12, Color(1, 1, 1), 1.0)
+	n.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+func _sheet_draw(n: Node2D, look: String, row: int, i: int, p: Vector2, d: int = -1) -> bool:
+	if not SHEET_LOOKS.has(look):
+		return false
+	var tex = Assets.texture(Assets.builtin_dir().path_join("sprites/" + str(SHEET_LOOKS[look]["file"])))
+	if tex == null:
+		return false
+	var rw: Array = SHEET_LOOKS[look]["rows"][row]
+	var c = int(rw[1])
+	var fi = clampi(i, 0, int(rw[2]) - 1)
+	# a sheet drawn for flying right (the Destructo Disk): mirrored going left, a quarter turn going up or down
+	var ang = {0: PI / 2, 1: -PI / 2}.get(d, 0.0)
+	var sx = -1.0 if d == 2 else 1.0
+	n.draw_set_transform(p.round(), ang, Vector2(sx, 1.0))
+	n.draw_texture_rect_region(tex, Rect2(-Vector2(c, c) * 0.5, Vector2(c, c)), Rect2(fi * c, int(rw[0]), c, c))
+	n.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	return true
+
 const BALL_LOOKS = {"spirit": "p_spirit", "bigbang": "p_ball_yellow", "orange": "e_charge", "present": "e_bomb", "cyan": "p_ball_cyan"}
 ## a thrown ball: the Spirit Bomb in flight, Big Bang, Burning Attack, Mr. Satan's present
 func _ball_sprite(n: Node2D, e: Array, look: String, tt: int) -> bool:
+	if _sheet_draw(n, look, 1, (tt / 4) % 4, Vector2(float(e[0]), float(e[1])), int(e[2]) if look == "disk" else -1):
+		return true
+	if look == "disk":
+		_disk_draw(n, Vector2(float(e[0]), float(e[1])), maxf(4.0, float(e[8])), tt, Color.hex(int(e[4])))
+		return true
+	var tint = Color(1, 1, 1)
+	if look.ends_with("_tint"):      # the game's ball in the move's own colour (Frieza's dark purple Death Ball)
+		look = look.trim_suffix("_tint")
+		tint = Color.hex(int(e[4])).lightened(0.25)
 	var sheet: String = BALL_LOOKS.get(look, "")
 	if sheet == "" or Assets.efx(sheet).is_empty():
 		return false
 	var p = Vector2(float(e[0]), float(e[1]))
 	var size = maxf(4.0, float(e[8]))
+	var sa = _sphere_alpha(size, float(e[10]) if e.size() > 10 else 0.0)
+	if sa > 0.0:                     # a huge ball (a Supernova, or one grown with the levels): a burning sphere of its colour
+		var bc = Color.hex(int(e[4]))
+		var rr = size * 1.6 * (1.0 + 0.05 * sin(tt * 0.6))
+		n.draw_circle(p, rr * 1.25, Color(bc.r, bc.g, bc.b, 0.25 * sa))
+		n.draw_circle(p, rr, Color(bc.r, bc.g, bc.b, 0.85 * sa))
+		var lc = bc.lightened(0.45)
+		n.draw_circle(p, rr * 0.6, Color(lc.r, lc.g, lc.b, sa))
 	match look:
 		"spirit":
-			_efx_c(n, "p_spirit", 4, p, clampf(size / 14.0, 0.7, 2.5) * (1.0 + 0.05 * sin(tt * 0.8)))
+			_efx_c(n, "p_spirit", 4, p, clampf(size / 14.0, 0.7, 6.0) * (1.0 + 0.05 * sin(tt * 0.8)), tint)
 		"present":
 			_efx_c(n, "e_bomb", (tt / 5) % 3, p, 1.0)
 		_:
 			var fx = Assets.efx(sheet)
-			_efx_c(n, sheet, fx["frames"].size() - 1, p, clampf(size / 8.0, 0.8, 2.5) * (1.0 + 0.08 * sin(tt * 1.1)))
+			_efx_c(n, sheet, fx["frames"].size() - 1, p, clampf(size / 8.0, 0.8, 6.0) * (1.0 + 0.08 * sin(tt * 1.1)), tint)
 	return true
 
 ## charging (k 0..1): the orb that grows at the hands / over the head
@@ -2165,13 +2398,33 @@ func _draw_xcharge(n: Node2D, e: Array) -> void:
 	var k = clampf(float(e[3]), 0.0, 1.0)
 	var look = str(e[7]) if e.size() > 7 else ""
 	var tt = Engine.get_physics_frames()
+	if SHEET_LOOKS.has(look) and SHEET_LOOKS[look].has("grow") and _charge_grow(n, look, k, p):
+		return
+	if _sheet_draw(n, look, 0, int(k * 3.0), p):
+		return
+	if look == "disk":
+		_disk_draw(n, p, maxf(2.0, float(e[8]) * k), tt, Color.hex(int(e[4])))
+		return
+	var tint = Color(1, 1, 1)
+	if look.ends_with("_tint"):
+		look = look.trim_suffix("_tint")
+		tint = Color.hex(int(e[4])).lightened(0.25)
+	var big = maxf(1.0, float(e[8]) / 12.0) if e.size() > 8 else 1.0      # a huge ball grows huge while it gathers
+	var sa = _sphere_alpha(float(e[8]), float(e[9]) if e.size() > 9 else 0.0) if e.size() > 8 else 0.0
+	if sa > 0.0:
+		var bc = Color.hex(int(e[4]))
+		var rr = float(e[8]) * 1.6 * k
+		n.draw_circle(p, rr * 1.25, Color(bc.r, bc.g, bc.b, 0.25 * sa))
+		n.draw_circle(p, rr, Color(bc.r, bc.g, bc.b, 0.85 * sa))
+		var lc = bc.lightened(0.45)
+		n.draw_circle(p, rr * 0.6, Color(lc.r, lc.g, lc.b, sa))
 	match look:
 		"spirit":
-			_efx_c(n, "p_spirit", clampi(int(k * 5.0), 0, 4), p, 1.0 + 0.04 * sin(tt * 0.7))
+			_efx_c(n, "p_spirit", clampi(int(k * 5.0), 0, 4), p, (1.0 + 0.04 * sin(tt * 0.7)) * lerpf(1.0, big, k), tint)
 		"bigbang":
-			_efx_c(n, "p_ball_yellow", clampi(int(k * 3.0), 0, 2), p, 1.0 + k)
+			_efx_c(n, "p_ball_yellow", clampi(int(k * 3.0), 0, 2), p, (1.0 + k) * lerpf(1.0, big, k), tint)
 		"orange":
-			_efx_c(n, "e_charge", clampi(int(k * 3.0), 0, 2), p, 1.0 + k * 0.6)
+			_efx_c(n, "e_charge", clampi(int(k * 3.0), 0, 2), p, (1.0 + k * 0.6) * lerpf(1.0, big, k), tint)
 		"present":
 			_efx_c(n, "e_bomb", (tt / 5) % 3, p, 1.0)
 		"red":
@@ -2186,6 +2439,8 @@ func _draw_xboom(n: Node2D, e: Array) -> void:
 	var r = float(e[3])
 	var k = float(e[5]) / maxf(1.0, float(e[6]))
 	var look = str(e[7]) if e.size() > 7 else ""
+	if _sheet_draw(n, look, 2, int(k * 4.0), p, int(e[8]) if e.size() > 8 else -1):
+		return
 	match look:
 		"spirit":
 			_efx_c(n, "e_ring", clampi(int(k * 4.0), 0, 3), p, r / 16.0 * (0.4 + k), Color(1, 1, 1, 1.0 - k * 0.6))
@@ -2213,6 +2468,17 @@ func _draw_fx(n: Node2D, e: Array) -> void:
 	var col = Color.hex(int(e[4]))
 	var k = float(e[5]) / maxf(1.0, float(e[6]))
 	match str(e[0]):
+		"dome":         # solid over the body first, then spreading out and fading (e[7]: the body's size)
+			var cover = float(e[7]) if e.size() > 7 else 16.0
+			var rr: float; var al: float
+			if k < 0.3:
+				rr = cover * (0.15 + 0.85 * k / 0.3); al = 1.0
+			else:
+				var q = (k - 0.3) / 0.7
+				rr = lerpf(cover, r, q); al = 1.0 - q * 0.85
+			n.draw_circle(p, rr, Color(col.r, col.g, col.b, al))
+			n.draw_circle(p, rr * 0.7, Color(col.lightened(0.4).r, col.lightened(0.4).g, col.lightened(0.4).b, al))
+			n.draw_arc(p, rr, 0, TAU, 48, Color(1, 1, 1, al), 2.0)
 		"ring":
 			n.draw_arc(p, r * (0.3 + 0.7 * k), 0, TAU, 40, Color(col.r, col.g, col.b, 1.0 - k), 3.0)
 			n.draw_circle(p, r * (0.3 + 0.7 * k), Color(col.r, col.g, col.b, 0.18 * (1.0 - k)))
@@ -2291,16 +2557,18 @@ func _bar(c: Control, x: float, y: float, w: float, v: float, mx: float, col: Co
 const HUD_LEN = 62
 const HP_COLS = [[Color8(248, 72, 72), Color8(168, 8, 16)], [Color8(248, 112, 112), Color8(208, 16, 40)]]
 const KI_COLS = [[Color8(48, 248, 72), Color8(0, 120, 8)], [Color8(112, 248, 144), Color8(0, 168, 24)]]
-func _gba_bars(c: Control, x0: float, y0: float, hp: float, ki: float, xp: float) -> void:
+func _gba_bars(c: Control, x0: float, y0: float, hp: float, ki: float, xp: float, sk: Dictionary = {}, ready: bool = true, set_id: int = -1) -> void:
 	var px = func(xx: float, yy: float, col: Color): c.draw_rect(Rect2(x0 + xx, y0 + yy, 1, 1), col)
-	c.draw_rect(Rect2(x0 + 1, y0, HUD_LEN + 10, 15), Color8(32, 32, 64))
-	c.draw_rect(Rect2(x0 + 3, y0, HUD_LEN + 8, 1), Color8(112, 112, 112))
-	c.draw_rect(Rect2(x0 + 3, y0 + 15, HUD_LEN + 8, 1), Color8(88, 88, 88))
-	c.draw_rect(Rect2(x0 + HUD_LEN + 10, y0 + 1, 1, 14), Color8(88, 88, 88))
+	var IW = 24      # the special's window at the right, inside the same metal frame
+	var FW = HUD_LEN + 10 + IW + 3
+	c.draw_rect(Rect2(x0 + 1, y0, FW, 22), Color8(32, 32, 64))
+	c.draw_rect(Rect2(x0 + 3, y0, FW - 2, 1), Color8(112, 112, 112))
+	c.draw_rect(Rect2(x0 + 3, y0 + 21, FW - 2, 1), Color8(88, 88, 88))
+	c.draw_rect(Rect2(x0 + FW, y0 + 1, 1, 20), Color8(88, 88, 88))
 	c.draw_rect(Rect2(x0 + 4, y0 + 1, HUD_LEN + 5, 13), Color.BLACK)
-	for k in 16:      # the slanted metal cap at the left
-		px.call(maxf(0, 2 - k * 0.25), k, Color8(192, 192, 192) if k < 3 else Color8(112, 112, 112))
-		px.call(maxf(1, 3 - k * 0.25), k, Color8(144, 144, 144))
+	for k in 22:      # the slanted metal cap at the left
+		px.call(maxf(0, 2 - k * 0.2), k, Color8(192, 192, 192) if k < 3 else Color8(112, 112, 112))
+		px.call(maxf(1, 3 - k * 0.2), k, Color8(144, 144, 144))
 	var rows = [[hp, HP_COLS, 2], [ki, KI_COLS, 7]]
 	for b in rows:
 		var n = int(roundf(HUD_LEN * clampf(float(b[0]), 0.0, 1.0)))
@@ -2313,43 +2581,225 @@ func _gba_bars(c: Control, x0: float, y0: float, hp: float, ki: float, xp: float
 					col = b[1][seg][0] if r == 0 else b[1][seg][1]
 				px.call(sx + i, b[2] + r, col)
 		c.draw_rect(Rect2(x0 + 5, y0 + b[2] + 3, HUD_LEN + 2, 1), Color8(88, 88, 88))
-	# experience: a thin bar under the metal
-	c.draw_rect(Rect2(x0 + 4, y0 + 17, HUD_LEN + 6, 3), Color8(32, 32, 64))
-	c.draw_rect(Rect2(x0 + 4, y0 + 17, HUD_LEN + 6, 1), Color8(88, 88, 88))
-	c.draw_rect(Rect2(x0 + 5, y0 + 18, (HUD_LEN + 4) * xp, 1), Color8(248, 216, 64))
+	# experience: a thin blue bar inside the frame, under the health and ki
+	c.draw_rect(Rect2(x0 + 4, y0 + 15, HUD_LEN + 5, 5), Color.BLACK)
+	c.draw_rect(Rect2(x0 + 5, y0 + 16, HUD_LEN + 3, 3), Color8(24, 24, 48))
+	c.draw_rect(Rect2(x0 + 5, y0 + 17, (HUD_LEN + 3) * xp, 1), Color8(72, 128, 232))
+	# the special's window
+	var wx = x0 + HUD_LEN + 11
+	c.draw_rect(Rect2(wx - 1, y0 + 1, 1, 20), Color8(112, 112, 112))
+	c.draw_rect(Rect2(wx, y0 + 2, IW, 18), Color.BLACK)
+	if not sk.is_empty():
+		_skill_icon(c, sk, Rect2(wx + 1, y0 + 3, IW - 2, 16), ready, set_id)
+
+## a little snapshot of the special in the HUD's window, drawn the way the move looks (dim while it cannot be used)
+func _skill_icon(c: Control, sk: Dictionary, r: Rect2, ready: bool, set_id: int = -1) -> void:
+	var dim = Color(1, 1, 1) if ready else Color(0.4, 0.4, 0.45)
+	var look = str(sk.get("look", "")).trim_suffix("_tint")
+	var col = Content.color(sk.get("color", "ffffff"))
+	var kind = str(sk.get("type", ""))
+	var mid = r.get_center()
+	match kind:
+		"beam":
+			if not _icon_beam(c, sk, look, r, dim):
+				var w = clampf(float(sk.get("width", 8)) * 0.35, 1.5, r.size.y * 0.32)
+				c.draw_line(Vector2(r.position.x + 2, mid.y), Vector2(r.end.x - 4, mid.y), Color(col.r, col.g, col.b, 0.35) * dim, w * 2.2)
+				c.draw_line(Vector2(r.position.x + 2, mid.y), Vector2(r.end.x - 4, mid.y), col * dim, w)
+				c.draw_line(Vector2(r.position.x + 2, mid.y), Vector2(r.end.x - 4, mid.y), Color(1, 1, 1) * dim, maxf(1.0, w * 0.4))
+				c.draw_circle(Vector2(r.end.x - 4, mid.y), w * 1.1, col * dim)
+				c.draw_circle(Vector2(r.end.x - 4, mid.y), w * 0.55, Color(1, 1, 1) * dim)
+				if sk.get("sparks", false):
+					for k in 6:
+						var q = Vector2(r.position.x + 3 + k * 3.2, mid.y + (w + 2.0) * (1.0 if k % 2 == 0 else -1.0))
+						c.draw_rect(Rect2(q, Vector2(1, 1)), Color(1, 0.9, 0.4) * dim)
+			return
+		"dash":
+			var sid = int(sk.get("shape_set", set_id))
+			var anim = int(sk.get("shape_anim", 1)) if sk.has("shape_set") else 16
+			if _icon_sprite(c, sid, anim, 3, r, dim):
+				return
+		"slash":      # the sword in its sheath, cut from Trunks' back in the player's own game file
+			var sw = _sword_icon()
+			if sw != null:
+				_icon_fit(c, sw, Rect2(Vector2.ZERO, sw.get_size()), r, dim)
+				return
+		"flash":
+			for k in 8:
+				var v = Vector2.from_angle(k * TAU / 8.0)
+				c.draw_line(mid + v * 2.0, mid + v * r.size.y * 0.48, Color(1, 0.95, 0.6) * dim, 1.0)
+			c.draw_circle(mid, r.size.y * 0.28, Color(1, 1, 0.85) * dim)
+			c.draw_circle(mid, r.size.y * 0.16, Color(1, 1, 1) * dim)
+			return
+		"volley":
+			for k in 4:
+				var q = r.position + Vector2(4 + k * 5, r.size.y - 4 - k * 3)
+				c.draw_circle(q, 2.2, Color(col.r, col.g, col.b, 0.5) * dim)
+				c.draw_circle(q, 1.2, Color(1, 1, 1) * dim)
+			return
+		"buff", "heal":
+			var ac = Content.color(sk.get("aura", sk.get("color", "ffffff")))
+			c.draw_circle(mid, r.size.y * 0.45, Color(ac.r, ac.g, ac.b, 0.35) * dim)
+			c.draw_arc(mid, r.size.y * 0.42, 0, TAU, 20, ac * dim, 1.0)
+			if set_id >= 0 and _icon_sprite(c, set_id, 0, 0, r.grow(-2), dim):
+				return
+			c.draw_circle(mid, r.size.y * 0.2, ac.lightened(0.4) * dim)
+			return
+		"wave":
+			for k in 3:
+				c.draw_arc(mid, r.size.y * (0.18 + 0.15 * k), 0, TAU, 20, col * dim, 1.0)
+			return
+	# a ball (and anything else): the artist's sheet, the game's own ball, or a ball of the move's colour
+	var tex: Texture2D = null
+	var src = Rect2()
+	var tint = dim
+	if SHEET_LOOKS.has(look):
+		tex = Assets.texture(Assets.builtin_dir().path_join("sprites/" + str(SHEET_LOOKS[look]["file"])))
+		var ic: Array = SHEET_LOOKS[look].get("icon", [1, 0])      # (row, frame) shown in the HUD: a flying frame unless the sheet says
+		var rw: Array = SHEET_LOOKS[look]["rows"][int(ic[0])]
+		src = Rect2(int(ic[1]) * int(rw[1]), int(rw[0]), int(rw[1]), int(rw[1]))
+	if tex == null:
+		var name = ""
+		if sk.has("rom"):
+			var R: Dictionary = Content.rom_specials.get(str(sk["rom"]), {})
+			name = str(R.get("charge_sheet", ""))
+		elif BALL_LOOKS.has(look):
+			name = BALL_LOOKS[look]
+		var fx = Assets.efx(name) if name != "" else {}
+		if not fx.is_empty():
+			var fi = fx["frames"].size() - 1
+			var f: Dictionary = fx["frames"][fi]
+			tex = fx["tex"]; src = Rect2(fi * int(fx["cell"]), 0, f["w"], f["h"])
+			if str(sk.get("look", "")).ends_with("_tint"):
+				tint *= col.lightened(0.25)
+	if tex == null or src.size.x <= 0:
+		c.draw_circle(mid, r.size.y * 0.42, Color(col.r, col.g, col.b, 0.35) * dim)
+		c.draw_circle(mid, r.size.y * 0.3, col * dim)
+		c.draw_circle(mid, r.size.y * 0.14, Color(1, 1, 1) * dim)
+		return
+	_icon_fit(c, tex, src, r, tint)
+
+var _sword_tex: Texture2D = null
+func _sword_icon() -> Texture2D:
+	if _sword_tex != null:
+		return _sword_tex
+	var st = Assets.sprite_set(128)      # future Trunks, standing seen from behind: the sword across his back
+	if st.is_empty() or st["tex"] == null:
+		return null
+	var src: Image = st["img"] if st.has("img") else st["tex"].get_image()
+	var cell: int = st["cell"]
+	var a = Vector2(15, 11)
+	var b = Vector2(5, 21.5)
+	var out = Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	for y in 32:
+		for x in 32:
+			var col = src.get_pixel(x, cell + y)      # (row 1: facing up)
+			if col.a < 0.5:
+				continue
+			var p = Vector2(x, y)
+			var t = (p - a).dot(b - a) / (b - a).length_squared()
+			if t < -0.08 or t > 1.05 or absf((p - a).cross(b - a)) / (b - a).length() > 1.9:
+				continue
+			if (col.h > 0.6 and col.h < 0.95 and col.s > 0.3):      # his jacket and hair, not the sword
+				continue
+			out.set_pixel(x, y, col)
+	var u = out.get_used_rect()
+	if u.size.x <= 0:
+		return null
+	_sword_tex = ImageTexture.create_from_image(out.get_region(u))
+	return _sword_tex
+
+func _icon_fit(c: Control, tex: Texture2D, src: Rect2, r: Rect2, tint: Color) -> void:
+	# only the picture's own pixels count (the cell round it is empty): centred, as big as the window allows
+	var img: Image = tex.get_image()
+	if img != null:
+		var u = img.get_region(Rect2i(src)).get_used_rect()
+		if u.size.x > 0:
+			src = Rect2(src.position + Vector2(u.position), Vector2(u.size))
+	var k = minf(r.size.x / src.size.x, r.size.y / src.size.y)
+	var d = src.size * k
+	c.draw_texture_rect_region(tex, Rect2(r.get_center() - d * 0.5, d), src, tint)
+
+## a frame of a sprite set (the hero dashing, Yamcha's wolf), fitted to the window
+func _icon_sprite(c: Control, sid: int, anim: int, d: int, r: Rect2, tint: Color) -> bool:
+	if sid < 0:
+		return false
+	var st = Assets.sprite_set(sid)
+	if st.is_empty() or st["tex"] == null:
+		return false
+	var slots: Array = st["slots"]
+	var s = anim * 4 + d
+	if s >= slots.size() or slots[s].is_empty():
+		s = 4 * 1 + d
+		if s >= slots.size() or slots[s].is_empty():
+			return false
+	var f: Dictionary = slots[s][0]
+	var cell: int = st["cell"]
+	_icon_fit(c, st["tex"], Rect2(0, s * cell, f["w"], f["h"]), r, tint)
+	return true
+
+## a beam of the game's own pieces across the window, going right (the Kamehameha, Special Beam Cannon, coloured beams)
+func _icon_beam(c: Control, sk: Dictionary, look: String, r: Rect2, tint: Color) -> bool:
+	var sheet = ""
+	var body = -1
+	var head = -1
+	if sk.has("rom"):
+		var R: Dictionary = Content.rom_specials.get(str(sk["rom"]), {})
+		if str(R.get("kind", "")) != "beam":
+			# the game's own blast thrown straight ahead (the Galick Gun): its flying frame, going right
+			var bfx = Assets.efx(str(R.get("sheet", "")))
+			if bfx.is_empty():
+				return false
+			var fly: Array = R.get("fly", [0])
+			var fi = int(fly[0]) + (4 * 3 if int(R.get("group", 0)) == 4 else 0)
+			fi = clampi(fi, 0, bfx["frames"].size() - 1)
+			var bf: Dictionary = bfx["frames"][fi]
+			_icon_fit(c, bfx["tex"], Rect2(fi * int(bfx["cell"]), 0, bf["w"], bf["h"]), r, tint)
+			return true
+		sheet = str(R.get("sheet", ""))
+		var g = int(R.get("group", 8)) * 3
+		var F: Dictionary = R.get("frames", {})
+		body = g + int(F.get("body", 0)); head = g + int(F.get("head", 0))
+	elif BEAM_LOOKS.has(look):
+		var lk: Array = BEAM_LOOKS[look]
+		sheet = lk[0]; body = int(lk[1][1]); head = int(lk[2][2])
+		tint *= lk[4]
+	else:
+		return false
+	var fx = Assets.efx(sheet)
+	if fx.is_empty() or body >= fx["frames"].size() or head >= fx["frames"].size():
+		return false
+	var cell: int = fx["cell"]
+	var fb: Dictionary = fx["frames"][body]
+	var fh: Dictionary = fx["frames"][head]
+	var bh = float(fb["h"])
+	var y = r.get_center().y - bh * 0.5
+	var x = r.position.x
+	while x < r.end.x - float(fh["w"]) * 0.6:
+		var w = minf(float(fb["w"]), r.end.x - x)
+		c.draw_texture_rect_region(fx["tex"], Rect2(x, y, w, bh), Rect2(body * cell, 0, w, bh), tint)
+		x += maxf(4.0, float(fb["w"]) - 2.0)
+	var hw = minf(float(fh["w"]), r.size.x * 0.6)
+	var hh = float(fh["h"]) * hw / float(fh["w"])
+	c.draw_texture_rect_region(fx["tex"], Rect2(r.end.x - hw, r.get_center().y - hh * 0.5, hw, hh), Rect2(head * cell, 0, fh["w"], fh["h"]), tint)
+	return true
 
 func _player_hud(c: Control, L: Local, right: bool) -> void:
-	var font = ThemeDB.fallback_font
 	var vs = c.get_viewport_rect().size
 	var f: FighterSim = L.fighter
-	var x = vs.x - 182.0 if right else 6.0
-	var col = Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6)
-	c.draw_rect(Rect2(x - 3, 3, 178, 46), Color(0, 0, 0, 0.4))
-	var tag = ("P%d " % (L.k + 1)) if locals.size() > 1 else ""
-	var fm = f.form()
+	var S = 1.5      # the GBA's bars, a size up
+	var w = (HUD_LEN + 38) * S
+	var x = vs.x - w - 6.0 if right else 6.0
 	var nxt0 = int(levels[mini(f.level, levels.size() - 1)]) if f.level < levels.size() else f.exp
 	var prev0 = int(levels[mini(f.level - 1, levels.size() - 1)]) if f.level >= 1 and f.level - 1 < levels.size() else 0
-	_gba_bars(c, x - 1, 4, f.hp / maxf(1.0, f.maxhp), f.ep / maxf(1.0, f.maxep), clampf(float(f.exp - prev0) / maxf(1.0, float(nxt0 - prev0)), 0.0, 1.0))
-	c.draw_string(font, Vector2(x + 74, 12), "%s%s LV %d" % [tag, f.name, f.level], HORIZONTAL_ALIGNMENT_LEFT, 100, 8, col)
-	var nxt = int(levels[mini(f.level, levels.size() - 1)]) if f.level < levels.size() else f.exp
-	if not fm.is_empty():
-		c.draw_string(font, Vector2(x + 74, 20), str(fm["name"]), HORIZONTAL_ALIGNMENT_LEFT, 100, 7, Content.color(fm.get("aura", "ffe050")))
-	else:
-		c.draw_string(font, Vector2(x + 74, 20), "EXP %d / %d" % [f.exp, nxt], HORIZONTAL_ALIGNMENT_LEFT, 100, 7, Color(0.8, 0.9, 0.8))
-	# the special on its button, with its cooldown; the item on its button; zeni
 	var sk = f.current_skill()
+	var ready = true
 	if not sk.is_empty():
-		var cd = int(f.cooldowns.get(str(sk["id"]), 0))
-		var ready = cd == 0 and f.ep >= int(sk.get("ep", 0))
-		c.draw_string(font, Vector2(x, 28), "SP %s %dEP" % [sk["name"], int(sk.get("ep", 0))], HORIZONTAL_ALIGNMENT_LEFT, 110, 6, Color(0.6, 1, 1) if ready else Color(0.5, 0.55, 0.65))
-		if cd > 0:
-			var full = maxf(1.0, float(sk.get("cooldown", 60)))
-			c.draw_rect(Rect2(x, 30, 108 * (1.0 - cd / full), 1), Color(0.6, 1, 1, 0.7))
-	var q = f.quick if int(f.inv.get(f.quick, 0)) > 0 else f._first_item()
-	var qtxt = "ITEM -" if q == "" else "ITEM %s x%d" % [Content.item(q).get("name", q), int(f.inv.get(q, 0))]
-	c.draw_string(font, Vector2(x, 37), qtxt, HORIZONTAL_ALIGNMENT_LEFT, 110, 6, Color(0.85, 0.95, 0.8))
-	c.draw_string(font, Vector2(x + 112, 37), "Z %d" % f.zeni, HORIZONTAL_ALIGNMENT_RIGHT, 60, 6, Color(1, 0.9, 0.4))
-	c.draw_string(font, Vector2(x, 46), (L.place if L.place != "" and L.area.has("land") else str(Game.planet.nodes[L.node_i]["name"])), HORIZONTAL_ALIGNMENT_LEFT, 172, 7, Color(1, 0.9, 0.5))
+		ready = int(f.cooldowns.get(str(sk["id"]), 0)) == 0 and f.ep >= int(sk.get("ep", 0))
+	c.draw_set_transform(Vector2(x, 4), 0.0, Vector2(S, S))
+	_gba_bars(c, 0, 0, f.hp / maxf(1.0, f.maxhp), f.ep / maxf(1.0, f.maxep), clampf(float(f.exp - prev0) / maxf(1.0, float(nxt0 - prev0)), 0.0, 1.0), sk, ready, f.set_id)
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if locals.size() > 1:      # split screen: whose bars these are
+		c.draw_string(ThemeDB.fallback_font, Vector2(x, 4 + 24 * S + 8), "P%d" % (L.k + 1), HORIZONTAL_ALIGNMENT_LEFT, 30, 8, Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6))
 
 ## a small map of the place in the corner: friends, foes, the boss, ways out
 func _minimap(c: Control, L: Local, i: int) -> void:
@@ -2507,6 +2957,13 @@ func _draw_hud() -> void:
 	_draw_timers(c, vs)
 	if debug_on:
 		_draw_debug(c, vs)
+	if perf_on:      # F3: how fast it runs here (for slow computers: what to make lighter)
+		var pl = ["%d FPS   frame %.1f ms   logic %.1f ms" % [Engine.get_frames_per_second(), 1000.0 / maxf(1.0, Engine.get_frames_per_second()), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0 + Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0],
+			"draw calls %d   objects drawn %d   nodes %d" % [Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME), Performance.get_monitor(Performance.OBJECT_NODE_COUNT)],
+			"%s - %s" % [RenderingServer.get_current_rendering_driver_name(), RenderingServer.get_video_adapter_name()]]
+		c.draw_rect(Rect2(4, vs.y - 44, 300, 40), Color(0, 0, 0, 0.7))
+		for k in pl.size():
+			c.draw_string(font, Vector2(8, vs.y - 32 + k * 11), pl[k], HORIZONTAL_ALIGNMENT_LEFT, 296, 7, Color(0.6, 1, 0.6))
 	if credits_t >= 0:
 		_draw_credits(c, vs)
 	if victory_t > 0:
@@ -2561,6 +3018,12 @@ func _pick_music() -> void:
 		song = str(L.mood["music"])       # a MOOD box's own song
 	if L.ev.has("fight"):
 		song = "boss"
+	# the game's own song for this place (what the GBA plays here), unless a song of yours is set for it
+	if not (str(L.mood.get("music", "")) != "" or (L.place != "" and Music.file_for(L.place) != "")):
+		if not ((song == "boss" or song == "lair") and Music.file_for(song) != ""):
+			var n = Assets.area_song(L.area, Vector2(L.fighter.x, L.fighter.y)) if not L.area.is_empty() else -1
+			if n >= 0:
+				song = "rom:%d" % n
 	Music.play(song)
 
 # ------------------------------------------------------------------ the menu (each player has their own)
@@ -2652,8 +3115,9 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 	var down = _pressed(L, raw, "down")
 	var left = _pressed(L, raw, "left")
 	var right = _pressed(L, raw, "right")
-	var ok = _pressed(L, raw, "a")
-	var back = _pressed(L, raw, "b") or _pressed(L, raw, "mn")
+	var ok = _pressed(L, raw, "a") or _pressed(L, raw, "ok") or L.mouse_ok
+	var back = _pressed(L, raw, "b") or _pressed(L, raw, "mn") or L.mouse_back
+	L.mouse_ok = false; L.mouse_back = false
 	if paused:
 		L.mprev = raw.duplicate()
 	var rows = _menu_rows(L)
@@ -2789,8 +3253,7 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 				0, 1:
 					_option_adjust(int(m["row"]), 0.1)
 				2:
-					var full = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
-					DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+					Game.toggle_fullscreen()
 				3:      # how big the game's pixels are: AUTO fits the screen; smaller = see more of the world
 					var zs = [0, 2, 3, 4, 5, 6]
 					Game.cfg["view_zoom"] = zs[(zs.find(int(Game.cfg.get("view_zoom", 0))) + 1) % zs.size()]
@@ -2824,7 +3287,10 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 func _option_pick_quit() -> void:
 	save_all()
 	Game.leave()
-	get_tree().reload_current_scene()
+	set_physics_process(false); set_process(false)
+	get_tree().paused = false
+	# after this frame is done: tearing down split screen's views in the middle of a step crashed Android's renderer
+	get_tree().reload_current_scene.call_deferred()
 
 func _option_adjust(row: int, d: float) -> void:
 	# A steps up 10%, after 100% back to 0 (off)
@@ -2965,6 +3431,8 @@ func _on_social(k: int, from: int, nm: String, kind: String, data: Dictionary) -
 			_duel_start(L, from, nm)
 		"duel_hit":
 			_duel_hit_in(L, from, data)
+		"pvp_hit":
+			_pvp_hit_in(L, data)
 		"duel_won":
 			if not L.duel.is_empty() and int(L.duel["with"]) == from:
 				_duel_end(L, "%s WINS THE DUEL AGAINST %s!" % [L.name, nm], true)
@@ -2999,6 +3467,7 @@ func _social_tick(L: Local, elist: Array) -> void:
 	if not L.trade.is_empty() and not _pid_exists(int(L.trade["with"])):
 		L.trade = {}
 		toasts.append(["THE TRADE IS OFF - YOUR FRIEND LEFT", Color(1, 0.8, 0.6), 160])
+	_pvp_targets(L, elist)
 	if L.duel.is_empty():
 		return
 	var pid = int(L.duel["with"])
@@ -3013,6 +3482,39 @@ func _social_tick(L: Local, elist: Array) -> void:
 	var p = _pos_of_pid(pid)
 	if p != null:
 		elist.append({"id": DUEL_ID, "x": p["x"], "y": p["y"], "alive": not p["down"], "big": false})
+
+# PVP (set on a Capsule Corp save point with R2): players who both have it on can hurt each other for real
+const PVP_ID = -2000          # PVP_ID - pid: another player, as something to hit
+func _pvp_targets(L: Local, elist: Array) -> void:
+	if not L.fighter.pvp:
+		return
+	for o in locals:
+		if o != L and o.node_i == L.node_i and o.fighter.pvp:
+			elist.append({"id": PVP_ID - _my_pid(o), "x": o.fighter.x, "y": o.fighter.y, "alive": o.fighter.state != "down", "big": false})
+	for pid in Game.remote_states:
+		var st: Dictionary = Game.remote_states[pid]
+		if int(st.get("node", -1)) == L.node_i and bool(st.get("pvp", false)):
+			elist.append({"id": PVP_ID - int(pid), "x": float(st.get("x", 0)), "y": float(st.get("y", 0)), "alive": not bool(st.get("down", false)), "big": false})
+
+func _pvp_hit_out(L: Local, pid: int, ev: Dictionary) -> void:
+	if not L.fighter.pvp:
+		return
+	Game.send_social(pid, _my_pid(L), L.name, "pvp_hit", {"dmg": int(ev["dmg"]), "kx": float(ev["kx"]), "ky": float(ev["ky"]), "crit": bool(ev["crit"])})
+	var p = _pos_of_pid(pid)
+	if p != null and views.has(L.node_i):
+		views[L.node_i].sparks.append([Vector2(p["x"], p["y"] - 14), 10, Color(1, 0.6, 0.4)])
+		Sfx.play("crit" if ev["crit"] else "hit", 0.8)
+
+func _pvp_hit_in(L: Local, data: Dictionary) -> void:
+	var f: FighterSim = L.fighter
+	if not f.pvp or f.invuln > 0 or f.state == "down":
+		return      # not in PVP mode: no player can hurt you
+	var d = maxi(1, roundi(float(data.get("dmg", 1)) * 0.6))
+	Sfx.play("hurt", 0.9)
+	L.shake = 3.0
+	if views.has(L.node_i):
+		views[L.node_i].pops.append([str(d), Vector2(f.x, f.y - 30), 40, Color(1, 0.4, 0.3)])
+	f.take_hit(d, float(data.get("kx", 0)), float(data.get("ky", 0)))
 
 func _duel_start(L: Local, pid: int, nm: String) -> void:
 	L.duel = {"with": pid, "name": nm, "t": 60 * int(Content.social_cfg.get("duel", {}).get("countdown", 3)) + 59}
@@ -3180,14 +3682,27 @@ func _draw_trade(L: Local, line: Callable) -> void:
 	line.call("%s GIVES: %s%s" % [tr["name"], ", ".join(PackedStringArray(th)) if not th.is_empty() else "NOTHING YET", "  (READY)" if tr["ready_them"] else ""], Color(0.6, 0.9, 1))
 	line.call("LEFT/RIGHT: HOW MANY   READY: AGREE TO THE DEAL", Color(0.6, 0.65, 0.8))
 
-func _menu_rect(i: int) -> Rect2:
+## how much bigger the menu is drawn: as the screen allows (the GBA's 480 x 270 a step)
+func _menu_scale() -> float:
 	var vs = get_viewport().get_visible_rect().size
+	return maxf(1.0, floorf(minf(vs.x / 480.0, vs.y / 270.0)))
+
+func _menu_rect(i: int) -> Rect2:
+	var vs = get_viewport().get_visible_rect().size / _menu_scale()
 	if locals.size() > 1:
 		var w = vs.x / 2.0
 		return Rect2(w * i + 6, 38, w - 12, vs.y - 52)
 	return Rect2(vs.x / 2.0 - 190, 40, 380, vs.y - 56)
 
 func _draw_menu(c: Control, L: Local, i: int) -> void:
+	var ms = _menu_scale()
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(ms, ms))
+	_draw_menu_at(c, L, i)
+	c.draw_set_transform(Vector2.ZERO)
+	if menu_hits.has(i):
+		menu_hits[i]["s"] = ms
+
+func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 	var font = ThemeDB.fallback_font
 	var r = _menu_rect(i)
 	var m: Dictionary = L.menu
@@ -3207,7 +3722,12 @@ func _draw_menu(c: Control, L: Local, i: int) -> void:
 	var rows = _menu_rows(L)
 	var row = clampi(int(m["row"]), 0, maxi(0, rows.size() - 1))
 	var tab: String = TABS[int(m["tab"])]
-	var line = func(t: String, col: Color, sel: bool = false, size: int = 7) -> void:
+	menu_hits[i] = {"c": c, "rows": [], "tabs": []}
+	for t2 in TABS.size():
+		menu_hits[i]["tabs"].append(Rect2(r.position.x + t2 * tw, r.position.y, tw, 12))
+	var line = func(t: String, col: Color, sel: bool = false, size: int = 7, ri: int = -1) -> void:
+		if ri >= 0:      # a row you can pick: where it is, for the mouse
+			menu_hits[i]["rows"].append([Rect2(x0 - 3, Y[0] - 8, W + 6, 10), ri])
 		if sel:
 			c.draw_rect(Rect2(x0 - 3, Y[0] - 8, W + 6, 10), Color(1, 1, 1, 0.12))
 		c.draw_string(font, Vector2(x0, Y[0]), t, HORIZONTAL_ALIGNMENT_LEFT, W, size, col)
@@ -3231,14 +3751,14 @@ func _draw_menu(c: Control, L: Local, i: int) -> void:
 				var have = f.level >= int(fm.get("level", 1))
 				var now = j == f.form_i
 				line.call("%s %s  - LEVEL %d   STR x%.1f  POW x%.1f  END x%.1f   %s" % [">" if now else " ", fm["name"], int(fm.get("level", 1)), float(fm.get("str", 1)), float(fm.get("pwr", 1)), float(fm.get("end", 1)), "ACTIVE" if now else ("READY" if have else "LOCKED")],
-					Color(1, 1, 0.6) if now else (Color(1, 1, 1) if have else Color(0.5, 0.5, 0.6)), j == row)
+					Color(1, 1, 0.6) if now else (Color(1, 1, 1) if have else Color(0.5, 0.5, 0.6)), j == row, 7, j)
 		"MISSIONS":
 			line.call("MISSIONS - FRIENDS IN THE SAME PLACE SHARE EVERY KILL", Color(1, 0.85, 0.3))
 			for j in rows.size():
 				var q: Dictionary = rows[j]
 				var cnt = int(q.get("count", 1))
 				var pr = int(f.quests.get(str(q["id"]), 0)) if str(q.get("type", "")) != "level" else f.level
-				line.call("%s  %d / %d%s" % [q["name"], mini(pr, cnt), cnt, "  (AGAIN AND AGAIN)" if q.get("repeat", false) else ""], Color(1, 1, 1), j == row)
+				line.call("%s  %d / %d%s" % [q["name"], mini(pr, cnt), cnt, "  (AGAIN AND AGAIN)" if q.get("repeat", false) else ""], Color(1, 1, 1), j == row, 7, j)
 			if rows.size() > 0:
 				Y[0] += 2
 				var q2: Dictionary = rows[row]
@@ -3261,7 +3781,7 @@ func _draw_menu(c: Control, L: Local, i: int) -> void:
 				var sl: String = rows[j]
 				var gid = str(f.equip.get(sl, ""))
 				var g = Content.item(gid)
-				line.call("%s:  %s" % [sl.to_upper(), g.get("name", "-")], Content.color(g.get("color", "888899")), j == row)
+				line.call("%s:  %s" % [sl.to_upper(), g.get("name", "-")], Content.color(g.get("color", "888899")), j == row, 7, j)
 			Y[0] += 2
 			var sel: String = rows[row]
 			var gsel = Content.item(str(f.equip.get(sel, "")))
@@ -3280,7 +3800,7 @@ func _draw_menu(c: Control, L: Local, i: int) -> void:
 				var have = f.level >= int(sk.get("level", 1))
 				var on = not curs.is_empty() and str(curs["id"]) == str(sk["id"])
 				line.call("%s %s   %d EP   LEVEL %d%s" % [">" if on else " ", sk["name"], int(sk.get("ep", 0)), int(sk.get("level", 1)), "" if have else "  (LOCKED)"],
-					Color(0.6, 1, 1) if on else (Color(1, 1, 1) if have else Color(0.5, 0.5, 0.6)), j == row)
+					Color(0.6, 1, 1) if on else (Color(1, 1, 1) if have else Color(0.5, 0.5, 0.6)), j == row, 7, j)
 			if rows.size() > 0:
 				Y[0] += 4
 				line.call(str(rows[row].get("info", "")), Color(0.85, 0.85, 0.7))
@@ -3291,7 +3811,7 @@ func _draw_menu(c: Control, L: Local, i: int) -> void:
 				var id = str(it["id"])
 				var cnt = f.zeni if id == "zeni" else int(f.inv.get(id, 0))
 				var qk = " [ITEM BUTTON]" if id == f.quick else ""
-				line.call("%s  x%d%s" % [it["name"], cnt, qk], Content.color(it.get("color", "ffd040")), j == row)
+				line.call("%s  x%d%s" % [it["name"], cnt, qk], Content.color(it.get("color", "ffd040")), j == row, 7, j)
 			if rows.size() > 0:
 				Y[0] += 2
 				line.call(str(rows[row].get("info", "Give zeni to a friend.")), Color(0.85, 0.85, 0.7))
@@ -3312,7 +3832,7 @@ func _draw_menu(c: Control, L: Local, i: int) -> void:
 			line.call(("%s - %s - YOU HAVE %d ZENI" % [str(shd.get("name", "SHOP")), str(shd.get("info", "")), f.zeni]) if not shd.is_empty() else ("CAPSULE CORP DELIVERY - YOU HAVE %d ZENI" % f.zeni), Color(1, 0.9, 0.5))
 			for j in rows.size():
 				var it: Dictionary = rows[j]
-				line.call("%s   %d ZENI   (HAVE %d)" % [it["name"], int(it["price"]), int(f.inv.get(str(it["id"]), 0))], Content.color(it.get("color", "ffffff")) if f.zeni >= int(it["price"]) else Color(0.5, 0.5, 0.6), j == row)
+				line.call("%s   %d ZENI   (HAVE %d)" % [it["name"], int(it["price"]), int(f.inv.get(str(it["id"]), 0))], Content.color(it.get("color", "ffffff")) if f.zeni >= int(it["price"]) else Color(0.5, 0.5, 0.6), j == row, 7, j)
 			if rows.size() > 0:
 				line.call(str(rows[row].get("info", "")), Color(0.85, 0.85, 0.7))
 		"FRIENDS":
@@ -3324,11 +3844,11 @@ func _draw_menu(c: Control, L: Local, i: int) -> void:
 					line.call("YOUR PARTY: " + ", ".join(PackedStringArray(L.party.values())), Color(0.6, 1, 0.8))
 				for j in rows.size():
 					var fr: Dictionary = rows[j]
-					line.call(str(fr["label"]), Color(1, 0.9, 0.5) if str(fr.get("act", "")) == "accept" else Color(1, 1, 1), j == row)
+					line.call(str(fr["label"]), Color(1, 0.9, 0.5) if str(fr.get("act", "")) == "accept" else Color(1, 1, 1), j == row, 7, j)
 		"SAY":
-			line.call("QUICK CHAT - OVER YOUR HEAD AND ON EVERY SCREEN (KEYBOARD: T TO TYPE)", Color(1, 0.85, 0.3))
+			line.call("QUICK CHAT - OVER YOUR HEAD AND ON EVERY SCREEN (KEYBOARD: T TO TYPE" + (", R3 ON A HANDHELD" if OS.has_feature("android") else "") + ")", Color(1, 0.85, 0.3))
 			for j in rows.size():
-				line.call(str(rows[j]), Color(1, 1, 1), j == row)
+				line.call(str(rows[j]), Color(1, 1, 1), j == row, 7, j)
 		"OPTIONS":
 			var vals = ["%d%%  (A: LOUDER)" % roundi(Music.volume * 100), "%d%%  (A: LOUDER)" % roundi(Sfx.volume * 100),
 				"ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF",
@@ -3339,7 +3859,7 @@ func _draw_menu(c: Control, L: Local, i: int) -> void:
 				{"auto": "AUTO (HIDDEN WITH A PAD)", "on": "ON", "off": "OFF"}.get(str(Game.cfg.get("touch_mode", "auto")), "AUTO"),
 				"NINTENDO / RETROID (A ON THE RIGHT)" if Game.pad_layout() == "nintendo" else "XBOX (A AT THE BOTTOM)", ""]
 			for j in rows.size():
-				line.call("%s   %s" % [rows[j], vals[j]], Color(1, 1, 1), j == row)
+				line.call("%s   %s" % [rows[j], vals[j]], Color(1, 1, 1), j == row, 7, j)
 			Y[0] += 4
 			for t in _controls_text(L):
 				line.call(t, Color(0.7, 0.75, 0.9))
@@ -3348,11 +3868,11 @@ func _draw_menu(c: Control, L: Local, i: int) -> void:
 func _controls_text(L: Local) -> Array:
 	var i = locals.find(L)
 	var pads = Input.get_connected_joypads()
-	var pad = "PAD: A punch  B ki  X special  Y transform  LB item  RB next  RT / L3 run  START menu  BACK map"
+	var pad = "PAD: A punch  B ki (hold: beam)  X special  Y transform  LB item  RB next  L3: sprint until you stop  RT: sprint on/off  LT: fly / land (flying: B lands, Y or L3 boosts)  START menu  BACK map"
 	if OS.has_feature("mobile") and locals.size() == 1:
-		return ["CONTROLS: A punch  B ki  X special  Y transform  L1 item  R1 next special  R2 / L3 run  START menu  SELECT map"]
+		return ["CONTROLS: A punch  B ki (hold: beam)  X special  Y transform  L1 item  R1 next special", "L3: sprint until you stop  R2: sprint on/off  L2: fly / land (flying: B lands, Y or L3 boosts)  R3: chat  START menu  SELECT map"]
 	if locals.size() == 1:
-		return ["KEYS: WASD/arrows move, SPACE/SHIFT run (or tap twice), J/Z punch, K/X ki, L/C special,", "I/V transform, U/F item, O/E next special, H/ESC menu, T chat, TAB map, F2 player 2", pad]
+		return ["KEYS: WASD/arrows move, hold SHIFT/SPACE to run (or tap twice), J/Z punch, K/X ki (hold: beam), L/C special,", "I/V transform, U/F item, O/E next special, G fly / land (flying: K lands, I boosts), H/ESC menu, T chat,", "TAB/M map, F2 player 2, F11 fullscreen", pad]
 	if i == 0 and pads.size() != 1:
 		return ["KEYS: WASD move, SPACE run, J punch, K ki, L special, I transform, U item, O next, H menu", pad]
 	if i == 0:

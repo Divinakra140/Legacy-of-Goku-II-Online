@@ -6,6 +6,9 @@
 //   floors/<adventure>/Z_A/...       the hand-made adventures' areas (from the shipped layout files)
 //   data/*.json                      enemy stats, forms, starting fighters, level table, text
 // Nothing of the game is shipped with the Godot version: it all comes from here, from your game.
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include <array>
 #include <cctype>
 #include <unordered_map>
@@ -13,6 +16,7 @@
 #include "../src/map_builder.h"
 #include "../src/rom_tiles.h"
 #include "../src/rom_sprites.h"
+#include "../src/gba_music.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -93,10 +97,26 @@ static bool decode_entry(uint32_t w0, uint32_t attrs, uint32_t gfx, Frame* f, bo
     }
     return true;
 }
+// the songs are recorded while you play: below the game's priority (a slow computer stayed smooth)
+#ifdef _WIN32
+extern "C" __declspec(dllimport) void* __stdcall GetCurrentProcess(void);
+extern "C" __declspec(dllimport) int __stdcall SetPriorityClass(void*, unsigned long);
+static void lower_priority() { SetPriorityClass(GetCurrentProcess(), 0x00004000u); }      // BELOW_NORMAL_PRIORITY_CLASS
+#else
+static void lower_priority() { if (nice(10) == -1) { /* (left as it was) */ } }
+#endif
+
+// how far the import is, for the game's loading bar: "[progress] step done of" (the game reads it as it comes)
+static void progress(const char* step, int done, int of) {
+    std::fprintf(stderr, "[progress] %s %d %d\n", step, done, of);
+    std::fflush(stderr);
+}
+
 static int export_sprites(const fs::path& dir) {
     fs::create_directories(dir);
     int sets = 0;
     for (int s = 0; s < 400; ++s) {
+        progress("sprites", std::min(s, 157), 158);
         const uint32_t set = u32(kSpriteSets + 4u * static_cast<uint32_t>(s));
         if (!romp(set)) { if (s > 150) break; continue; }
         int nslots = 0, holes = 0;   // (slot lists have holes: animations a set does not have - the foes' attack is anim 6, after 3 empty ones)
@@ -110,7 +130,7 @@ static int export_sprites(const fs::path& dir) {
                 any = true;
             }
             if (bad) break;
-            if (!any) { if (++holes > 4) break; continue; }
+            if (!any) { if (++holes > (s == 76 ? 8 : 4)) break; continue; }   // (Krillin: his flight comes after a longer gap)
             holes = 0; nslots = 4 * g + 4;
         }
         if (nslots == 0) continue;
@@ -316,7 +336,7 @@ static std::vector<uint8_t> open_ledges(const std::vector<uint8_t>& w, int tw, i
     return o;
 }
 
-// INVISIBLE WALLS (Android port): a lone patch of wall (up to 6 cells, walkable ground all round it) with nothing
+// INVISIBLE WALLS (Android port): a lone patch of wall (up to 48 cells: rows of flowers, clumps of tufts; walkable ground all round it) with nothing
 // solid drawn on it - only ground, or a flower the game lets you walk over - is opened: what you see is what blocks.
 // Real obstacles are bigger, or show something (a planter, a trunk, a rock, a post) and keep blocking.
 // plain(i): nothing solid drawn on the cell; solid(i)/open(i): read and write the collision. Returns the cells opened.
@@ -333,7 +353,7 @@ static int open_invisible_walls(int W, int H, Plain plain, Solid solid, Open ope
         while (!st.empty()) {
             const size_t c = st.back(); st.pop_back();
             comp.push_back(c);
-            if (comp.size() > 6) small = false;      // (a clump of grass tufts; a tree or a rock is solid-looking anyway)
+            if (comp.size() > 48) small = false;     // (a row of flowers, a clump of grass tufts; a tree or a rock is solid-looking anyway)
             const int x = static_cast<int>(c % W), y = static_cast<int>(c / W);
             const int d4[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
             for (auto& d : d4) {
@@ -352,6 +372,7 @@ static int open_invisible_walls(int W, int H, Plain plain, Solid solid, Open ope
     return opened;
 }
 static int g_walls_opened = 0;
+static int g_canopy_opened = 0;     // cells under leaves made walkable
 // ---- the title screen and the menus' galaxy (Android port's GBA-style menus): both are 8-bit pictures packed with
 // the game's own packer, drawn with the title's 256 colours. The galaxy is a 128x128 square the game repeats.
 static void export_ui(const fs::path& dir) {
@@ -574,8 +595,10 @@ static uint32_t rom_var(int z, int a) {
     return 0;
 }
 static int export_maps(const fs::path& dir) {
-    int n = 0;
+    int n = 0, k = 0;
+    const int total = static_cast<int>(romtiles::maps().size());
     for (const auto& m : romtiles::maps()) {
+        progress("maps", k++, total);
         SrcMap sm;
         if (!load_src(R, m.z, m.a, &sm) || sm.tw <= 0 || sm.th <= 0) continue;
         Area A; A.z = m.z; A.a = m.a; A.tw = sm.tw; A.th = sm.th; A.wa = sm.wa; A.wb = sm.wb;
@@ -715,8 +738,10 @@ static int export_kit(const fs::path& dir) {
     std::string js = "{\"tiles\":" + std::to_string(N) + ",\"cols\":64";
     char bg[64]; std::snprintf(bg, sizeof bg, ",\"backdrop\":[%d,%d,%d],\"maps\":[", g_bgpal[0], g_bgpal[1], g_bgpal[2]);
     js += bg;
-    int n = 0;
+    int n = 0, kk = 0;
+    const int nmaps = static_cast<int>(romtiles::maps().size());
     for (const auto& m : romtiles::maps()) {
+        progress("kit", kk++, nmaps);
         SrcMap sm;
         if (!load_src(R, m.z, m.a, &sm) || sm.tw <= 0 || sm.th <= 0) continue;
         const uint16_t* ids = romtiles::ids(m.z, m.a);
@@ -746,6 +771,7 @@ static int export_kit(const fs::path& dir) {
         };
         // a light layer (the soft grey light of a room, blended by the GBA): almost only grey tiles
         uint8_t light = 0;
+        int bottom = -1, used = 0, cover[4] = {};      // the layer drawn first: nothing under it to light, so a grey one covering the room is a stone floor
         for (int k = 0; k < 4; ++k) {
             if (!sm.tilemap[k] || !ids) continue;
             int tot = 0, grey = 0;
@@ -757,7 +783,10 @@ static int export_kit(const fs::path& dir) {
                 ++tot; grey += tile_is_grey(t) ? 1 : 0;
             }
             if (tot >= sm.tw * sm.th / 8 && grey * 100 >= tot * 85) light |= static_cast<uint8_t>(1 << k);
+            cover[k] = tot; used += tot > 0 ? 1 : 0;
+            if (tot > 0 && (bottom < 0 || sm.pri[k] > sm.pri[bottom] || (sm.pri[k] == sm.pri[bottom] && k > bottom))) bottom = k;
         }
+        if (bottom >= 0 && used > 1 && cover[bottom] * 2 >= sm.tw * sm.th) light &= static_cast<uint8_t>(~(1u << bottom));
         std::vector<uint8_t> b;
         auto put8 = [&](uint32_t v) { b.push_back(static_cast<uint8_t>(v)); };
         auto put16 = [&](uint32_t v) { put8(v); put8(v >> 8); };
@@ -1978,6 +2007,27 @@ static std::map<int, StoredZone> g_store;
 static std::vector<uint32_t> g_tile_col;
 
 static void write_lkr(const fs::path& f, int W, int H, const std::vector<uint32_t> (&WL)[5], const std::vector<uint8_t>& walk);
+// (Android port) one land's grass is a pure neon green, and the grown country repeats it like a grid: that ground
+// is laid again with the game's own yellow-green grass, its tiles mixed as the real maps mix them (same everywhere)
+static int regrass(std::vector<uint32_t> (&WL)[5], int W, int H) {
+    static const int kFrom[] = {9757, 9764, 10524, 10525, 10526, 10527, 10528, 10529, 10530, 10531, 10532, 10533, 10534, 10535,
+                                10536, 10537, 10538, 10539, 10540, 10541, 10542, 10543};
+    static const int kTo[][2] = {{334, 222}, {331, 143}, {326, 131}, {325, 131}, {324, 107}, {327, 91}, {330, 86}, {335, 75}};
+    int total = 0; for (auto& t : kTo) total += t[1];
+    int n = 0;
+    const size_t N = static_cast<size_t>(W) * H;
+    for (size_t i = 0; i < N; ++i) {
+        const uint32_t v = WL[0][i]; const int id = static_cast<int>(v & 0xFFFFu);
+        if (v & (1u << 19)) continue;
+        bool hit = false; for (int f : kFrom) if (f == id) { hit = true; break; }
+        if (!hit) continue;
+        uint32_t h = static_cast<uint32_t>(i) * 2654435761u; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+        int r = static_cast<int>(h % static_cast<uint32_t>(total)), pick = kTo[0][0];
+        for (auto& t : kTo) { if (r < t[1]) { pick = t[0]; break; } r -= t[1]; }
+        WL[0][i] = static_cast<uint32_t>(pick); ++n;
+    }
+    return n;
+}
 static void build_look_walk() {
     for (const auto& m : g_kit) {
         if (m.tw <= 0 || m.th <= 0 || m.name == "The World") continue;
@@ -2028,7 +2078,9 @@ static void export_lands(const fs::path& dir) {
     std::map<int, std::vector<int>> by_zone;
     for (size_t i = 0; i < g_kit.size(); ++i) by_zone[g_kit[i].z].push_back(static_cast<int>(i));
 
+    int zi = 0;
     for (auto& [z, list] : by_zone) {
+        progress("lands", zi++, static_cast<int>(by_zone.size()));
         auto outdoor = [&](int i) {
             const KitMap& m = g_kit[static_cast<size_t>(i)];
             if (m.tw * m.th < 24 * 18) return false;
@@ -2596,6 +2648,7 @@ static void export_lands(const fs::path& dir) {
             }
             fix_collision(WL, walk, 0, walk.size(), &keep);
             SR.keep = keep;
+            regrass(WL, W, H);
             write_lkr(zd / (std::to_string(R) + ".bin"), W, H, WL, walk);
             std::vector<uint8_t> mini(static_cast<size_t>(W) * H * 4, 0);
             for (size_t i = 0; i < static_cast<size_t>(W) * H; ++i) {
@@ -2637,8 +2690,83 @@ static void write_lkr(const fs::path& f, int W, int H, const std::vector<uint32_
     for (auto& l : WL) o.write(reinterpret_cast<const char*>(l.data()), static_cast<std::streamsize>(l.size() * 4));
     std::vector<uint8_t> w2(walk.size());
     for (size_t i = 0; i < walk.size(); ++i) w2[i] = walk[i] & 1;     // ready to use: no loop over every tile when the game loads it
+    // (Android port) the field trees' trunks are drawn into the ground tiles: they block
+    for (size_t i = 0; i < w2.size(); ++i) { const uint32_t id = WL[0][i] & 0xFFFFu; if (id >= 15729u && id <= 15734u) w2[i] = 0; }
+    {   // (Android port) the clothes lying on the ground east of Gingertown are walked over, not walls
+        static const uint32_t kClothes[] = {39783, 39784, 39785, 39786, 39787, 39788, 39789, 39790, 39791, 39816, 39820, 39821, 39824, 39825, 39826, 39828, 39829, 39830, 39831, 39836, 39837, 39838, 39842, 39843, 39844, 39845, 39848, 39849, 39851, 39862, 39863, 39865, 39866, 39867, 39868, 39869, 39870, 39871, 39872};
+        for (size_t i = 0; i < w2.size(); ++i) {
+            if (w2[i]) continue;
+            bool any = false, other = false;
+            for (int l = 1; l < 5; ++l) {
+                if (!WL[l][i]) continue;
+                const uint32_t id = WL[l][i] & 0xFFFFu; bool hit = false;
+                for (uint32_t c : kClothes) if (c == id) { hit = true; break; }
+                if (hit) any = true; else other = true;
+            }
+            if (any && !other && !(WL[0][i] & (1u << 19))) w2[i] = 1;      // (on grass or on paving: clothes never block)
+        }
+    }
+    // (Android port) under a tree's leaves you walk on: a wall with only what is drawn OVER the hero (a canopy) above
+    // plain ground the game lets you walk on elsewhere opens - the trunk (drawn under the hero) still blocks
+    {
+        std::vector<uint8_t> cano(w2.size(), 0);
+        for (size_t i = 0; i < w2.size(); ++i) {
+            if (w2[i] || !WL[0][i] || WL[1][i] || WL[2][i] || !(WL[3][i] || WL[4][i]) || (WL[0][i] & (1u << 19))) continue;
+            bool leafy = true;      // what is drawn over the hero must be leaves: green, not dark (a cut-away room's black, a roof)
+            for (int l = 3; l < 5 && leafy; ++l) {
+                if (!WL[l][i]) continue;
+                const uint32_t id = WL[l][i] & 0xFFFFu; const uint32_t c = id < g_tile_col.size() ? g_tile_col[id] : 0u;
+                const int r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
+                if (!c || g < b + 10 || g < r - 20 || r + g + b < 120) leafy = false;      // greens, olives and the brown shading of leaves (not roofs' pinks and blues, not the dark)
+            }
+            auto gi = g_ground_walk.find(WL[0][i] & ~(3u << 16));
+            if (gi != g_ground_walk.end() && gi->second.second >= 10 && gi->second.first * 10 >= gi->second.second * 3) cano[i] = leafy ? 2 : 1;
+        }
+        // only a tree's or a clump's leaves (a patch of up to 160 cells: a raised meadow ringed by cliffs is bigger and stays as it was): a solid jungle canopy stays a wall
+        std::vector<uint8_t> seen(w2.size(), 0); std::vector<size_t> comp, st;
+        for (size_t s0 = 0; s0 < cano.size(); ++s0) {
+            if (!cano[s0] || seen[s0]) continue;
+            comp.clear(); st.assign(1, s0); seen[s0] = 1;
+            while (!st.empty()) {
+                const size_t c = st.back(); st.pop_back(); comp.push_back(c);
+                const int x = static_cast<int>(c % W), y = static_cast<int>(c / W);
+                const int d4[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+                for (auto& d : d4) {
+                    const int X = x + d[0], Y = y + d[1];
+                    if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+                    const size_t j = static_cast<size_t>(Y) * W + X;
+                    if (cano[j] && !seen[j]) { seen[j] = 1; st.push_back(j); }
+                }
+            }
+            if (comp.size() > 160) continue;
+            size_t nleaf = 0; for (size_t c : comp) nleaf += cano[c] == 2;
+            int bx0 = W, bx1 = -1, by = -1;
+            for (size_t c : comp) { const int x = static_cast<int>(c % W), y = static_cast<int>(c / W); bx0 = std::min(bx0, x); bx1 = std::max(bx1, x); by = std::max(by, y); }
+            bool trunk_near = false;      // a trunk wall just under the leaves (the field trees: the trunk is drawn in the ground)
+            for (int dy = 1; dy <= 3 && !trunk_near; ++dy) for (int x = bx0; x <= bx1 && !trunk_near; ++x) {
+                if (by + dy >= H) break;
+                const size_t j = static_cast<size_t>(by + dy) * W + x;
+                if (!w2[j] && !cano[j] && WL[0][j]) trunk_near = true;
+            }
+            if (nleaf * 2 < comp.size() && !trunk_near) continue;      // a patch that is mostly leaves (its brown shading comes along); not dirt or a ledge
+            // the trunk stays: a tree drawn wholly over the hero has its trunk at the bottom middle of its leaves
+            int minx = W, maxx = -1, maxy = -1;
+            for (size_t c : comp) { const int x = static_cast<int>(c % W), y = static_cast<int>(c / W); minx = std::min(minx, x); maxx = std::max(maxx, x); maxy = std::max(maxy, y); }
+            const int mid = (minx + maxx) / 2;
+            const bool trunk_below = trunk_near || (maxy + 1 < H && !w2[static_cast<size_t>(maxy + 1) * W + mid]);      // the trunk under the leaves already blocks
+            for (size_t c : comp) {
+                const int x = static_cast<int>(c % W), y = static_cast<int>(c / W);
+                if (!trunk_below && y >= maxy - 1 && std::abs(x - mid) <= ((maxx - minx) >= 3 ? 1 : 0)) continue;
+                w2[c] = 1; ++g_canopy_opened;
+            }
+        }
+    }
     auto plain = [&](size_t i) {
-        for (int l = 0; l < 5; ++l) if (WL[l][i] & (1u << 19)) return false;      // water
+        { const uint32_t id0 = WL[0][i] & 0xFFFFu; if (id0 >= 15729u && id0 <= 15734u) return false; }      // a field tree's trunk
+        for (int l = 0; l < 5; ++l) if (WL[l][i] & (1u << 19)) {      // animated: water - or swaying flowers, walked over in the game
+            auto ai = g_ground_walk.find(WL[l][i] & ~(3u << 16));
+            if (ai == g_ground_walk.end() || ai->second.second < 10 || ai->second.first * 10 < ai->second.second * 3) return false;   // water
+        }
         if (manmade_tiles().count(WL[0][i] & 0xFFFFu)) return false;               // a wall, a floor of a building
         auto col = [](uint32_t v) { const uint32_t id = v & 0xFFFF; return id < g_tile_col.size() ? g_tile_col[id] : 0u; };
         const uint32_t g0 = col(WL[0][i]);
@@ -2822,7 +2950,7 @@ static void export_earth(const fs::path& dir) {
             if (s < S.keep.size()) keep[d] = S.keep[s];
         }
         if (b.kind == 2) {
-            // the plot: what lies past the room's edges is the room again, mirrored (no black round it)
+            // the plot: the room, and black all round it
             std::vector<uint8_t> content(static_cast<size_t>(b.pw) * b.ph, 0);
             int bx0 = 1 << 30, by0 = 1 << 30, bx1 = -1, by1 = -1;
             // how far each tile is from the floor (the dark around a room, far from any floor, is not the room)
@@ -2866,75 +2994,25 @@ static void export_earth(const fs::path& dir) {
                 if (has && (by_exit || (!dark(d) && ((walk[d] & 1) || f <= 12)))) { content[static_cast<size_t>(y) * b.pw + x] = 1; bx0 = std::min(bx0, x); by0 = std::min(by0, y); bx1 = std::max(bx1, x); by1 = std::max(by1, y); }
             }
             if (bx1 < 0) continue;
-            // nearest content tile for holes the mirror lands in
-            std::vector<int> near(content.size(), -1);
-            std::deque<int> q;
-            for (size_t i = 0; i < content.size(); ++i) if (content[i]) { near[i] = static_cast<int>(i); q.push_back(static_cast<int>(i)); }
-            while (!q.empty()) {
-                const int c = q.front(); q.pop_front();
-                const int x = c % b.pw, y = c / b.pw;
-                const int d4[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-                for (auto& d : d4) {
-                    const int X = x + d[0], Y = y + d[1];
-                    if (X < 0 || Y < 0 || X >= b.pw || Y >= b.ph) continue;
-                    const int n2 = Y * b.pw + X;
-                    if (near[static_cast<size_t>(n2)] >= 0) continue;
-                    near[static_cast<size_t>(n2)] = near[static_cast<size_t>(c)];
-                    q.push_back(n2);
-                }
-            }
-            auto fold = [](int v, int a, int c, bool& fl) {
-                const int len = c - a + 1, per = 2 * len;
-                const int m = (((v - a) % per) + per) % per;
-                fl = m >= len;
-                return a + (m < len ? m : per - 1 - m);
-            };
-            std::vector<uint32_t> tmp[5];
-            for (auto& t : tmp) t.assign(content.size(), 0);
-            std::vector<uint8_t> tmpw(content.size(), 0);
-            for (int y = 0; y < b.ph; ++y) for (int x = 0; x < b.pw; ++x) {
-                const size_t i = static_cast<size_t>(y) * b.pw + x;
-                if (content[i]) continue;
-                bool fx, fy;
-                size_t si; uint32_t flip;
-                if (x >= bx0 && x <= bx1 && y >= by0 && y <= by1) {
-                    // a hole inside the room's bounds: the nearest wall mirrored into it
-                    const int c = near[i], cx = c % b.pw, cy = c / b.pw;
-                    const int rx = 2 * cx - x, ry = 2 * cy - y;
-                    si = static_cast<size_t>(c); flip = 0;
-                    if (rx >= 0 && ry >= 0 && rx < b.pw && ry < b.ph && content[static_cast<size_t>(ry) * b.pw + rx]) {
-                        si = static_cast<size_t>(ry) * b.pw + rx;
-                        flip = (rx != x ? 1u << 16 : 0u) | (ry != y ? 1u << 17 : 0u);
-                    }
-                } else {
-                    const int sx = fold(x, bx0, bx1, fx), sy = fold(y, by0, by1, fy);
-                    si = static_cast<size_t>(sy) * b.pw + sx;
-                    flip = (fx ? 1u << 16 : 0u) | (fy ? 1u << 17 : 0u);
-                    if (!content[si]) { si = static_cast<size_t>(near[i]); flip = 0; }
-                }
-                const size_t sd = static_cast<size_t>(b.py + static_cast<int>(si) / b.pw) * W + b.px + static_cast<int>(si) % b.pw;
-                for (int l = 0; l < 5; ++l) tmp[l][i] = WL[l][sd] ? WL[l][sd] ^ flip : 0;
-                tmpw[i] = walk[sd];
-            }
-            // the plot's edge: a wall of the room's own (no invisible wall where the mirrored floor would end)
-            std::array<uint32_t, 5> wallc{}; {
+            // everything round the room is black and solid, like the GBA (no mirrored copies of the room); the room itself untouched
+            std::array<uint32_t, 5> blackc{}; {
                 std::map<std::array<uint32_t, 5>, int> cnt; int bn = 0;
-                for (size_t i = 0; i < content.size(); ++i) {
-                    if (!content[i]) continue;
-                    const size_t d = static_cast<size_t>(b.py + static_cast<int>(i) / b.pw) * W + b.px + static_cast<int>(i) % b.pw;
-                    if (walk[d] & 1) continue;
+                for (int y = 0; y < b.h; ++y) for (int x = 0; x < b.w; ++x) {
+                    const size_t d = static_cast<size_t>(b.y + y) * W + b.x + x;
+                    if (!dark(d)) continue;
                     std::array<uint32_t, 5> c{WL[0][d], WL[1][d], WL[2][d], WL[3][d], WL[4][d]};
-                    if (++cnt[c] > bn) { bn = cnt[c]; wallc = c; }
+                    if (!c[0]) continue;
+                    if (++cnt[c] > bn) { bn = cnt[c]; blackc = c; }
                 }
             }
             for (int y = 0; y < b.ph; ++y) for (int x = 0; x < b.pw; ++x) {
                 const size_t i = static_cast<size_t>(y) * b.pw + x;
                 if (content[i]) continue;
-                const size_t d = static_cast<size_t>(b.py + y) * W + b.px + x;
-                const bool rim = x < 2 || y < 2 || x >= b.pw - 2 || y >= b.ph - 2;
-                if (rim && wallc[0]) { for (int l = 0; l < 5; ++l) WL[l][d] = wallc[static_cast<size_t>(l)]; walk[d] = 0; continue; }
-                for (int l = 0; l < 5; ++l) WL[l][d] = tmp[l][i];
-                walk[d] = rim ? 0 : tmpw[i];
+                const int X = b.px + x, Y = b.py + y;
+                if (X >= b.x && Y >= b.y && X < b.x + b.w && Y < b.y + b.h) continue;     // the room's own tiles stay as the GBA has them
+                const size_t d = static_cast<size_t>(Y) * W + X;
+                for (int l = 0; l < 5; ++l) WL[l][d] = blackc[static_cast<size_t>(l)];
+                walk[d] = 0;
             }
             continue;
         }
@@ -3478,6 +3556,67 @@ static void export_earth(const fs::path& dir) {
     const fs::path zd = dir / "0";
     fs::remove_all(zd);
     fs::create_directories(zd);
+    {   // (Android port) the snowy country had grass and flowers strewn through it in patches: there it is snow
+        auto col = [](uint32_t v) -> uint32_t { const uint32_t id = v & 0xFFFFu; return id < g_tile_col.size() ? g_tile_col[id] : 0u; };
+        auto is_snow = [&](uint32_t v) { const uint32_t c = col(v); if (!c) return false; const int r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255; return r > 200 && g > 200 && b > 200; };
+        auto is_green = [&](uint32_t v) { const uint32_t c = col(v); if (!c) return false; const int r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255; return g > b + 40 && g >= r - 10; };
+        const size_t NN = static_cast<size_t>(W) * H;
+        std::vector<int> sum(NN, 0);       // snow cells in a 9x9 window (a summed table)
+        std::vector<int> S2((static_cast<size_t>(W) + 1) * (H + 1), 0);
+        for (int y = 0; y < H; ++y) for (int x = 0; x < W; ++x) {
+            const int v = is_snow(WL[0][static_cast<size_t>(y) * W + x]) ? 1 : 0;
+            S2[static_cast<size_t>(y + 1) * (W + 1) + x + 1] = v + S2[static_cast<size_t>(y) * (W + 1) + x + 1] + S2[static_cast<size_t>(y + 1) * (W + 1) + x] - S2[static_cast<size_t>(y) * (W + 1) + x];
+        }
+        std::unordered_map<uint32_t, int> snowc;      // which snow tiles the snowy country uses, and how often
+        auto cool = [&](uint32_t v) { const uint32_t c = col(v); const int r = c & 255, b = (c >> 16) & 255; return b >= r; };      // (the white-blue snow, not the beige edges)
+        for (size_t i = 0; i < NN && i < grown_mask.size(); ++i) if (grown_mask[i] && is_snow(WL[0][i]) && cool(WL[0][i]) && !(WL[0][i] & (1u << 19))) snowc[WL[0][i] & 0xFFFFu]++;
+        std::vector<std::pair<int, int>> pool;
+        for (auto& kv : snowc) pool.push_back({static_cast<int>(kv.first), kv.second});
+        std::sort(pool.begin(), pool.end(), [](auto& a, auto& b) { return a.second > b.second; });
+        if (pool.size() > 8) pool.resize(8);
+        int tot = 0; for (auto& q : pool) tot += q.second;
+        int n = 0;
+        if (tot > 0) for (int y = 0; y < H; ++y) for (int x = 0; x < W; ++x) {
+            const size_t i = static_cast<size_t>(y) * W + x;
+            if (i >= grown_mask.size() || !grown_mask[i] || !is_green(WL[0][i])) continue;
+            const int x0 = std::max(0, x - 4), y0 = std::max(0, y - 4), x1 = std::min(W, x + 5), y1 = std::min(H, y + 5);
+            const int cnt = S2[static_cast<size_t>(y1) * (W + 1) + x1] - S2[static_cast<size_t>(y0) * (W + 1) + x1] - S2[static_cast<size_t>(y1) * (W + 1) + x0] + S2[static_cast<size_t>(y0) * (W + 1) + x0];
+            if (cnt * 10 < (x1 - x0) * (y1 - y0) * 4) continue;      // snow all round (40% of the window or more)
+            uint32_t h = static_cast<uint32_t>(i) * 2654435761u; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+            int r = static_cast<int>(h % static_cast<uint32_t>(tot)), pick = pool[0].first;
+            for (auto& q : pool) { if (r < q.second) { pick = q.first; break; } r -= q.second; }
+            WL[0][i] = static_cast<uint32_t>(pick);
+            for (int l = 1; l < 5; ++l) if (WL[l][i] && is_green(WL[l][i])) WL[l][i] = 0;
+            ++n;
+        }
+        (void)sum;
+        if (std::getenv("LOG2_WORLD_LOG")) std::fprintf(stderr, "[earth] %d grass patches in the snow made snow\n", n);
+    }
+    {   // (Android port) the Northern Mountains' country was one ochre grass tile over and over: mixed as the forest's own maps mix it
+        static const int kMix[][2] = {{2662, 3814}, {2658, 3141}, {2661, 3130}, {2659, 3107}, {2652, 3093}, {2650, 3083}, {2649, 3068}, {2653, 3055}, {2657, 3053}, {2656, 3019}, {2646, 3010}, {2648, 2992}};
+        int tot = 0; for (auto& q : kMix) tot += q[1];
+        int n = 0;
+        for (size_t i = 0; i < grown_mask.size() && i < WL[0].size(); ++i) {
+            if (!grown_mask[i] || (WL[0][i] & 0xFFFFu) != 2662u) continue;
+            uint32_t h = static_cast<uint32_t>(i) * 2246822519u; h ^= h >> 15; h *= 3266489917u; h ^= h >> 16;
+            int r = static_cast<int>(h % static_cast<uint32_t>(tot)), pick = kMix[0][0];
+            for (auto& q : kMix) { if (r < q[1]) { pick = q[0]; break; } r -= q[1]; }
+            WL[0][i] = static_cast<uint32_t>(pick); ++n;
+        }
+        if (std::getenv("LOG2_WORLD_LOG")) std::fprintf(stderr, "[earth] %d ochre grass tiles mixed\n", n);
+    }
+    { const int rg = regrass(WL, W, H); if (std::getenv("LOG2_WORLD_LOG")) std::fprintf(stderr, "[earth] %d neon grass tiles laid again\n", rg); }
+    {   // (Android port) the green country was grass tile 334 over and over: mixed as the game's own maps mix their grass
+        static const int kMix[][2] = {{334, 10516}, {331, 8150}, {326, 7909}, {325, 7899}, {324, 7700}, {327, 7231}, {330, 7088}, {335, 6478}, {328, 6064}, {337, 5982}, {332, 5616}, {336, 5305}, {329, 5235}, {333, 5187}};
+        int tot = 0; for (auto& q : kMix) tot += q[1];
+        for (size_t i = 0; i < grown_mask.size() && i < WL[0].size(); ++i) {
+            if ((WL[0][i] & 0xFFFFu) != 334u || (WL[0][i] & (1u << 19))) continue;      // (the game's own maps too: only that one tile changes)
+            uint32_t h = static_cast<uint32_t>(i) * 3266489917u; h ^= h >> 13; h *= 2654435761u; h ^= h >> 16;
+            int r = static_cast<int>(h % static_cast<uint32_t>(tot)), pick = kMix[0][0];
+            for (auto& q : kMix) { if (r < q[1]) { pick = q[0]; break; } r -= q[1]; }
+            WL[0][i] = static_cast<uint32_t>(pick);
+        }
+    }
     write_lkr(zd / "0.bin", W, H, WL, walk);
     {
         std::vector<uint8_t> mini(N * 4, 0);
@@ -3969,6 +4108,36 @@ static int fix_dir(const fs::path& dir) {
 }  // namespace qoafix
 
 #include "lib_export.inc"
+// (Android port) EARTH ships ready made (the game writes it to kit/lands/0 before importing - tile numbers and
+// walls, from builtin/earth): only its minimap is drawn here, from this cartridge's tiles. No country is grown:
+// that step needed most of the import's memory (700 MB) and froze 4 GB computers.
+static void earth_mini(const fs::path& dir) {
+    std::ifstream f(dir / "0" / "0.bin", std::ios::binary);
+    std::vector<uint8_t> raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (raw.size() < 8 || std::memcmp(raw.data(), "LKR2", 4) != 0) { std::fprintf(stderr, "[earth] no Earth to draw the minimap from\n"); return; }
+    const int W = raw[4] | raw[5] << 8, H = raw[6] | raw[7] << 8;
+    const size_t N = static_cast<size_t>(W) * H;
+    if (raw.size() < 8 + N * 21) return;
+    auto cell = [&](int l, size_t i) { uint32_t v; std::memcpy(&v, &raw[8 + (static_cast<size_t>(l) * N + i) * 4], 4); return v; };
+    const uint8_t* walk = &raw[8 + N * 20];
+    std::vector<uint8_t> mini(N * 4, 0);
+    for (size_t i = 0; i < N; ++i) {
+        uint32_t col = 0;
+        bool water = false;
+        for (int l = 0; l < 5; ++l) {
+            const uint32_t c = cell(l, i);
+            if (!c) continue;
+            const uint32_t id = c & 0xFFFF;
+            if (c & (1u << 19)) { col = (walk[i] & 1) ? 0xFFC08040u : 0xFFA05828u; water = true; }
+            else if (id < g_tile_col.size() && g_tile_col[id]) { col = g_tile_col[id]; water = false; }
+        }
+        if (!(walk[i] & 1) && col && !water) col = (col & 0xFF000000u) | ((col & 0xFEFEFEu) >> 1);
+        std::memcpy(&mini[i * 4], &col, 4);
+    }
+    romcat::save_png_rgba((dir / "0" / "0_mini.png").string(), mini, W, H);
+    std::fprintf(stderr, "[earth] the shipped Earth's minimap drawn (%d x %d)\n", W, H);
+}
+
 int main(int argc, char** argv) {
     if (argc < 3) { std::fprintf(stderr, "usage: godot_export GAME OUTDIR [ADVENTURE_LAYOUT_DIR]\n"); return 2; }
     if (std::string(argv[1]) == "qoa2wav") {   // dev: godot_export qoa2wav IN.qoa OUT.wav (16-bit mono)
@@ -3986,6 +4155,19 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (std::string(argv[1]) == "library" && argc >= 4) return libx::run(argv[2], argv[3]);   // godot_export library GAME OUTDIR
+    if (std::string(argv[1]) == "music") {    // godot_export music GAME OUTDIR [SONG...]: the game's own songs, as QOA with their loops
+        if (argc < 4) { std::fprintf(stderr, "usage: godot_export music GAME OUTDIR [SONG...]\n"); return 2; }
+        lower_priority();      // recorded while you play: the game gets the processor first
+        std::ifstream gf(argv[2], std::ios::binary);
+        std::vector<uint8_t> game((std::istreambuf_iterator<char>(gf)), std::istreambuf_iterator<char>());
+        if (game.size() < 0x200000) { std::fprintf(stderr, "[music] not a game file: %s\n", argv[2]); return 1; }
+        fs::create_directories(argv[3]);
+        std::vector<int> songs;
+        for (int i = 4; i < argc; ++i) songs.push_back(std::atoi(argv[i]));
+        const int n = gbamusic::export_songs(game, argv[3], songs);
+        std::fprintf(stderr, "[music] %d songs\n", n);
+        return n > 0 ? 0 : 1;
+    }
     if (std::string(argv[1]) == "fixqoa") {   // godot_export fixqoa FILE_OR_DIR...: mend songs recorded before v19
         int n = 0;
         for (int i = 2; i < argc; ++i) n += fs::is_directory(argv[i]) ? qoafix::fix_dir(argv[i]) : (qoafix::fix_file(argv[i]) ? 1 : 0);
@@ -4006,6 +4188,7 @@ int main(int argc, char** argv) {
     const fs::path out = argv[2];
     fs::create_directories(out);
     const bool only_floors = argc > 4 && std::string(argv[4]) == "floors";
+    const bool no_earth = argc > 4 && std::string(argv[4]) == "noearth";      // EARTH comes with the game: not grown here
     if (argc > 4 && std::string(argv[4]) == "kit") {
         const int k = export_kit(out / "kit");
         std::fprintf(stderr, "[export] kit: %d maps\n", k);
@@ -4014,6 +4197,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (!only_floors) {
+        progress("start", 0, 1);
         std::fprintf(stderr, "[export] sprites...\n");
         const int s = export_sprites(out / "sprites");
         export_fx(out / "fx");
@@ -4021,6 +4205,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[export] %d sprite sets\n[export] maps...\n", s);
         const int m = export_maps(out / "maps");
         std::fprintf(stderr, "[export] %d maps\n", m);
+        progress("data", 0, 1);
         export_data(out / "data");
         // the music ripper is gone: your own songs go in the music folder
         export_people(out / "data");
@@ -4028,13 +4213,17 @@ int main(int argc, char** argv) {
         const int k = export_kit(out / "kit");
         std::fprintf(stderr, "[export] building kit: %d maps\n", k);
         export_lands(out / "kit" / "lands");
-        export_earth(out / "kit" / "lands");
+        progress("earth", 0, 1);
+        if (no_earth) earth_mini(out / "kit" / "lands");
+        else export_earth(out / "kit" / "lands");
     }
     if (argc > 3) { const int fl = export_floors(argv[3], out / "floors"); std::fprintf(stderr, "[export] %d adventure areas\n", fl); }
     // (no music from the game: you bring your own songs)
-    std::fprintf(stderr, "[export] %d invisible-wall tiles opened (lone walls with nothing solid on them)\n", g_walls_opened);
+    std::fprintf(stderr, "[export] %d tiles under tree leaves walkable\n", g_canopy_opened); std::fprintf(stderr, "[export] %d invisible-wall tiles opened (lone walls with nothing solid on them)\n", g_walls_opened);
+    progress("ui", 0, 1);
     export_ui(out / "ui");
-    write_text(out / "version.txt", "24\n");
+    progress("done", 1, 1);
+    write_text(out / "version.txt", "36\n");
     std::fprintf(stderr, "[export] done: %s\n", out.string().c_str());
     return 0;
 }

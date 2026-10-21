@@ -16,6 +16,8 @@ var hp_frac = 1.0          # under 1: a small health bar over the head
 var bubble = ""            # a chat message over the head
 var aura = Color(0, 0, 0, 0)   # a transformation's aura (alpha 0: none)
 var set_id = -1
+var hero = false           # a player's fighter: a villain hero shows the game's boss effects (red when hit, smoke when beaten)
+var _dead_ms = -1
 
 func set_sprite_set(d: Dictionary) -> void:
 	set_data = d
@@ -31,7 +33,9 @@ func frames_of(a: int, d: int) -> Array:
 	return slots[s]
 
 func show_frame(a: int, d: int, f: int) -> void:
-	if a != anim or d != dir or f != frame:
+	if a == 3 and anim != 3:
+		_dead_ms = Time.get_ticks_msec()
+	if a != anim or d != dir or f != frame or (hero and (a == 2 or a == 3) and set_data.get("villain_fx", false)):
 		anim = a; dir = d; frame = f
 		queue_redraw()
 
@@ -68,7 +72,30 @@ func _draw() -> void:
 	var c = tint
 	if flash:
 		c = Color(tint.r * 1.8, tint.g * 1.8, tint.b * 1.8, tint.a)
+	var smoke_k = -1.0
+	if hero and set_data.get("villain_fx", false):
+		if anim == 2 and (Time.get_ticks_msec() / 80) % 2 == 0:
+			c = Color(c.r * 1.3, c.g * 0.35, c.b * 0.35, c.a)      # hit: flashing red, like the boss
+		elif anim == 3 and _dead_ms >= 0 and set_data.get("smoke_down", false):
+			smoke_k = clampf((Time.get_ticks_msec() - _dead_ms) / 1400.0, 0.0, 1.0)
+			c.a *= clampf(1.6 - smoke_k * 2.0, 0.0, 1.0)              # beaten: gone in the smoke
 	draw_texture_rect_region(set_data["tex"], dst, src, c)
+	if smoke_k >= 0.0 and smoke_k < 1.0:
+		var fx = Assets.efx("e_smoke")
+		if not fx.is_empty():
+			var bb = _opaque_box(f, frame % fr.size(), slot)
+			var mid = Vector2(f["x"] + bb.position.x + bb.size.x * 0.5, f["y"] + bb.position.y + bb.size.y * 0.5) * size_scale
+			var spots = [Vector2(0, 0), Vector2(-0.35, -0.3), Vector2(0.35, -0.25), Vector2(-0.3, 0.3), Vector2(0.3, 0.3), Vector2(0, -0.45)]
+			for i in spots.size():
+				var k = smoke_k * 1.6 - i * 0.12
+				if k < 0.0 or k >= 1.0:
+					continue
+				var fi = clampi(int(k * fx["frames"].size()), 0, fx["frames"].size() - 1)
+				var sf: Dictionary = fx["frames"][fi]
+				if int(sf["w"]) <= 0:
+					continue
+				var p = mid + spots[i] * bb.size * size_scale
+				draw_texture_rect_region(fx["tex"], Rect2(p - Vector2(float(sf["ox"]), float(sf["oy"])), Vector2(sf["w"], sf["h"])), Rect2(fi * int(fx["cell"]), 0, sf["w"], sf["h"]))
 	if label != "":
 		var font = ThemeDB.fallback_font
 		draw_string_outline(font, Vector2(-70, (f["y"] - 4) * size_scale), label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, 2, Color(0, 0, 0, 0.7))

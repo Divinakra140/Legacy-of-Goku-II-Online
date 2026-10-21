@@ -52,7 +52,124 @@ func available() -> bool:
 		var w = Engine.get_singleton("JavaClassWrapper").wrap("com.godot.game.LoG2ZeroTier")
 		if w != null and w.available():
 			bridge = w
+	elif not OS.has_feature("android"):
+		var d = DesktopBridge.new(self)      # the PC and Mac builds: the same bridge as a small program next to the game
+		if d.available():
+			bridge = d
 	return bridge != null
+
+## The PC / Mac bridge: log2_ztbridge(.exe) next to the game runs the ZeroTier node (the same network as the
+## Android app: everyone plays with everyone) and is driven over a local control port. Same calls as the Java one.
+class DesktopBridge extends RefCounted:
+	var owner: Node
+	var tcp: StreamPeerTCP
+	var pid = -1
+	var last = "starting\t\t"
+	var buf = ""
+	var lobby_key = ""
+	var http = {}       # id -> HTTPRequest (still running) or the "status\nbody" result
+	var next_id = 0
+	var args = []          # how it was started (to start it again if it closes)
+	var ctrl = 0
+	var restarts = 0
+	func _init(o: Node) -> void:
+		owner = o
+	func exe() -> String:
+		return Assets.exe_dir().path_join("log2_ztbridge.exe" if OS.get_name() == "Windows" else "log2_ztbridge")
+	func available() -> bool:
+		return FileAccess.file_exists(exe())
+	func start(storage: String, port: int) -> String:
+		if pid > 0:
+			return ""
+		DirAccess.make_dir_recursive_absolute(storage)
+		ctrl = 47000 + randi() % 2000
+		args = [storage, str(port), str(ctrl)]
+		pid = OS.create_process(exe(), args)
+		if pid <= 0:
+			last = "error\t\tThe multiplayer helper could not start."
+			return last
+		tcp = StreamPeerTCP.new()
+		var t0 = Time.get_ticks_msec()
+		while Time.get_ticks_msec() - t0 < 3000:
+			if tcp.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+				tcp = StreamPeerTCP.new()
+				tcp.connect_to_host("127.0.0.1", ctrl)
+				OS.delay_msec(100)
+				tcp.poll()
+			if tcp.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+				break
+		return ""
+	func _say(line: String) -> void:
+		if tcp != null and tcp.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+			tcp.put_data((line + "\n").to_utf8_buffer())
+	func status() -> String:
+		if tcp == null:
+			return "stopped\t\t"
+		tcp.poll()
+		var n = tcp.get_available_bytes()
+		if n > 0:
+			buf += tcp.get_utf8_string(n)
+			var lines = buf.split("\n")
+			buf = lines[lines.size() - 1]
+			for i in lines.size() - 1:
+				if lines[i].begins_with("S "):
+					last = lines[i].substr(2)
+		elif tcp.get_status() != StreamPeerTCP.STATUS_CONNECTED and pid > 0:
+			if OS.is_process_running(pid):
+				# still starting (a slow PC, or Windows checking the new file): keep knocking, no giving up
+				if tcp.get_status() != StreamPeerTCP.STATUS_CONNECTING:
+					tcp = StreamPeerTCP.new()
+					tcp.connect_to_host("127.0.0.1", ctrl)
+				last = "starting\t\t"
+			elif restarts < 5:
+				# it closed: start it again (on a new control port)
+				restarts += 1
+				pid = -1
+				var a = args.duplicate()
+				if a.size() == 3 and start(str(a[0]), int(a[1])) == "":
+					last = "starting\t\t"
+				else:
+					last = "error\t\tThe multiplayer helper stopped."
+			else:
+				last = "error\t\tThe multiplayer helper stopped."
+		return last
+	func hostOpen(zt_port: int, local_port: int) -> bool:
+		_say("HOST %d %d" % [zt_port, local_port])
+		return true
+	func hostClose() -> void:
+		_say("HOSTCLOSE")
+	func connectOpen(address: String, port: int) -> int:
+		var lp = 49000 + randi() % 4000
+		_say("CONNECT %s %d %d" % [address, port, lp])
+		return lp
+	func connectClose() -> void:
+		_say("CONNECTCLOSE")
+	func setLobbyKey(key: String) -> void:
+		lobby_key = key
+	func httpStart(url: String, body: String) -> int:
+		next_id += 1
+		var id = next_id
+		var r = HTTPRequest.new()
+		r.timeout = 8.0
+		owner.add_child(r)
+		http[id] = r
+		r.request_completed.connect(func(_res, code, _h, b: PackedByteArray):
+			http[id] = "%d\n%s" % [code, b.get_string_from_utf8()]
+			r.queue_free())
+		var hd = PackedStringArray(["Content-Type: application/json"])
+		if lobby_key != "":
+			hd.append("X-Lobby-Key: " + lobby_key)
+		var err = r.request(url, hd, HTTPClient.METHOD_POST if body != "" else HTTPClient.METHOD_GET, body)
+		if err != OK:
+			http[id] = "0\n"
+			r.queue_free()
+		return id
+	func httpTake(id: int) -> String:
+		var v = http.get(id, "")
+		if v is String and v != "":
+			http.erase(id)
+			return v
+		return ""
 
 ## safe to call again and again: the node starts once and keeps running
 func start() -> void:
@@ -62,7 +179,7 @@ func start() -> void:
 ## {"state": "starting|joining|ready|error", "address": this device's ZeroTier address, "message": ...}
 func status() -> Dictionary:
 	if not available():
-		return {"state": "error", "address": "", "message": "GLOBAL MULTIPLAYER needs the Android app."}
+		return {"state": "error", "address": "", "message": "GLOBAL MULTIPLAYER needs log2_ztbridge next to the game."}
 	var parts = str(bridge.status()).split("\t")
 	while parts.size() < 3:
 		parts.append("")

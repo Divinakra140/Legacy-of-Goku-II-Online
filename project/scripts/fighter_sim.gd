@@ -49,6 +49,10 @@ var form_i = -1            # -1: normal
 var pending_form = -1
 var base_set = 60
 var drain_t = 0
+var pvp = false            # PVP mode (a save point, R2): other PVP players can hurt you, and you them
+var shape_set = -1         # drawn as another sprite set for a moment (Yamcha's wolf during the Wolf Fang Fist)
+var barrier_t = 0          # the Android Barrier: ticks left (ki drains while it is up)
+var barrier_col = 0
 var buffs = {}             # "str"/"pwr"/"end"/"speed"/"exp" -> [mult, ticks]
 var inv = {}               # item id -> count
 var zeni = 0
@@ -61,6 +65,9 @@ var buf_sp = 0
 var buf_tr = 0
 var running = false
 var tap_dir = -1           # double-tap a direction to run
+var tap_run = false        # running from a double tap: until you stop
+var sprint_latch = false   # L3 clicked: sprinting (or a flying boost) until you stop moving
+var fly_was_moving = false
 var tap_t = 99
 var was_moving = false
 var flying = false         # FREE PLAY: L2 flies over everything (nothing blocks you, you are drawn above it all); L2 again lands
@@ -106,6 +113,17 @@ func from_save(d: Dictionary) -> void:
 	maxep = int(d.get("maxep", maxep)); ep = maxep
 	str_v = float(d.get("str", str_v)); pwr_v = float(d.get("pwr", pwr_v)); end_v = float(d.get("end", end_v))
 	exp = int(d.get("exp", 0)); level = int(d.get("level", 1))
+	# (v44: the levels end at 50 as in the original, each twice the EXP, 3 points a level - a saved hero keeps their
+	# level (above 50: 50), with the EXP and the strength that level has now)
+	var lt = Assets.data.get("levels")
+	if lt is Array and not lt.is_empty():
+		level = clampi(level, 1, lt.size())
+		if Rules.level_of(exp, lt) < level:
+			exp = int(lt[level - 1])
+		var hs = Assets.hero_stats(ch)
+		str_v = maxf(str_v, float(hs["str"]) + level - 1)
+		pwr_v = maxf(pwr_v, float(hs["pwr"]) + level - 1)
+		end_v = maxf(end_v, float(hs["end"]) + level - 1)
 	flags = d.get("flags", {}) if d.get("flags") is Dictionary else {}
 	where = d.get("where", {}) if d.get("where") is Dictionary else {}
 	states = {}
@@ -149,7 +167,7 @@ func add_exp(n: int, levels: Array) -> bool:
 		# a level: more health and energy, a little stronger in everything
 		maxhp += maxi(4, roundi(maxhp * 0.08))
 		maxep += 1 if level % 2 == 0 else 0
-		str_v += 0.6; pwr_v += 0.6; end_v += 0.6
+		str_v += 1.0; pwr_v += 1.0; end_v += 1.0      # the original's 3 points a level (spread evenly)
 	if up:
 		hp = maxhp
 		ep = maxep
@@ -313,6 +331,32 @@ func unlocked_skills() -> Array:
 			out.append(sk)
 	return out
 
+## a move grows with its hero: every 10 levels after it was learned, one step more (7 steps: full at 70 levels on)
+const GROW_STEPS = 4      # (full length 40 levels after a beam is learned: the levels end at 50)
+func skill_growth(sk: Dictionary) -> float:
+	return clampf(float((level - int(sk.get("level", 1))) / 10) / GROW_STEPS, 0.0, 1.0)
+
+## how far a beam reaches: short when it is learned (the game's own 56 px), up to a quarter past its full range
+const BEAM_SHORT = 64.0
+const BEAM_DRAIN_TICKS = 20      # a held beam eats a point of ki this often
+func beam_reach(sk: Dictionary, short: float = -1.0) -> float:
+	if short < 0.0:      # a beam drawn by the port: most of its range when learned (the great beams come late), growing past it
+		short = float(sk.get("range", 240)) * 0.8
+	return lerpf(short, float(sk.get("range", 240)) * 1.25, skill_growth(sk))
+
+## how big a ball is: its own size when it is learned, up to twice that (never past the Supernova's huge 30)
+const BALL_MAX = 30.0
+func ball_scale(sk: Dictionary, base: float) -> float:
+	return 1.0      # (balls keep their size: the villains' are big already)
+	@warning_ignore("unreachable_code")
+	return minf(1.0 + skill_growth(sk), maxf(1.0, BALL_MAX / maxf(1.0, base)))
+
+## ki comes back faster as you grow, as in the game: a full bar takes about 50 s at level 1, 15 s at level 25,
+## 4 s at level 50 (it feels instant), never more than 2 s beyond that
+func regen_ticks() -> int:
+	var full_s = maxf(2.0, 50.0 * exp(-0.0515 * float(level - 1)))
+	return maxi(1, roundi(full_s * 60.0 / maxf(1.0, float(maxep))))
+
 func current_skill() -> Dictionary:
 	var u = unlocked_skills()
 	if u.is_empty():
@@ -394,6 +438,10 @@ func _anim_or(a: int, alt: int) -> int:
 ## 18 the beam (Kamehameha: hands at the hip, then the release), 19 the overhead throw (Spirit Bomb, Hellzone),
 ## 20 flying, 5 the ki throw (for fighters without a beam row); a move may name its own row ("anim")
 ## the hand of a pose, from the sprite (where blasts and beams leave from)
+## the eyes (a beam shot from the eyes - Cooler's): near the top of the body, a little toward where it looks
+func _eyes() -> Vector2:
+	return Assets.eye_point(set_id, anim, dir) * size_scale()
+
 func hand(a: int) -> Vector2:
 	return Assets.hand_point(set_id, a, dir) * size_scale()
 
@@ -431,13 +479,14 @@ func can_stand(px: float, py: float) -> bool:
 		return true
 	return (_under(px, py) & lay) != 0
 
+var fly_boost = false      # Y held while flying: twice as fast
 func _fly_step(mx: int, my: int) -> void:
 	if mx != 0 or my != 0:
-		if mx != 0 and my == 0:
+		if mx != 0:            # flying: any sideways push turns the hero side-on (the flying pose), even on a diagonal
 			dir = 3 if mx > 0 else 2
-		elif my != 0 and mx == 0:
+		else:
 			dir = 0 if my > 0 else 1
-		var spd = speed() * 2.2
+		var spd = speed() * 2.2 * (2.0 if fly_boost else 1.0)
 		if mx != 0 and my != 0:
 			spd *= 0.7071
 		x += mx * spd
@@ -453,7 +502,7 @@ func _fly_step(mx: int, my: int) -> void:
 		set_anim(Rules.A_IDLE)
 		_animate([240, 15], true)
 	regen_t += 1
-	if regen_t >= Rules.EP_REGEN_TICKS:
+	if regen_t >= regen_ticks():
 		regen_t = 0
 		ep = mini(maxep, ep + 1)
 
@@ -510,6 +559,13 @@ func step(inp: Dictionary, enemies: Array) -> void:
 		cooldowns[k] -= 1
 		if cooldowns[k] <= 0:
 			cooldowns.erase(k)
+	if barrier_t > 0:
+		barrier_t -= 1
+		if barrier_t % 30 == 0:
+			ep = maxi(0, ep - 1)
+		if ep <= 0 or barrier_t <= 0:
+			barrier_t = 0
+			buffs.erase("end")
 	for k in buffs.keys():
 		buffs[k][1] -= 1
 		if buffs[k][1] <= 0:
@@ -551,11 +607,29 @@ func step(inp: Dictionary, enemies: Array) -> void:
 			_land()
 		else:
 			flying = true
-			events.append({"type": "msg", "text": "FLYING - L2 TO LAND"})
+			events.append({"type": "msg", "text": "FLYING - L2/B TO LAND, Y TO BOOST"})
 	if flying:
 		if not can_fly:
 			_land()
 		else:
+			if inp.get("b", false) and not prev.get("b", false):      # B lands too
+				prev = inp.duplicate()
+				_land()
+				return
+			if inp.get("l3", false) and not prev.get("l3", false):
+				sprint_latch = true
+			var fly_moving = mx != 0 or my != 0
+			if fly_was_moving and not fly_moving:
+				sprint_latch = false      # stopped: back to normal speed
+			fly_was_moving = fly_moving
+			fly_boost = bool(inp.get("tr", false)) or sprint_latch      # Y held, or L3 clicked: a flying sprint
+			if inp.get("nx", false) and not prev.get("nx", false):      # the next special can be chosen up there too
+				var fu = unlocked_skills()
+				if fu.size() > 0:
+					skill_i = (clampi(skill_i, 0, fu.size() - 1) + 1) % fu.size()
+					events.append({"type": "msg", "text": "SPECIAL: " + str(fu[skill_i]["name"])})
+					_sfx("move")
+			prev = inp.duplicate()
 			_fly_step(mx, my)
 			return
 	var a_now: bool = inp.get("a", false)
@@ -567,6 +641,8 @@ func step(inp: Dictionary, enemies: Array) -> void:
 	b_hold = b_hold + 1 if b_now else 0
 	var sp_press = inp.get("sp", false) and not prev.get("sp", false)
 	var tr_press = inp.get("tr", false) and not prev.get("tr", false)
+	if inp.get("l3", false) and not prev.get("l3", false):
+		sprint_latch = true      # L3 clicked: sprint until you stop moving
 	# a SPECIAL / TRANSFORM pressed in the middle of a punch is remembered for a moment (no lost presses)
 	if sp_press: buf_sp = 20
 	if tr_press: buf_tr = 20
@@ -683,11 +759,10 @@ func step(inp: Dictionary, enemies: Array) -> void:
 		# run: hold RUN, or tap a direction twice quickly (the run cycle is the sets' row 13)
 		var cur_dir = dir
 		if not was_moving:
-			running = inp.get("run", false) or (tap_dir == cur_dir and tap_t < 14)
+			tap_run = tap_dir == cur_dir and tap_t < 14
 			tap_dir = cur_dir
 			tap_t = 0
-		if inp.get("run", false):
-			running = true
+		running = inp.get("run", false) or tap_run or sprint_latch      # RUN held, R2's sprint on, or L3 clicked (until you stop)
 		var spd = speed() * (1.75 if running else 1.0)
 		if running and (mx == 0 or my == 0):
 			spd *= 1.4142      # running straight is as fast as running on a diagonal (both directions at once)
@@ -707,6 +782,7 @@ func step(inp: Dictionary, enemies: Array) -> void:
 		if was_moving:
 			was_moving = false
 			running = false
+			sprint_latch = false
 		tap_t += 1
 		if idle_t > 1000:
 			set_anim(Rules.A_BORED)
@@ -715,7 +791,7 @@ func step(inp: Dictionary, enemies: Array) -> void:
 			set_anim(Rules.A_IDLE)
 			_animate([240, 15], true)
 	regen_t += 1
-	if regen_t >= Rules.EP_REGEN_TICKS:
+	if regen_t >= regen_ticks():
 		regen_t = 0
 		ep = mini(maxep, ep + 1)
 
@@ -804,6 +880,15 @@ func _step_shots(enemies: Array) -> void:
 				s["life"] -= 1
 				s["w"] = minf(float(s["w0"]), float(s["w"]) + float(s["w0"]) * 0.08)
 			elif s["hold"] > 0:
+				# held: the beam stays as long as the button is held and there is ki to feed it (a point every third of a second)
+				if sp_held and ep > 0 and s.get("feeding", true):
+					s["hold"] = maxi(int(s["hold"]), 9)
+					s["fed"] = int(s.get("fed", 0)) + 1
+					if int(s["fed"]) % BEAM_DRAIN_TICKS == 0:
+						ep = maxi(0, ep - 1)
+				elif s.get("feeding", true):
+					s["feeding"] = false      # let go (or out of ki): it ends soon after
+					s["hold"] = mini(int(s["hold"]), 8)
 				s["hold"] -= 1
 				s["w"] = float(s["w0"]) * (1.0 + 0.12 * sin(float(s["tick"]) * 0.9))
 				if int(s["hold"]) % 8 == 0:
@@ -823,7 +908,12 @@ func _step_shots(enemies: Array) -> void:
 		var gone: bool = s["life"] <= 0 if not s.has("hold") else bool(s.get("life_end", false))
 		var kind = int(s.get("kind", 0))
 		if not area.is_empty() and (s["x"] < -20 or s["y"] < -20 or s["x"] > area["w"] + 20 or s["y"] > area["h"] + 20):
-			gone = true      # flies over low things, stops at the map's edge
+			if kind0 == 1 and s.has("hold"):
+				# a beam's head stops at the map's edge: the beam stays (held, then fading) - it does not vanish
+				s["x"] = clampf(s["x"], -20.0, float(area["w"]) + 20.0); s["y"] = clampf(s["y"], -20.0, float(area["h"]) + 20.0)
+				s["life"] = 0
+			else:
+				gone = true      # flies over low things, stops at the map's edge
 		var explode = kind == 2 and gone
 		for e in enemies:
 			if gone and not explode:
@@ -845,10 +935,12 @@ func _step_shots(enemies: Array) -> void:
 			else:
 				touch = absf(e["x"] - s["x"]) < rx + float(s.get("size", 0)) * 0.5 and absf((e["y"] - 10) - s["y"]) < ry + float(s.get("size", 0)) * 0.5
 			if touch:
-				if kind == 2:
+				if kind == 2 and not s.get("pierce", false):
 					explode = true
 					break
 				s["hit"][e["id"]] = true
+				if kind == 2 and str(s.get("look", "")) != "":      # a ball that cuts on through (the Destructo Disk): its hit at each foe
+					fx.append(["xboom", e["x"], e["y"] - 10, 14.0, s["col"], 0, 16, str(s["look"]), int(s["dir"])])
 				var dv = Vector2(s["vx"], s["vy"]).normalized()
 				events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": dv.x * 3.0, "ky": dv.y * 3.0, "stun": int(s.get("stun", 0)), "inflict": s.get("inf", {})})
 				if not s.get("pierce", false):
@@ -909,7 +1001,8 @@ func start_skill(sk: Dictionary) -> bool:
 		"volley":
 			_pose_frame(_pose(sk, "volley"), true, 0)
 		"dash":
-			set_anim(_pose(sk, "dash"))
+			shape_set = int(sk.get("shape_set", -1))
+			set_anim(int(sk.get("shape_anim", 1)) if shape_set >= 0 else _pose(sk, "dash"))
 			invuln = maxi(invuln, int(dash_left / maxf(1.0, float(sk.get("speed", 4)))) + 6)
 			_sfx(str(sk.get("sfx", "dash")))
 		"slash":
@@ -922,6 +1015,7 @@ func start_skill(sk: Dictionary) -> bool:
 	return true
 
 func _skill_done() -> void:
+	shape_set = -1
 	draw_dx = 0
 	state = "idle"
 	since_attack = 0
@@ -948,14 +1042,16 @@ func _step_skill(enemies: Array) -> void:
 			var pa = _pose(sk, "beam")
 			_pose_frame(pa, t < ch_t, t - ch_t)
 			if t < ch_t:
-				var hc = Assets.charge_point(set_id, pa, dir) * size_scale()
+				var hc = _eyes() if str(sk.get("from", "")) == "eyes" else Assets.charge_point(set_id, pa, dir) * size_scale()
 				var look = str(sk.get("look", ""))
-				if look != "" and t % 2 == 0:
+				if str(sk.get("from", "")) == "eyes":
+					pass                # an eye beam: no glow on the face, the beam just leaves the eye
+				elif look != "" and t % 2 == 0:
 					# the game's own energy gathering at the hands
 					fx.append(["xcharge", x + hc.x, y + hc.y, float(t) / ch_t, col, 0, 3, look])
 				elif t % 3 == 0:
 					fx.append(["glow", x + hc.x, y + hc.y, 1.5 + 4.5 * t / ch_t + rng.randf_range(-0.6, 0.6), col, 0, 4])
-				if t % 5 == 0:
+				if t % 5 == 0 and str(sk.get("from", "")) != "eyes":
 					fx.append(["gather", x + hc.x, y + hc.y, 26.0, col, 0, 14, rng.randi_range(0, 7)])
 				if t > ch_t - 12 and t % 4 == 0:
 					events.append({"type": "shake", "amount": 1.0})
@@ -964,16 +1060,17 @@ func _step_skill(enemies: Array) -> void:
 				var sp = float(sk.get("speed", 6))
 				var r = Rules.ki_damage(_stat_of(sk), power, rng)
 				shot_seq += 1
-				var hb = hand(pa)
+				var hb = _eyes() if str(sk.get("from", "")) == "eyes" else hand(pa)
 				var ox = x + hb.x
 				var oy = y + hb.y
 				shots.append({"id": shot_seq, "x": ox, "y": oy, "ox": ox, "oy": oy, "vx": fwd.x * sp, "vy": fwd.y * sp, "dir": dir,
-					"life": int(float(sk.get("range", 240)) / sp), "beam": true, "kind": 1, "dmg": r[0], "crit": r[1], "hit": {},
+					"life": int(beam_reach(sk) / sp), "beam": true, "kind": 1, "dmg": r[0], "crit": r[1], "hit": {},
 					"pierce": true, "w": float(sk.get("width", 10)) * 0.6, "w0": float(sk.get("width", 10)), "col": col,
-					"hold": int(sk.get("hold", 40)), "fade": 12, "tick": 0, "look": str(sk.get("look", ""))})
+					"hold": int(sk.get("hold", 40)), "fade": 12, "tick": 0, "look": "eyes" if str(sk.get("from", "")) == "eyes" else str(sk.get("look", ""))})
 				_sfx(str(sk.get("sfx", "beam")))
-				# the release: a flash at the hands and a hard shake
-				fx.append(["flash", ox, oy, float(sk.get("width", 10)) * 2.5, col, 0, 14])
+				# the release: a flash at the hands (not on the face for an eye beam) and a hard shake
+				if str(sk.get("from", "")) != "eyes":
+					fx.append(["flash", ox, oy, float(sk.get("width", 10)) * 2.5, col, 0, 14])
 				events.append({"type": "shake", "amount": 5.0})
 			var alive = false
 			for s in shots:
@@ -983,14 +1080,16 @@ func _step_skill(enemies: Array) -> void:
 				_skill_done()
 		"bomb":
 			var ch_t = int(sk.get("charge", 24))
+			var bk = ball_scale(sk, float(sk.get("size", 8)))
+			var bsize = float(sk.get("size", 8)) * bk
 			_pose_frame(_pose(sk, "bomb"), t < ch_t, t - ch_t)
 			if t < ch_t:
 				var blook = str(sk.get("look", ""))
 				if blook != "" and t % 2 == 0:
 					# the ball grows over the head (the Spirit Bomb, Big Bang...) - the game's own sprites
-					fx.append(["xcharge", x, y - 34 * size_scale(), float(t) / ch_t, col, 0, 3, blook])
+					fx.append(["xcharge", x, y - (Assets.body_size(set_id).y + 6.0) * size_scale(), float(t) / ch_t, col, 0, 3, blook, bsize, float(sk.get("size", 8))])
 				elif t % 4 == 0:
-					fx.append(["glow", x, y - 34, 3.0 + float(sk.get("size", 8)) * t / ch_t, col, 0, 5])
+					fx.append(["glow", x, y - (Assets.body_size(set_id).y + 6.0) * size_scale(), 3.0 + bsize * t / ch_t, col, 0, 5])
 				return
 			if t == ch_t:
 				var sp = float(sk.get("speed", 3))
@@ -999,7 +1098,7 @@ func _step_skill(enemies: Array) -> void:
 				var hbm = hand(_pose(sk, "bomb"))
 				shots.append({"id": shot_seq, "x": x + hbm.x, "y": y + hbm.y, "ox": 0.0, "oy": 0.0, "vx": fwd.x * sp, "vy": fwd.y * sp, "dir": dir,
 					"life": int(float(sk.get("range", 160)) / sp), "beam": false, "kind": 2, "dmg": r[0], "crit": r[1], "hit": {},
-					"pierce": false, "w": 0, "col": col, "radius": float(sk.get("radius", 40)), "size": float(sk.get("size", 8)), "look": str(sk.get("look", ""))})
+					"pierce": bool(sk.get("pierce", false)), "w": 0, "col": col, "radius": float(sk.get("radius", 40)) * bk, "size": bsize, "base": float(sk.get("size", 8)), "look": str(sk.get("look", ""))})
 				_sfx("bomb")
 			if t >= ch_t + 20:
 				_skill_done()
@@ -1029,11 +1128,11 @@ func _step_skill(enemies: Array) -> void:
 			move_by(fwd.x * sp, fwd.y * sp)
 			var moved = Vector2(x - bx, y - by).length()
 			dash_left -= sp
-			var dp = _pose(sk, "dash")
+			var dp = int(sk.get("shape_anim", 1)) if shape_set >= 0 else _pose(sk, "dash")
 			if anim != dp:
 				set_anim(dp)
 			_animate([3], true)
-			if t % 2 == 0:
+			if t % 2 == 0 and sk.get("trail", true):
 				fx.append(["trail", x, y, 0, col, 0, 10])
 			for e in enemies:
 				if e["alive"] and not hit_done.has(e["id"]) and Vector2(e["x"] - x, e["y"] - y).length() < (26.0 if not e.get("big", false) else 40.0):
@@ -1067,6 +1166,10 @@ func _step_skill(enemies: Array) -> void:
 				_skill_done()
 		"wave", "flash":
 			_animate([6], true)
+			if t == 1 and bool(sk.get("dome", false)):
+				# a solid ball at the belly that grows over the whole body, then spreads out and thins (Super Explosive Wave)
+				var bd = Assets.body_size(set_id) * size_scale()
+				fx.append(["dome", x, y - bd.y * 0.45, float(sk.get("range", 70)), col, 0, 40, maxf(bd.x, bd.y) * 0.6])
 			if t == 10:
 				var r0 = float(sk.get("range", 70))
 				for e in enemies:
@@ -1080,9 +1183,10 @@ func _step_skill(enemies: Array) -> void:
 							events.append({"type": "hit", "enemy": e["id"], "dmg": r[0], "crit": r[1], "kx": kv.x, "ky": kv.y, "stun": 24, "inflict": cur.get("inflict", {})})
 						else:
 							events.append({"type": "hit", "enemy": e["id"], "dmg": 0, "crit": false, "kx": 0.0, "ky": 0.0, "stun": int(sk.get("stun", 120)), "inflict": cur.get("inflict", {})})
-				fx.append(["ring" if kind == "wave" else "flash", x, y - 12, r0, col, 0, 22])
+				if not bool(sk.get("dome", false)):
+					fx.append(["ring" if kind == "wave" else "flash", x, y - 12, r0, col, 0, 22])
 				_sfx(str(sk.get("sfx", kind)))
-			if t >= 26:
+			if t >= (40 if bool(sk.get("dome", false)) else 26):
 				_skill_done()
 		"heal", "buff":
 			_animate([6], true)
@@ -1097,6 +1201,9 @@ func _step_skill(enemies: Array) -> void:
 					var bs = sk.get("buffs", {})
 					for k in bs:
 						buffs[str(k)] = [float(bs[k]), int(sk.get("ticks", 600))]
+					if sk.get("barrier", false):
+						barrier_t = int(sk.get("ticks", 600))
+						barrier_col = Content.color(sk.get("aura", "60e0c0")).to_rgba32()
 					events.append({"type": "msg", "text": str(sk.get("name", "")) + "!"})
 				_sfx(str(sk.get("sfx", "heal")))
 			if t >= 30:
@@ -1156,6 +1263,8 @@ func _revert() -> void:
 	set_id = base_set
 
 func aura() -> int:
+	if barrier_t > 0:
+		return barrier_col
 	var f = form()
 	if f.has("aura"):
 		return Content.color(f.get("aura", "")).to_rgba32()
@@ -1233,7 +1342,7 @@ func use_item(id: String) -> bool:
 
 ## an enemy hits this fighter
 func take_hit(dmg: int, kx: float, ky: float) -> void:
-	if invuln > 0 or state == "down":
+	if invuln > 0 or state == "down" or flying:       # (flying: nothing can hit you up there)
 		return
 	hp = maxi(0, hp - dmg)
 	invuln = Rules.INVULN_TICKS
@@ -1264,13 +1373,13 @@ func snapshot() -> Dictionary:
 			sh.append(_rom_snap(s))
 			continue
 		sh.append([snappedf(s["x"], 0.1), snappedf(s["y"], 0.1), s["dir"], int(s.get("kind", 0)), int(s.get("col", 0)), float(s.get("w", 0)),
-			snappedf(float(s.get("ox", 0)), 0.1), snappedf(float(s.get("oy", 0)), 0.1), float(s.get("size", 0)), str(s.get("look", ""))])
+			snappedf(float(s.get("ox", 0)), 0.1), snappedf(float(s.get("oy", 0)), 0.1), float(s.get("size", 0)), str(s.get("look", "")), float(s.get("base", 0))])
 	var fxs = []
 	for e in fx:
 		fxs.append(e.duplicate())
 	return {"ch": ch, "x": x, "y": y, "dir": dir, "anim": anim, "frame": frame, "hp": hp, "maxhp": maxhp, "ep": ep, "maxep": maxep,
-		"lvl": level, "shots": sh, "down": state == "down", "inv": invuln > 0, "set": set_id, "aura": aura(),
-		"tint": (tint() * state_tint()).to_rgba32(), "sts": states.keys(), "scale": size_scale(), "dx": draw_dx, "fx": fxs, "form": str(form().get("name", "")), "fly": flying}
+		"lvl": level, "shots": sh, "down": state == "down", "inv": invuln > 0 or flying, "set": shape_set if shape_set >= 0 else set_id, "aura": aura(),
+		"tint": (tint() * state_tint()).to_rgba32(), "sts": states.keys(), "scale": size_scale(), "dx": draw_dx, "fx": fxs, "form": str(form().get("name", "")), "fly": flying, "pvp": pvp}
 
 # ------------------------------------------------------------------ the heroes' own attacks, exactly as the game draws them
 ## content/rom_specials.json: measured from the game frame by frame (the glow at the hands, the beam or the ball,
@@ -1290,20 +1399,48 @@ var shot_seq_owner = 0
 
 var draw_dx = 0           # the game draws a few poses a pixel off: the hero is drawn this much to the right
 func _rom_pose(R: Dictionary, key: String, d: int) -> void:
+	var owner = str(R.get("who", ""))
+	if owner != "" and not (ch >= 0 and ch < Assets.CHARACTERS.size() and Assets.CHARACTERS[ch] == owner):
+		# a move borrowed from another hero (Cell's Kamehameha): his own beam pose, hand out - the other hero's pose numbers mean nothing in his sheet
+		anim = _pose(cur, "beam")
+		frame = 0 if key == "pose_charge" else maxi(0, _frame_count(anim) - 1)
+		draw_dx = 0
+		return
 	var p: Array = R.get(key, [[18, 0, 0], [18, 0, 0], [18, 0, 0], [18, 0, 0]])[d]
 	anim = int(p[0])
 	frame = mini(int(p[1]), maxi(0, _frame_count(anim) - 1))
 	draw_dx = int(p[2]) if p.size() > 2 else 0
 
+## a game move made for another hero (Cell's Kamehameha is Goku's): where it starts moves with this fighter's
+## hand (side on) or size (up / down), so it leaves from a bigger or smaller body's hands
+func _rom_offset(R: Dictionary) -> Vector2:
+	var owner = str(R.get("who", ""))
+	if ch >= 0 and ch < Assets.CHARACTERS.size() and Assets.CHARACTERS[ch] == owner:
+		return Vector2.ZERO
+	var oi = Assets.CHARACTERS.find(owner)
+	if oi < 0:
+		return Vector2.ZERO
+	var oset = Assets.character_set(oi)
+	if dir >= 2:
+		return Assets.hand_point(set_id, Rules.A_KI, dir) * size_scale() - Assets.hand_point(oset, Rules.A_KI, dir)
+	var hs = Assets.body_size(set_id) * size_scale()
+	var ho = Assets.body_size(oset)
+	return Vector2(0, -(hs.y - ho.y) * 0.5)
+
+var rom_off = Vector2.ZERO
 func _step_rom(enemies: Array) -> void:
 	var R = _rom_spec()
 	if R.is_empty():
 		_skill_done()
 		return
 	var t = skill_t - 1      # the game counts from the press
+	if t <= 0:
+		rom_off = _rom_offset(R)
 	var d = clampi(dir, 0, 3)
-	if not sp_held and rom_release < 0:
-		rom_release = t
+	if (not sp_held or ep <= 0) and rom_release < 0:
+		rom_release = t      # let go - or out of ki: the beam ends
+	elif rom_release < 0 and t > int(R.get("launch", 27)) and str(R.get("kind", "beam")) == "beam" and t % BEAM_DRAIN_TICKS == 0:
+		ep = maxi(0, ep - 1)      # a held beam of the game's own eats ki too
 	var launch = int(R.get("launch", 27))
 	if t < launch:
 		_rom_pose(R, "pose_charge", d)
@@ -1320,22 +1457,28 @@ func _step_rom(enemies: Array) -> void:
 			if t == launch - 1 and R.has("glitch"):
 				# the game shows the beam's tail in the glow's place for one frame before it fires
 				var gl: Array = R["glitch"]
-				fx.append(["rfx", x, y, str(R["sheet"]), int(gl[d]), 0, 1, int(tl[0]), int(tl[1])])
+				fx.append(["rfx", x + rom_off.x, y + rom_off.y, str(R["sheet"]), int(gl[d]), 0, 1, int(tl[0]), int(tl[1])])
 			else:
-				fx.append(["rfx", x, y, str(R["charge_sheet"]), fr, 0, 1, int(tl[0]), int(tl[1])])
+				fx.append(["rfx", x + rom_off.x, y + rom_off.y, str(R["charge_sheet"]), fr, 0, 1, int(tl[0]), int(tl[1])])
 		return
 	var kind = str(R.get("kind", "beam"))
 	if t == launch:
 		shot_seq += 1
 		shot_seq_owner = shot_seq
 		var r = Rules.ki_damage(_stat_of(cur), float(R.get("power", cur.get("power", 3.0))), rng)
-		var sh = {"id": shot_seq, "owner_t": shot_seq, "rom": str(cur["rom"]), "dir": d, "t": 0, "x": roundf(x), "y": roundf(y),
+		var sh = {"id": shot_seq, "owner_t": shot_seq, "rom": str(cur["rom"]), "dir": d, "t": 0, "x": roundf(x + rom_off.x), "y": roundf(y + rom_off.y),
 			"vx": 0.0, "vy": 0.0, "life": 9999, "dmg": r[0], "crit": r[1], "hit": {}, "beam": kind == "beam", "col": 0}
 		if kind == "beam":
 			sh["kind"] = 5; sh["L"] = float(R.get("len0", 8)); sh["r"] = -1.0; sh["grow"] = true
+			# longer with the levels: from the game's own length to far past it, and quicker to stretch out
+			var mx = beam_reach(cur, float(R.get("max", 56)))
+			sh["max"] = mx; sh["sp"] = float(R.get("speed", 3)) * sqrt(mx / float(R.get("max", 56)))
 		else:
 			sh["kind"] = 6; sh["burst"] = -1; sh["bt"] = 0
 			sh["tl"] = R["path"][d][0] if R.has("path") else R["start"][d]
+			# bigger with the levels: the game's ball in a glow of its colour that grows around it
+			sh["k"] = ball_scale(cur, float(R.get("size", 16)))
+			sh["col"] = int(Color.html(str(cur.get("color", "ffffff"))).to_rgba32())
 		shots.append(sh)
 		_sfx(str(cur.get("sfx", "beam")))
 	var s: Variant = _rom_shot()
@@ -1368,9 +1511,9 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 		# like in the game - a beam never stays hanging in the air without the hero holding it
 		if not s.get("retract", false) and (state != "skill" or not cur.has("rom") or int(s.get("owner_t", -1)) != shot_seq_owner):
 			return false
-		var sp = float(R.get("speed", 3))
+		var sp = float(s.get("sp", R.get("speed", 3)))
 		if not (s.get("retract", false) and float(s["r"]) >= 0):
-			s["L"] = minf(float(R.get("max", 56)), float(s["L"]) + sp)
+			s["L"] = minf(float(s.get("max", R.get("max", 56))), float(s["L"]) + sp)
 		if s.get("retract", false):
 			s["r"] = 0.0 if float(s["r"]) < 0 else float(s["r"]) + sp
 			if float(s["r"]) >= float(s["L"]):
@@ -1396,7 +1539,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 			s["rehit"] = true
 		return true
 	# a ball
-	var size = float(R.get("size", 16))
+	var size = float(R.get("size", 16)) * float(s.get("k", 1.0))
 	if int(s["burst"]) >= 0:
 		s["bt"] = int(s["bt"]) + 1
 		var seq: Array = R.get("boom", R.get("hit", []))
@@ -1420,7 +1563,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 		if end:
 			return false
 	s["tl"] = [tl.x, tl.y]
-	var c = P + tl + Vector2(size, size) * 0.5
+	var c = P + tl + Vector2(1, 1) * float(R.get("size", 16)) * 0.5
 	var hit = end
 	if not R.has("path") and not Assets.walkable(area, c.x, c.y + 8) and not area.is_empty() and t > 6:
 		hit = true
@@ -1437,7 +1580,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 		if R.has("radius"):      # Gohan's blast bursts: everything around is caught
 			_sfx("boom")
 			for e in enemies:
-				if e["alive"] and not s["hit"].has(e["id"]) and Vector2(e["x"] - c.x, e["y"] - 10 - c.y).length() < float(R["radius"]):
+				if e["alive"] and not s["hit"].has(e["id"]) and Vector2(e["x"] - c.x, e["y"] - 10 - c.y).length() < float(R["radius"]) * float(s.get("k", 1.0)):
 					events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": 0.0, "ky": 0.0, "stun": 16, "inflict": s.get("inf", {})})
 	return true
 
@@ -1473,4 +1616,5 @@ func _rom_snap(s: Dictionary) -> Array:
 		fr = int(R.get("fly0", fly[0])) if t < 3 else int(fly[((t - 3) / int(R.get("fly_ticks", 8))) % fly.size()])
 		if int(R.get("group", 0)) == 4:
 			fr += 4 * d
-	return [float(s["x"]) + float(tl[0]) + dx, float(s["y"]) + float(tl[1]) + dy, d, 6, 0, 0.0, 0, 0, fr, sheet]
+	var halo = 0.0 if int(s["burst"]) >= 0 or float(s.get("k", 1.0)) <= 1.0 else float(R.get("size", 16)) * 0.5 * float(s.get("k", 1.0))
+	return [float(s["x"]) + float(tl[0]) + dx, float(s["y"]) + float(tl[1]) + dy, d, 6, int(s.get("col", 0)), halo, float(R.get("size", 16)) * 0.5, float(R.get("size", 16)) * 0.5, fr, sheet]

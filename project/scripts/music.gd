@@ -59,6 +59,23 @@ func _process(dt: float) -> void:
 			b.stop()
 	elif a.playing:
 		a.volume_db = target
+	# the game's song is ready now (it was being made): it takes over from the little tune
+	if _fallback_for != "":
+		_check_t += dt
+		if _check_t > 1.0:
+			_check_t = 0.0
+			if _fallback_for != current:
+				_fallback_for = ""
+			elif Assets.game_song_ready(int(current.substr(4))):
+				var c = current
+				_fallback_for = ""
+				current = ""
+				play(c)
+	# songs read on threads: the finished threads put away
+	for t in _load_threads.duplicate():
+		if not t.is_alive():
+			t.wait_to_finish()
+			_load_threads.erase(t)
 	# a song written in the background is ready
 	if waiting != "":
 		mutex.lock()
@@ -76,16 +93,58 @@ func file_for(song: String) -> String:
 	if _files.has(song):
 		return _files[song]
 	var f = ""
-	for d in [Assets.picked_music_dir(), Assets.music_dir()]:
-		for ext in ["ogg", "mp3"]:
-			var p = d.path_join("%s.%s" % [song.to_lower(), ext])
-			if f == "" and FileAccess.file_exists(p):
-				f = p
+	var nm = song.to_lower().replace(":", "_")      # (a game song "rom:15": your file rom_15.ogg replaces it)
+	if _dir_files.is_empty():
+		_list_dirs()
+	for ext in ["ogg", "mp3"]:
+		if f == "" and _dir_files.has("%s.%s" % [nm, ext]):
+			f = _dir_files["%s.%s" % [nm, ext]]
 	if f != "":
 		print("[music] your song for ", song, ": ", f)
 	_files[song] = f
 	return f
 var _files = {}
+## the song folders listed once (on Android each file looked for in the shared Music folder takes a while - asked
+## while you walk into a new place, that was a hitch): name -> path, your picked songs first
+var _dir_files = {}
+func _list_dirs() -> void:
+	_dir_files = {"-": ""}
+	for d in [Assets.music_dir(), Assets.picked_music_dir()]:
+		var da = DirAccess.open(d)
+		if da == null:
+			continue
+		for fn in da.get_files():
+			_dir_files[fn.to_lower()] = d.path_join(fn)
+
+## your songs changed (a pick, a reset, a permission): looked for again
+func refresh_files() -> void:
+	_files.clear()
+	_dir_files.clear()
+
+## the game's own songs read ahead (the loading screen): none is read while you play; true when all are in
+var _preload_thread: Thread
+func preload_game_songs() -> void:
+	if _preload_thread != null:
+		if _preload_thread.is_alive():
+			return
+		_preload_thread.wait_to_finish()
+	_preload_thread = Thread.new()
+	_preload_thread.start(func():
+		for n in 44:
+			var key = "rom:%d" % n
+			mutex.lock()
+			var have = made.has(key)
+			mutex.unlock()
+			if have or not Assets.game_song_ready(n):
+				continue
+			var w = _game_song(n)
+			mutex.lock()
+			if w != null:
+				made[key] = w
+			mutex.unlock())
+
+func preloading() -> bool:
+	return _preload_thread != null and _preload_thread.is_alive()
 
 func _stream(song: String) -> AudioStream:
 	var p = file_for(song)
@@ -105,6 +164,19 @@ func _stream(song: String) -> AudioStream:
 			st = m
 		made[p] = st
 		return st
+	if song.begins_with("rom:"):
+		var n = int(song.substr(4))
+		mutex.lock()
+		var g = made.get(song)
+		mutex.unlock()
+		if g != null:
+			return g
+		if Assets.game_song_ready(n):
+			_load_game_song(n)          # read on a thread (a big file): the song playing now goes on until it is ready
+			return null
+		_fallback_for = song           # not played from your game yet (it is being made): a little tune meanwhile
+		Assets.want_song(n)            # (and it is made next)
+		return _stream("title" if n == Assets.MENU_SONG else "field")
 	mutex.lock()
 	var have = made.get(song)
 	mutex.unlock()
@@ -121,6 +193,45 @@ func _stream(song: String) -> AudioStream:
 			thread = Thread.new()
 			thread.start(_worker)
 	return null
+
+## the game's own song n (made from your game file in the background): looping as the game loops it
+var _fallback_for = ""
+var _check_t = 0.0
+var _loading = {}
+var _load_threads = []
+func _load_game_song(n: int) -> void:
+	var key = "rom:%d" % n
+	if _loading.has(key):
+		return
+	_loading[key] = true
+	var t = Thread.new()
+	_load_threads.append(t)
+	t.start(func():
+		var w = _game_song(n)
+		mutex.lock()
+		if w != null:
+			made[key] = w
+		_loading.erase(key)
+		mutex.unlock())
+
+func _game_song(n: int) -> AudioStream:
+	if not Assets.game_song_ready(n):
+		return null
+	var base = Assets.game_music_dir().path_join("song_%02d" % n)
+	var info = JSON.parse_string(FileAccess.get_file_as_string(base + ".json"))
+	var data = FileAccess.get_file_as_bytes(base + ".qoa")
+	if not info is Dictionary or data.size() < 16:
+		return null
+	var w = AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_QOA
+	w.stereo = true
+	w.mix_rate = int(info.get("rate", 15978))
+	w.data = data
+	if int(info.get("loop_begin", -1)) >= 0:
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = int(info["loop_begin"])
+		w.loop_end = int(info["loop_end"])
+	return w
 
 func prepare(songs: Array) -> void:
 	for s in songs:
@@ -259,6 +370,10 @@ func _exit_tree() -> void:
 	mutex.unlock()
 	if thread != null and thread.is_started():
 		thread.wait_to_finish()
+	for t in _load_threads:
+		t.wait_to_finish()
+	if _preload_thread != null:
+		_preload_thread.wait_to_finish()
 
 
 ## silence after the end: Godot 4.7's mixer on Android reads a little past a sound's last sample (a crash there)
