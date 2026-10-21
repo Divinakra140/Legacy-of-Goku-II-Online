@@ -1,4 +1,4 @@
-# LoG2 Online 
+# Legacy of Goku II Online 
 
 The Godot rebuild of **Legacy of Goku II** by **Puni Puni** and **Divinakra**
 (YouTube: [@PuniPuni2026](https://www.youtube.com/@PuniPuni2026), [@DivinakraCreations](https://www.youtube.com/@DivinakraCreations)),
