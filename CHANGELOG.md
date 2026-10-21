@@ -18,6 +18,8 @@
 - Android: R3 opens the chat with the on-screen keyboard (Enter sends, R3 again closes).
 - Windows / Mac: names, world names and passwords can be typed on the keyboard.
 - QUIT GAME closes at once, even while a song is being recorded.
+- MY OWN MUSIC: picking a song to replace works again, and the game's songs with no place of their own have their names
+  (Eternal Dragon, Piccolo Theme, The Green Menace, Hercule Day Parade and more).
 
 ### Earth
 - Earth reworked by hand: new forests, roads, rivers, doors, and strong foes out at the edges. It ships as the base
