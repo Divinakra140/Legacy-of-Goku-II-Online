@@ -2640,6 +2640,8 @@ func _music_screen() -> void:
 	_song_dialog.file_selected.connect(func(p): _song_path = p; _song_copy(_song_target))
 	ui.add_child(_song_dialog)
 
+## the songs with no place of their own, by their names
+const SONG_TITLES = {16: "LET'S VISIT KING YAMMA AGAIN!", 17: "ETERNAL DRAGON", 18: "TIME TO GO HOME", 20: "SUPER SAIYAN RAGE", 21: "THE EYE OF THE LION", 22: "A SAIYAN DOWN", 24: "EXPLOSION IS NEAR", 27: "EVIL TRIUMPH", 28: "THE GREEN MENACE", 32: "HERCULE DAY PARADE", 34: "PICCOLO THEME", 36: "MASTER ROSHI'S ISLAND", 37: "PEACEFUL DAY"}
 ## a game song's name: where the game plays it (the title, or the place most of its maps are)
 var _song_names = {}
 func _song_label(n: int) -> String:
@@ -2662,6 +2664,8 @@ func _song_label(n: int) -> String:
 			_song_names[sg] = best.to_upper()
 		_song_names[Assets.MENU_SONG] = "TITLE & MENUS"
 		_song_names[7] = "ERA OF DARKNESS (INTRO)"
+		for k in SONG_TITLES:
+			_song_names[k] = SONG_TITLES[k]
 	return "%02d  %s" % [n, _song_names.get(n, "SONG")]
 
 func _song_file(slot: String) -> String:
@@ -2680,9 +2684,7 @@ func _song_list_screen() -> void:
 		var slot = "rom_%d" % n
 		items.append([_song_label(n) + ("  (YOURS)" if _song_file(slot) != "" else ""), func(): _song_target = slot; _song_dialog.popup_centered()])
 	_gscroll(items, 24, 140)
-	_song_dialog = _song_dialog if is_instance_valid(_song_dialog) else null
-	if _song_dialog == null:
-		_music_dialog_only()
+	_music_dialog_only()      # a new picker every time: the old one went with the screen before (a click did nothing)
 
 func _music_dialog_only() -> void:
 	_song_dialog = FileDialog.new()
