@@ -10,7 +10,7 @@ GLOBAL multiplayer together. Formerly "Legacy of Goku II - Co-op".
  on PC and Mac:
 - **The game:** global and local multiplayer across Android, Windows and Mac, GBA-style menus, flying, new playable heroes, 
   villians and  outfits, a reworked Earth (Goku's House, Triceratops Jungle and West City improved by hand), the original 
-  game's balance (level cap 50), original game music recorded from your own cartridge, and shared saves.
+  game's balance (level cap 50), original game music recorded from your own cartridge, and shared saves. [Download Here](https://github.com/Divinakra140/Legacy-of-Goku-II-Online/releases/tag/v44)
 - **The dev tools:** a much better map editor (redo, brush sizes, mirrored copy and paste, keep-the-ground pasting,
   save points in THINGS, a foe picture list, door jumping) and the Earth editor, with guides included
   (DEV TOOLS.txt, Earth Editor Guide.txt). and a [Video Guide](https://www.youtube.com/watch?v=eD4ifri5Pkg) by Divinakra.
