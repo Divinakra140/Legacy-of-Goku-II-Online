@@ -2894,6 +2894,32 @@ func _minimap(c: Control, L: Local, i: int) -> void:
 			if o == L:
 				c.draw_arc(q2, 3.5, 0, TAU, 10, Color(1, 1, 1, 0.8), 1.0)
 
+## the names over people's heads and their speech bubbles, drawn here on the screen's own layer (full sharpness, like
+## the HUD's words) - in the small world picture that is then enlarged they were blurry or broken. One screen only:
+## split screen keeps them in the picture.
+func _draw_names(c: Control) -> void:
+	ActorView.labels_outside = not split_now
+	if split_now or locals.is_empty() or not views.has(locals[0].node_i) or svs.is_empty():
+		return
+	var avn = views[locals[0].node_i]
+	var ct: Transform2D = svs[0].get_canvas_transform()
+	var font = ThemeDB.fallback_font
+	for v in avn.ents.get_children():
+		if not (v is ActorView) or not v.is_visible_in_tree():
+			continue
+		var gt: Transform2D = ct * v.get_global_transform()
+		var a = v.modulate.a
+		if v.label != "":
+			var p = gt * Vector2(0, v.label_y)
+			c.draw_string_outline(font, Vector2(p.x - 70, p.y), v.label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, 2, Color(0, 0, 0, 0.7 * a))
+			c.draw_string(font, Vector2(p.x - 70, p.y), v.label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, Color(v.label_color, v.label_color.a * a))
+		if v.bubble != "":
+			var b = gt * Vector2(0, v.bubble_y)
+			var w = minf(160.0, font.get_string_size(v.bubble, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x + 8)
+			c.draw_rect(Rect2(b.x - w / 2, b.y - 14, w, 12), Color(1, 1, 1, 0.92 * a))
+			c.draw_rect(Rect2(b.x - w / 2, b.y - 14, w, 12), Color(0, 0, 0, 0.9 * a), false, 1.0)
+			c.draw_string(font, Vector2(b.x - w / 2 + 4, b.y - 5), v.bubble, HORIZONTAL_ALIGNMENT_LEFT, w - 6, 8, Color(0.05, 0.05, 0.1, a))
+
 func _draw_hud() -> void:
 	var c = hud_draw
 	var font = ThemeDB.fallback_font
@@ -2912,6 +2938,7 @@ func _draw_hud() -> void:
 		var Lb: Local = locals[i]
 		if Lb.fighter.has_state_flag("blind"):
 			_draw_dark(c, _light_centre(i), 46.0, Color(0, 0, 0, 0.93), vs)
+	_draw_names(c)
 	# the HUD box (bars, special, EXP, minimap, partners) at the same size on the screen whatever the VIEW SIZE
 	var hs = _hud_scale(vs)
 	var vs_real = vs
@@ -3026,6 +3053,7 @@ func _draw_hud() -> void:
 		c.draw_string(font, Vector2(0, vs.y - 6), "THE WORLD WAITS WHILE YOUR MENU IS OPEN", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 6, Color(0.7, 0.7, 0.8))
 
 func _exit_tree() -> void:
+	ActorView.labels_outside = false      # (the map editor draws its own)
 	# closing the game keeps your fighter (level, stats, EXP) - on your own PC
 	save_all()
 

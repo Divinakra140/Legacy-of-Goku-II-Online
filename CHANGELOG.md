@@ -29,7 +29,8 @@
   saves already on the device are moved there the first time.
 - Knocked out: the fall plays once and you lie still until a friend helps you up (it played again and again).
 - A held beam stops at once when you are hit or knocked out (it went on from where it was fired, emptying your ki).
-- Other players' names are as sharp as everyone else's.
+- Names over people and speech bubbles are drawn at the screen's full sharpness (on handhelds they were blurry
+  or broken).
 - OPTIONS - SAVE FILES: EXPORT SAVE FILE and IMPORT SAVE FILE (all your heroes in one file - take a PC's heroes to a
   handheld and back).
 - HUD on / off (OPTIONS, and HUD / MINIMAP in the START menu), remembered. The HUD box, the minimap and the START menu

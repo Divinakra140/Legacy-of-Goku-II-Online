@@ -96,11 +96,14 @@ func _draw() -> void:
 					continue
 				var p = mid + spots[i] * bb.size * size_scale
 				draw_texture_rect_region(fx["tex"], Rect2(p - Vector2(float(sf["ox"]), float(sf["oy"])), Vector2(sf["w"], sf["h"])), Rect2(fi * int(fx["cell"]), 0, sf["w"], sf["h"]))
-	# names and speech drawn at their real size on screen (drawn at 8 pixels and then zoomed, they were blurry)
+	# names and speech: in the game they are drawn by the world on the screen's own layer, at full sharpness
+	# (labels_outside; here, in the small picture that is then enlarged, 8-pixel letters came out blurry or broken);
+	# the map editor (and split screen) still draw them here
 	var z = maxf(0.05, get_global_transform_with_canvas().get_scale().x)
-	if label != "":
+	label_y = (f["y"] - 4) * size_scale
+	if label != "" and not labels_outside:
 		var font = _text_font(z)
-		draw_set_transform(Vector2(-70, (f["y"] - 4) * size_scale), 0.0, Vector2.ONE / z)
+		draw_set_transform(Vector2(-70, label_y), 0.0, Vector2.ONE / z)
 		draw_string_outline(font, Vector2.ZERO, label, HORIZONTAL_ALIGNMENT_CENTER, 140 * z, int(round(8 * z)), maxi(1, int(round(2 * z))), Color(0, 0, 0, 0.7))
 		draw_string(font, Vector2.ZERO, label, HORIZONTAL_ALIGNMENT_CENTER, 140 * z, int(round(8 * z)), label_color)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -109,7 +112,8 @@ func _draw() -> void:
 		draw_rect(Rect2(-11, top - 3, 22, 4), Color(0, 0, 0, 0.75))
 		draw_rect(Rect2(-10, top - 2, 20 * hp_frac, 2), Color(0.95, 0.25, 0.2) if hp_frac < 0.35 else Color(0.95, 0.8, 0.2))
 		top -= 5
-	if bubble != "":
+	bubble_y = top
+	if bubble != "" and not labels_outside:
 		var font2 = _text_font(z)
 		var w = minf(160.0, font2.get_string_size(bubble, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x + 8)
 		draw_rect(Rect2(-w / 2, top - 14, w, 12), Color(1, 1, 1, 0.92))
@@ -117,6 +121,11 @@ func _draw() -> void:
 		draw_set_transform(Vector2(-w / 2 + 4, top - 5), 0.0, Vector2.ONE / z)
 		draw_string(font2, Vector2.ZERO, bubble, HORIZONTAL_ALIGNMENT_LEFT, (w - 6) * z, int(round(8 * z)), Color(0.05, 0.05, 0.1))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+## set by the world while it draws names and bubbles itself (one screen, not split); where they go (this view's own units)
+static var labels_outside = false
+var label_y = 0.0
+var bubble_y = 0.0
 
 ## in the game the world is drawn at the GBA's size and then enlarged: soft-edged 8-pixel letters came out as blurry
 ## blocks, so there the letters are hard-edged pixels (sharp when enlarged); zoomed in (the map editor) they stay smooth
