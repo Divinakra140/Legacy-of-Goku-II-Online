@@ -127,7 +127,21 @@ var bubbles = {}                 # player id -> [text, ticks]
 var map_open = false
 var map_pick = 0
 var ready_done = false
-var minimap_on = true
+## HUD / MINIMAP: kept in the options (OPTIONS in the menu, or OPTIONS - OPTIONS before you play)
+var minimap_on: bool:
+	get: return bool(Game.cfg.get("minimap_on", true))
+	set(v): Game.cfg["minimap_on"] = v
+var hud_on: bool:
+	get: return bool(Game.cfg.get("hud_on", true))
+	set(v): Game.cfg["hud_on"] = v
+var _hud_vs = Vector2(480, 270)     # the screen in the HUD's own (scaled) units
+## the HUD box the same size on the screen at any VIEW SIZE: at PIXELS x2 it was tiny, at x6 it covered the screen
+func _hud_scale(vs: Vector2) -> float:
+	var ws = Vector2(get_window().size)
+	if ws.x <= 0 or vs.x <= 0:
+		return 1.0
+	var kmax = maxf(1.0, minf(floorf(ws.x / 480.0), floorf(ws.y / 270.0)))      # what AUTO would use
+	return clampf(kmax * vs.x / ws.x, 0.25, 6.0)
 var preload_q = []               # areas next door, read ahead a little each tick (no wait at a way out)
 
 var touch                     # on-screen controls (phones, tablets) - scripts/touch.gd
@@ -2784,7 +2798,7 @@ func _icon_beam(c: Control, sk: Dictionary, look: String, r: Rect2, tint: Color)
 	return true
 
 func _player_hud(c: Control, L: Local, right: bool) -> void:
-	var vs = c.get_viewport_rect().size
+	var vs = _hud_vs      # (the HUD is drawn scaled: see _hud_scale)
 	var f: FighterSim = L.fighter
 	var S = 1.5      # the GBA's bars, a size up
 	var w = (HUD_LEN + 38) * S
@@ -2803,7 +2817,7 @@ func _player_hud(c: Control, L: Local, right: bool) -> void:
 
 ## a small map of the place in the corner: friends, foes, the boss, ways out
 func _minimap(c: Control, L: Local, i: int) -> void:
-	var vs = c.get_viewport_rect().size
+	var vs = _hud_vs
 	var a: Dictionary = L.area
 	if a.is_empty():
 		return
@@ -2880,13 +2894,20 @@ func _draw_hud() -> void:
 		var Lb: Local = locals[i]
 		if Lb.fighter.has_state_flag("blind"):
 			_draw_dark(c, _light_centre(i), 46.0, Color(0, 0, 0, 0.93), vs)
+	# the HUD box (bars, special, EXP, minimap, partners) at the same size on the screen whatever the VIEW SIZE
+	var hs = _hud_scale(vs)
+	var vs_real = vs
+	vs = vs / hs
+	_hud_vs = vs
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(hs, hs))
 	for i in locals.size():
-		_player_hud(c, locals[i], i == 1)
+		if hud_on:
+			_player_hud(c, locals[i], i == 1)
 		if minimap_on:
 			_minimap(c, locals[i], i)
 		# the states on you, under your bars
 		var Ls: Local = locals[i]
-		if not Ls.fighter.states.is_empty():
+		if hud_on and not Ls.fighter.states.is_empty():
 			var sx = vs.x - 182.0 if i == 1 else 6.0
 			for id in Ls.fighter.states:
 				var stt = Content.state(id)
@@ -2896,11 +2917,11 @@ func _draw_hud() -> void:
 				c.draw_rect(Rect2(sx - 1, 51, tw, 9), Color(0, 0, 0, 0.6))
 				c.draw_string(font, Vector2(sx + 2, 58), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Content.color(stt.get("color", "ffffff")))
 				sx += tw + 2
-	if locals.size() == 1:
+	if locals.size() == 1 and hud_on:
 		c.draw_string(font, Vector2(vs.x - 190, 10), Game.planet.title, HORIZONTAL_ALIGNMENT_RIGHT, 184, 8, Color(1, 0.9, 0.5))
 	# partners online
 	var py = 64 if not (minimap_on and locals.size() > 1) else 124
-	for pid in Game.remote_states:
+	for pid in (Game.remote_states if hud_on else {}):
 		var st: Dictionary = Game.remote_states[pid]
 		var where = "?"
 		var nd = int(st.get("node", -1))
@@ -2913,6 +2934,8 @@ func _draw_hud() -> void:
 		c.draw_string(font, Vector2(6, py), ptag + ("%s LV %d - %s" % [str(st.get("name", "P2")), int(st.get("lvl", 1)), where] if str(st.get("name", "")) == Assets.CHARACTERS[clampi(int(st.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)] else "%s (%s) LV %d - %s" % [str(st.get("name", "P2")), Assets.CHARACTERS[clampi(int(st.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)], int(st.get("lvl", 1)), where]), HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color(0.6, 0.9, 1))
 		_bar(c, 6, py + 2, 50, float(st.get("hp", 0)), float(st.get("maxhp", 1)), Color(0.2, 0.8, 0.9))
 		py += 14
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	vs = vs_real
 	# each player's place name, on their own part of the screen
 	for i in locals.size():
 		var L: Local = locals[i]
@@ -3103,7 +3126,7 @@ func _menu_rows(L: Local) -> Array:
 		"SAY":
 			return PHRASES
 		"OPTIONS":
-			return ["MUSIC", "SOUND", "FULLSCREEN", "VIEW SIZE", "MINIMAP", "MUSIC TEST", "SOUND TEST", "CONTROLS", "ON-SCREEN BUTTONS", "A/B BUTTONS", "QUIT TO TITLE AND SAVE GAME"]
+			return ["MUSIC", "SOUND", "FULLSCREEN", "VIEW SIZE", "HUD / MINIMAP", "MUSIC TEST", "SOUND TEST", "CONTROLS", "ON-SCREEN BUTTONS", "A/B BUTTONS", "QUIT TO TITLE AND SAVE GAME"]
 	return []
 
 func _menu_step(L: Local, raw: Dictionary) -> void:
@@ -3260,7 +3283,12 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 					Game.save_options()
 					if get_tree().root.has_node("Main"): get_tree().root.get_node("Main")._fit_view()
 				4:
-					minimap_on = not minimap_on
+					# HUD / MINIMAP: both on - no minimap - no HUD - neither
+					var st = (0 if hud_on else 2) + (0 if minimap_on else 1)
+					st = (st + 1) % 4
+					hud_on = st < 2
+					minimap_on = st % 2 == 0
+					Game.save_options()
 				5:      # the songs, one after another (A: next)
 					music_test = (music_test + 1) % MUSIC_SLOTS.size()
 					music_test_hold = 3600
@@ -3683,9 +3711,11 @@ func _draw_trade(L: Local, line: Callable) -> void:
 	line.call("LEFT/RIGHT: HOW MANY   READY: AGREE TO THE DEAL", Color(0.6, 0.65, 0.8))
 
 ## how much bigger the menu is drawn: as the screen allows (the GBA's 480 x 270 a step)
+## the START menu: the same size on the screen at any VIEW SIZE (like the HUD), and always small enough to fit -
+## at PIXELS x6 the screen is smaller than the menu and its edges were cut off
 func _menu_scale() -> float:
 	var vs = get_viewport().get_visible_rect().size
-	return maxf(1.0, floorf(minf(vs.x / 480.0, vs.y / 270.0)))
+	return clampf(minf(_hud_scale(vs), minf(vs.x / 480.0, vs.y / 270.0)), 0.25, 6.0)
 
 func _menu_rect(i: int) -> Rect2:
 	var vs = get_viewport().get_visible_rect().size / _menu_scale()
@@ -3853,7 +3883,7 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 			var vals = ["%d%%  (A: LOUDER)" % roundi(Music.volume * 100), "%d%%  (A: LOUDER)" % roundi(Sfx.volume * 100),
 				"ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF",
 				("AUTO (FILLS THE SCREEN)" if int(Game.cfg.get("view_zoom", 0)) == 0 else "PIXELS x%d" % int(Game.cfg["view_zoom"])) + "  %dx%d" % [int(get_viewport().get_visible_rect().size.x), int(get_viewport().get_visible_rect().size.y)],
-				"ON" if minimap_on else "OFF",
+				("HUD ON" if hud_on else "HUD OFF") + ", " + ("MINIMAP ON" if minimap_on else "MINIMAP OFF"),
 				("%s%s  (A: NEXT)" % [MUSIC_SLOTS[music_test].to_upper(), " - YOUR FILE" if Music.file_for(MUSIC_SLOTS[music_test]) != "" else " - BUILT-IN TUNE"]) if music_test >= 0 else "(A: PLAY THE SONGS)",
 				("SAMPLE %d  (A: NEXT)" % sound_test) if sound_test >= 0 else "(A: PLAY THE GAME'S SOUNDS)", "",
 				{"auto": "AUTO (HIDDEN WITH A PAD)", "on": "ON", "off": "OFF"}.get(str(Game.cfg.get("touch_mode", "auto")), "AUTO"),

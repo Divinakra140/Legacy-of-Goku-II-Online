@@ -20,7 +20,7 @@ var cfg = {"mode": "solo", "ip": "127.0.0.1", "character": 4, "adventure": "gato
 	"local_players": 1, "character2": 0, "name2": "PLAYER 2"}
 ## (this device's own settings - a joined game's settings never replace them: your outfits, view size, buttons, ...)
 const LOCAL_KEYS = ["character", "mode", "name", "local_players", "character2", "name2", "ip",
-	"outfit", "view_zoom", "touch_mode", "fullscreen", "pad_layout"]
+	"outfit", "view_zoom", "touch_mode", "fullscreen", "pad_layout", "hud_on", "minimap_on"]
 ## every fighter has a player id: (network peer id) * 8 + (which player on that PC, 0 or 1)
 static func pid_of(peer: int, k: int) -> int:
 	return peer * 8 + k
@@ -899,7 +899,7 @@ func toggle_fullscreen() -> void:
 func save_options() -> void:
 	var fa = FileAccess.open("user://options.json", FileAccess.WRITE)
 	if fa:
-		fa.store_string(JSON.stringify({"music": Music.volume, "sound": Sfx.volume, "view_zoom": int(cfg.get("view_zoom", 0)), "touch_mode": str(cfg.get("touch_mode", "auto")), "pad_layout": pad_layout(), "name": str(cfg.get("name", "PLAYER")), "outfit": cfg.get("outfit", {}), "fullscreen": bool(cfg.get("fullscreen", true))}))
+		fa.store_string(JSON.stringify({"music": Music.volume, "sound": Sfx.volume, "view_zoom": int(cfg.get("view_zoom", 0)), "touch_mode": str(cfg.get("touch_mode", "auto")), "pad_layout": pad_layout(), "name": str(cfg.get("name", "PLAYER")), "outfit": cfg.get("outfit", {}), "fullscreen": bool(cfg.get("fullscreen", true)), "hud_on": bool(cfg.get("hud_on", true)), "minimap_on": bool(cfg.get("minimap_on", true))}))
 		fa.close()
 
 func load_options() -> void:
@@ -916,6 +916,8 @@ func load_options() -> void:
 			if t.get("outfit") is Dictionary:
 				cfg["outfit"] = t["outfit"]
 			cfg["fullscreen"] = bool(t.get("fullscreen", true))
+			cfg["hud_on"] = bool(t.get("hud_on", true))
+			cfg["minimap_on"] = bool(t.get("minimap_on", true))
 			if t.has("pad_layout"):
 				cfg["pad_layout"] = str(t["pad_layout"])
 			var mn = get_tree().root.get_node_or_null("Main")

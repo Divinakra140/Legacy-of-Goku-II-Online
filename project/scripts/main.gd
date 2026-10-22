@@ -2556,9 +2556,11 @@ func _game_options_screen() -> void:
 		["SOUND  %d%%" % roundi(Sfx.volume * 100), func(): _opt_set(1)],
 		["VIEW SIZE  " + ("AUTO" if zoom == 0 else "PIXELS X%d" % zoom), func(): _opt_set(2)],
 		["ON-SCREEN BUTTONS  " + {"auto": "AUTO", "on": "ON", "off": "OFF"}.get(str(Game.cfg.get("touch_mode", "auto")), "AUTO"), func(): _opt_set(3)],
-		["A/B BUTTONS  " + ("NINTENDO" if Game.pad_layout() == "nintendo" else "XBOX"), func(): _opt_set(4)]]
+		["A/B BUTTONS  " + ("NINTENDO" if Game.pad_layout() == "nintendo" else "XBOX"), func(): _opt_set(4)],
+		["HUD  " + ("ON" if bool(Game.cfg.get("hud_on", true)) else "OFF"), func(): _opt_set(5)],
+		["MINIMAP  " + ("ON" if bool(Game.cfg.get("minimap_on", true)) else "OFF"), func(): _opt_set(6)]]
 	if not OS.has_feature("mobile"):
-		rows.append(["FULLSCREEN  " + ("ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF"), func(): _opt_set(5)])
+		rows.append(["FULLSCREEN  " + ("ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF"), func(): _opt_set(7)])
 	var out = _glist(rows, 30, 16, true)
 	out[clampi(_opt_row, 0, out.size() - 1)].grab_focus.call_deferred()
 	# what VIEW SIZE means, in plain numbers: your screen, and how much of the world fits on it
@@ -2592,6 +2594,10 @@ func _opt_set(row: int) -> void:
 			Game.cfg["pad_layout"] = "xbox" if Game.pad_layout() == "nintendo" else "nintendo"
 			Game.apply_pad_layout()
 		5:
+			Game.cfg["hud_on"] = not bool(Game.cfg.get("hud_on", true))
+		6:
+			Game.cfg["minimap_on"] = not bool(Game.cfg.get("minimap_on", true))
+		7:
 			Game.toggle_fullscreen()
 	Game.save_options()
 	_game_options_screen()
