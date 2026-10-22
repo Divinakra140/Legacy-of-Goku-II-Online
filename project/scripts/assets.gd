@@ -108,7 +108,7 @@ func exe_dir() -> String:
 ## Android: no folder next to the program - the game's folders (content, modpacks, imported...) come packed in
 ## the APK (res://bundle/gamedata.pack, made by tools/make_pack.py) and are unpacked into the app's own folder
 ## on the first start: [8 bytes: index length][index JSON: [{"p", "s"}...]][the files, in that order]
-const BUNDLE_VERSION = "v44-50"
+const BUNDLE_VERSION = "v44-51"
 var _android_root = ""
 func _remove_tree(path: String) -> void:
 	if not DirAccess.dir_exists_absolute(path):
@@ -1320,6 +1320,7 @@ func _read_people() -> Dictionary:
 	# 3. each person: their own lines
 	var quiet: Dictionary = cfg.get("quiet", {})
 	var set_names: Dictionary = cfg.get("names", {})
+	var looks: Dictionary = cfg.get("looks", {})
 	var over: Dictionary = cfg.get("lines", {})
 	var hide = {}
 	for h in cfg.get("hide", []):
@@ -1358,6 +1359,10 @@ func _read_people() -> Dictionary:
 				if sure and other != "" and other != own_nm and owner.has(other) and not owner[other].has(st):
 					nm = own_nm
 					mark = "-"
+			# a look that is always one person (PICCOLO's): never the name in a line beside them (HERCULE's)
+			if looks.has(str(st)):
+				nm = str(looks[str(st)])
+				mark = "-"
 			# one look can stand for several people (the same face for BILLY and FERNANDO): the first name under the mark is theirs
 			for q in ls:
 				if mark != "" and q[0] == mark and q[1] != "":

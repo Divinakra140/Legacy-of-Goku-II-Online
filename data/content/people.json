@@ -1,5 +1,5 @@
 {
-  "_help": "The people standing in the lands. Their places, looks and lines are read from your game (imported data/people.json); this file adds to them. talk_range: how near you must stand (pixels) to talk with A. heroes: names whose lines are the player's own (left out). names: a name for people of a sprite set the game never names. quiet: what people say when the game gives them nothing (by name, or 'default'). lines: replace one person's lines - key 'MAP:N' (N = their number on that map, from 0). hide: people to leave out ('MAP:N'). add: new people per map, {x, y, set, name, lines} in pixels of that map. fix_names: a name the game's text marks oddly -> the right one.",
+  "_help": "The people standing in the lands. Their places, looks and lines are read from your game (imported data/people.json); this file adds to them. talk_range: how near you must stand (pixels) to talk with A. heroes: names whose lines are the player's own (left out). names: a name for people of a sprite set the game never names. quiet: what people say when the game gives them nothing (by name, or 'default'). lines: replace one person's lines - key 'MAP:N' (N = their number on that map, from 0). hide: people to leave out ('MAP:N'). add: new people per map, {x, y, set, name, lines} in pixels of that map. fix_names: a name the game's text marks oddly -> the right one. looks: a sprite set that is always this person (a hero's look never takes the name in a line beside it).",
   "talk_range": 26,
   "heroes": [
     "GOHAN",
@@ -34,7 +34,8 @@
   "lines": {},
   "hide": [],
   "add": {},
-  "fix_names": {
+  "looks": {"103": "PICCOLO", "60": "GOKU", "137": "VEGETA", "132": "TRUNKS"},
+	"fix_names": {
     "OHAN": "GOHAN",
     "OKU": "GOKU",
     "ICCOLO": "PICCOLO",

@@ -884,7 +884,7 @@ func _start_test() -> void:
 
 func _input(ev: InputEvent) -> void:
 	# a name / world name / password board with a keyboard: just type (letters, numbers, space, Backspace, Enter = DONE)
-	if _typing.is_valid() and world == null and ev is InputEventKey and ev.pressed and not ev.ctrl_pressed and not ev.meta_pressed and not ev.alt_pressed:
+	if _typing.is_valid() and world == null and (dev == null or not is_instance_valid(dev)) and ev is InputEventKey and ev.pressed and not ev.ctrl_pressed and not ev.meta_pressed and not ev.alt_pressed:
 		var t = ""
 		if ev.keycode == KEY_BACKSPACE or ev.keycode == KEY_DELETE:
 			t = "\b"
@@ -899,7 +899,8 @@ func _input(ev: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 	# the GBA menus with a keyboard: Enter / Space / J / Z press the chosen button (the game's A)
-	if world == null and ev is InputEventKey and ev.pressed and not ev.echo and not ev.alt_pressed and ev.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_J, KEY_Z]:
+	# (not with Control / Command - Control+Z is the map editor's undo - and never in the DEV TOOLS)
+	if world == null and (dev == null or not is_instance_valid(dev)) and ev is InputEventKey and ev.pressed and not ev.echo and not ev.alt_pressed and not ev.ctrl_pressed and not ev.meta_pressed and ev.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_J, KEY_Z]:
 		var fo = get_viewport().gui_get_focus_owner()
 		if fo is BaseButton and fo.is_visible_in_tree() and not fo.disabled:
 			fo.pressed.emit()

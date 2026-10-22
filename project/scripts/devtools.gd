@@ -404,6 +404,23 @@ func save() -> void:
 	_say("Saved to mods/maps (your team's changes stay when the game is imported again)." if ok else "Could not save - is the game folder read-only?")
 
 # ------------------------------------------------------------------ input
+## undo / redo for the map first (a number box on the side - the brush size - kept Control+Z for itself, and the
+## map's undo did nothing); typing in a text field keeps its own. Command works as Control on a Mac.
+func _input(ev: InputEvent) -> void:
+	if tab != "MAP" or area.is_empty() or not (ev is InputEventKey) or not ev.pressed or ev.echo:
+		return
+	var kk: InputEventKey = ev
+	if not (kk.ctrl_pressed or kk.meta_pressed) or not (kk.keycode == KEY_Z or kk.keycode == KEY_Y):
+		return
+	var fo = get_viewport().gui_get_focus_owner()
+	if (fo is LineEdit and not fo.get_parent() is SpinBox and fo.editable) or (fo is TextEdit and fo.editable):
+		return
+	if kk.keycode == KEY_Y or kk.shift_pressed:
+		do_redo()
+	else:
+		do_undo()
+	get_viewport().set_input_as_handled()
+
 func _unhandled_input(ev: InputEvent) -> void:
 	if tab != "MAP" or area.is_empty():
 		return

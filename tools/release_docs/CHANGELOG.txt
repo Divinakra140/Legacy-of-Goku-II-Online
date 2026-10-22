@@ -18,6 +18,8 @@
 - Android: R3 opens the chat with the on-screen keyboard (Enter sends, R3 again closes).
 - Windows / Mac: names, world names and passwords can be typed on the keyboard.
 - QUIT GAME closes at once, even while a song is being recorded.
+- Map editor: Control+Z / Command+Z undo works again (the menus' keyboard select took the Z).
+- Piccolo (and Goku, Vegeta, Trunks) standing in a town keep their own name (one was called HERCULE).
 - MY OWN MUSIC: picking a song to replace works again, and the game's songs with no place of their own have their names
   (Eternal Dragon, Piccolo Theme, The Green Menace, Hercule Day Parade and more).
 
