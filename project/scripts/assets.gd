@@ -108,7 +108,7 @@ func exe_dir() -> String:
 ## Android: no folder next to the program - the game's folders (content, modpacks, imported...) come packed in
 ## the APK (res://bundle/gamedata.pack, made by tools/make_pack.py) and are unpacked into the app's own folder
 ## on the first start: [8 bytes: index length][index JSON: [{"p", "s"}...]][the files, in that order]
-const BUNDLE_VERSION = "v44-58"
+const BUNDLE_VERSION = "v44-59"
 var _android_root = ""
 func _remove_tree(path: String) -> void:
 	if not DirAccess.dir_exists_absolute(path):

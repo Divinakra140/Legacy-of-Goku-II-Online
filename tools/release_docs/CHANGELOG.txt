@@ -22,6 +22,7 @@
 - Sharper text: names over people and speech bubbles in the game, and the map editor's labels at any zoom.
 - Menus: K and Backspace go back too (like Esc and the B button).
 - Map editor: SELECT a person to change their name, look and lines (the game's own people too), then SAVE CHANGES.
+- Map editor: after placing a person, SAVE TO THE PERSON JUST PLACED gives them a new name, look or lines at once.
 - HUD on / off (OPTIONS, and HUD / MINIMAP in the START menu), remembered. The HUD box, the minimap and the START menu
   are the same size on the screen at any VIEW SIZE (tiny at PIXELS x2 and too big or cut off at x6 before).
 - Map editor: Control+Z / Command+Z undo works again, and J (go where a door leads) is never taken by a side button

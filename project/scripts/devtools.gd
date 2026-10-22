@@ -87,6 +87,8 @@ var foe_lv = 0
 var person_name = "TRAVELLER"
 var person_set = 54
 var person_lines = "Hello there!\nThe world is big."
+var last_person = {}      # the person just placed with PERSON (its name, look and lines can still be saved to it)
+var last_person_key = ""
 var person_shop = ""
 var person_event = ""
 var item_id = "senzu"
@@ -557,8 +559,11 @@ func _press(c: Vector2i, w: Vector2) -> void:
 			if person_shop != "": pd["shop"] = person_shop
 			if person_event != "": pd["event"] = person_event
 			Mods.patch(key)["people_add"].append(pd)
+			last_person = pd
+			last_person_key = key
 			_rebuild_world()
-			_say("%s placed." % person_name)
+			_refresh_side()
+			_say("%s placed. Change the name or lines on the right and press SAVE TO THE PERSON JUST PLACED, or SAVE the map." % person_name)
 		"ITEM":
 			_remember_patch()
 			Mods.patch(key)["items"].append({"x": snappedf(w.x, 1), "y": snappedf(w.y, 1), "id": item_id, "count": item_n})
@@ -879,6 +884,16 @@ func _pick_object(w: Vector2) -> Dictionary:
 
 ## SELECT on a person: their name, look and lines to change (the game's own people too: they are taken away and put
 ## back changed, on the same spot - one Ctrl+Z undoes it)
+## the person just placed with PERSON, found by their spot on the map (-1: gone, or another map)
+func _last_person_i() -> int:
+	if last_person.is_empty() or last_person_key != key:
+		return -1
+	var pa: Array = Mods.patch(key)["people_add"]
+	for i in pa.size():
+		if Vector2(float(pa[i]["x"]), float(pa[i]["y"])).distance_to(Vector2(float(last_person["x"]), float(last_person["y"]))) < 1.0:
+			return i
+	return -1
+
 func _person_editor(o: Dictionary) -> void:
 	_lab("PERSON - change and press SAVE CHANGES:")
 	var nm = _line(side, "name", str(o.get("name", "")), func(_t): pass)
@@ -1618,6 +1633,28 @@ func _refresh_side() -> void:
 			var te = TextEdit.new(); te.text = person_lines; te.custom_minimum_size = Vector2(230, 110)
 			te.text_changed.connect(func(): person_lines = te.text)
 			side.add_child(te)
+			_lab("A click on the map places them with these lines.")
+			if _last_person_i() >= 0:
+				var ab = Button.new(); ab.text = "SAVE TO THE PERSON JUST PLACED"; side.add_child(ab)
+				ab.pressed.connect(func():
+					var i = _last_person_i()
+					if i < 0:
+						return
+					_remember_patch()
+					last_person = Mods.patch(key)["people_add"][i]      # (by its spot: an undo leaves a copy in the list)
+					var lines = []
+					for l in person_lines.split("\n"):
+						if l.strip_edges() != "":
+							lines.append(["", person_name, l.strip_edges()])
+					last_person["name"] = person_name
+					last_person["set"] = person_set
+					last_person["lines"] = lines
+					if person_shop != "": last_person["shop"] = person_shop
+					else: last_person.erase("shop")
+					if person_event != "": last_person["event"] = person_event
+					else: last_person.erase("event")
+					_rebuild_world()
+					_say("%s saved with %d line(s). SAVE the map to keep it (Ctrl+Z undoes)." % [person_name, lines.size()]))
 			_preview_box()
 			_update_preview()
 		"ITEM":
