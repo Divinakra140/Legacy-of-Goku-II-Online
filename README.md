@@ -21,7 +21,7 @@ GLOBAL multiplayer together. Formerly "Legacy of Goku II - Co-op".
 
 See [CHANGELOG.md](CHANGELOG.md) for what is new.
 
-## Android specifics (from the v42 PC release)
+## Android specifics (differences from the v42 PC release)
 - Runs the game importer on Android (built with the NDK, shipped as lib/arm64-v8a/libgodot_export.so)
 - CHOOSE MY GAME uses Android's file picker
 - Game folders (content, mod packs, adventures) unpacked into the app's storage on first start
