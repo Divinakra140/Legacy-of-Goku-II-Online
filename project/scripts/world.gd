@@ -135,6 +135,7 @@ var hud_on: bool:
 	get: return bool(Game.cfg.get("hud_on", true))
 	set(v): Game.cfg["hud_on"] = v
 var _hud_vs = Vector2(480, 270)     # the screen in the HUD's own (scaled) units
+var _hs = 1.0                        # the HUD's scale while it is being drawn (1 outside it)
 ## the HUD box the same size on the screen at any VIEW SIZE: at PIXELS x2 it was tiny, at x6 it covered the screen
 func _hud_scale(vs: Vector2) -> float:
 	var ws = Vector2(get_window().size)
@@ -2809,9 +2810,11 @@ func _player_hud(c: Control, L: Local, right: bool) -> void:
 	var ready = true
 	if not sk.is_empty():
 		ready = int(f.cooldowns.get(str(sk["id"]), 0)) == 0 and f.ep >= int(sk.get("ep", 0))
-	c.draw_set_transform(Vector2(x, 4), 0.0, Vector2(S, S))
+	# (on top of the HUD's own scale: setting a plain transform here undid it - the box stayed big and the minimap,
+	# drawn after, went off the screen)
+	c.draw_set_transform(Vector2(x, 4) * _hs, 0.0, Vector2(S, S) * _hs)
 	_gba_bars(c, 0, 0, f.hp / maxf(1.0, f.maxhp), f.ep / maxf(1.0, f.maxep), clampf(float(f.exp - prev0) / maxf(1.0, float(nxt0 - prev0)), 0.0, 1.0), sk, ready, f.set_id)
-	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(_hs, _hs))
 	if locals.size() > 1:      # split screen: whose bars these are
 		c.draw_string(ThemeDB.fallback_font, Vector2(x, 4 + 24 * S + 8), "P%d" % (L.k + 1), HORIZONTAL_ALIGNMENT_LEFT, 30, 8, Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6))
 
@@ -2899,6 +2902,7 @@ func _draw_hud() -> void:
 	var vs_real = vs
 	vs = vs / hs
 	_hud_vs = vs
+	_hs = hs
 	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(hs, hs))
 	for i in locals.size():
 		if hud_on:
@@ -2935,6 +2939,7 @@ func _draw_hud() -> void:
 		_bar(c, 6, py + 2, 50, float(st.get("hp", 0)), float(st.get("maxhp", 1)), Color(0.2, 0.8, 0.9))
 		py += 14
 	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_hs = 1.0
 	vs = vs_real
 	# each player's place name, on their own part of the screen
 	for i in locals.size():
