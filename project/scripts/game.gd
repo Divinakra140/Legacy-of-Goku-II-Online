@@ -208,6 +208,7 @@ func _process(dt: float) -> void:
 			remote_states.erase(pid)
 
 func _ready() -> void:
+	saves_dir()         # (at once: the saves folder is there - and old saves moved into it - before anything is played)
 	load_options()      # (at once: the title menu asks about the music only if you have not answered before)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)

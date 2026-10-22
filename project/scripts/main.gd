@@ -2494,7 +2494,10 @@ func _export_saves() -> void:
 func _export_to(path: String) -> void:
 	var n = Game.export_saves(path)
 	if is_instance_valid(_saves_note):
-		_saves_note.text = ("EXPORTED %d SAVE FILE(S) TO %s" % [n, path]).to_upper() if n >= 0 else "COULD NOT WRITE THERE - TRY ANOTHER FOLDER"
+		var shown = path
+		if "/Android/data/" in path:
+			shown = "Android/data/" + path.split("/Android/data/")[1]      # (where it is on the phone, with a cable or a file manager)
+		_saves_note.text = ("EXPORTED %d SAVE FILE(S) TO %s" % [n, shown]).to_upper() if n >= 0 else "COULD NOT WRITE THERE - TRY ANOTHER FOLDER"
 
 func _import_saves() -> void:
 	_saves_file_dialog(false, func(path: String):
