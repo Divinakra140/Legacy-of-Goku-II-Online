@@ -19,6 +19,8 @@
 - Windows / Mac: names, world names and passwords can be typed on the keyboard (and the typing stays on that screen: it no longer
   follows you into the next screen's address or password box).
 - QUIT GAME closes at once, even while a song is being recorded.
+- Sharper text: names over people and speech bubbles in the game, and the map editor's labels at any zoom.
+- Menus: K and Backspace go back too (like Esc and the B button).
 - Map editor: Control+Z / Command+Z undo works again, and J (go where a door leads) is never taken by a side button
   clicked before (the menus' keyboard select had those keys).
 - Piccolo (and Goku, Vegeta, Trunks) standing in a town keep their own name (one was called HERCULE).

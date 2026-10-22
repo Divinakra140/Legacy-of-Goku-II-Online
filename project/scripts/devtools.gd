@@ -406,6 +406,14 @@ func save() -> void:
 # ------------------------------------------------------------------ input
 ## undo / redo for the map first (a number box on the side - the brush size - kept Control+Z for itself, and the
 ## map's undo did nothing); typing in a text field keeps its own. Command works as Control on a Mac.
+## the map's labels (names, numbers, door names) drawn at the size they really have on screen: drawn small and then
+## zoomed by the camera they came out blurry
+func _ov_text(font: Font, pos: Vector2, text: String, align: int, width: float, size: int, color: Color) -> void:
+	var z = maxf(0.05, overlay.get_global_transform_with_canvas().get_scale().x)
+	overlay.draw_set_transform(pos, 0.0, Vector2.ONE / z)
+	overlay.draw_string(font, Vector2.ZERO, text, align, width * z if width > 0 else -1.0, maxi(1, int(round(size * z))), color)
+	overlay.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
 func _input(ev: InputEvent) -> void:
 	if tab != "MAP" or area.is_empty() or not (ev is InputEventKey) or not ev.pressed or ev.echo:
 		return
@@ -413,14 +421,18 @@ func _input(ev: InputEvent) -> void:
 	var fo = get_viewport().gui_get_focus_owner()
 	# J, Z, Space and Enter also mean "press the chosen button" (the menus' A): on the map they are the map's
 	# (J: go where a door leads) - a side button clicked earlier must not take them
-	if fo is BaseButton and not (kk.ctrl_pressed or kk.meta_pressed or kk.alt_pressed) and kk.keycode in [KEY_J, KEY_Z, KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
+	# Command (Mac) counts as Control - asked several ways, as a Mac can report it differently
+	var cmd = kk.ctrl_pressed or kk.meta_pressed or kk.is_command_or_control_pressed() or Input.is_key_pressed(KEY_META) or Input.is_key_pressed(KEY_CTRL)
+	var key_z = kk.keycode == KEY_Z or kk.physical_keycode == KEY_Z
+	var key_y = kk.keycode == KEY_Y or kk.physical_keycode == KEY_Y
+	if fo is BaseButton and not cmd and not kk.alt_pressed and kk.keycode in [KEY_J, KEY_Z, KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
 		fo.release_focus()
 		return
-	if not (kk.ctrl_pressed or kk.meta_pressed) or not (kk.keycode == KEY_Z or kk.keycode == KEY_Y):
+	if not cmd or not (key_z or key_y):
 		return
 	if (fo is LineEdit and not fo.get_parent() is SpinBox and fo.editable) or (fo is TextEdit and fo.editable):
 		return
-	if kk.keycode == KEY_Y or kk.shift_pressed:
+	if key_y or kk.shift_pressed:
 		do_redo()
 	else:
 		do_undo()
@@ -993,7 +1005,7 @@ func _draw_overlay() -> void:
 				continue
 			done[nm] = true
 			var c: Vector2 = pt[0].get_center()
-			overlay.draw_string(font0, c, nm, HORIZONTAL_ALIGNMENT_CENTER, -1, fs0, Color(1, 1, 0.8))
+			_ov_text(font0, c, nm, HORIZONTAL_ALIGNMENT_CENTER, -1, fs0, Color(1, 1, 0.8))
 		var ni0 = _node_index()
 		if ni0 >= 0:
 			for ex in Game.planet.nodes[ni0]["exits"]:
@@ -1046,16 +1058,16 @@ func _draw_overlay() -> void:
 			var p = Vector2(float(f["x"]), float(f["y"]))
 			if not view.has_point(p): continue
 			overlay.draw_circle(p, 4, Color(1, 0.3, 0.2, 0.85))
-			overlay.draw_string(font, p + Vector2(5, -4), "%d" % int(f["type"]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 0.8, 0.7))
+			_ov_text(font, p + Vector2(5, -4), "%d" % int(f["type"]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 0.8, 0.7))
 		for pp in ob["people"]:
 			var p = Vector2(float(pp["x"]), float(pp["y"]))
 			if not view.has_point(p): continue
 			overlay.draw_circle(p, 4, Color(0.3, 0.6, 1, 0.9))
-			overlay.draw_string(font, p + Vector2(5, -4), str(pp.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.7, 0.85, 1))
+			_ov_text(font, p + Vector2(5, -4), str(pp.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.7, 0.85, 1))
 		for it in ob["items"]:
 			var p = Vector2(float(it["x"]), float(it["y"]))
 			overlay.draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), Color(1, 0.85, 0.2))
-			overlay.draw_string(font, p + Vector2(5, -4), str(it.get("id", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 0.9, 0.5))
+			_ov_text(font, p + Vector2(5, -4), str(it.get("id", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 0.9, 0.5))
 		for ex in ob["doors"]:
 			var r: Array = ex["rect"]
 			var rr = Rect2(float(r[0]), float(r[1]), float(r[2]) - float(r[0]), float(r[3]) - float(r[1]))
@@ -1065,7 +1077,7 @@ func _draw_overlay() -> void:
 				var arr0 = Vector2(float(ex["arrive"][0]), float(ex["arrive"][1]))
 				overlay.draw_line(rr.get_center(), arr0, Color(1, 0.9, 0.2, 0.9), 2.0 / cam.zoom.x)
 				overlay.draw_circle(arr0, 6.0 / cam.zoom.x, Color(0.3, 1, 0.4, 0.9))
-				overlay.draw_string(font, arr0 + Vector2(8, -6) / cam.zoom.x, "ARRIVES HERE", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.6, 1, 0.7))
+				_ov_text(font, arr0 + Vector2(8, -6) / cam.zoom.x, "ARRIVES HERE", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.6, 1, 0.7))
 			if not view.intersects(rr): continue
 			overlay.draw_rect(rr, Color(1, 0.9, 0.2, 0.35))
 			overlay.draw_rect(rr, Color(1, 0.9, 0.2), false, 1.0 / cam.zoom.x)
@@ -1074,7 +1086,7 @@ func _draw_overlay() -> void:
 				if view.has_point(arr) or (selected.get("obj") == ex):
 					overlay.draw_line(rr.get_center(), arr, Color(1, 0.9, 0.2, 0.6), 1.0 / cam.zoom.x)
 			else:
-				overlay.draw_string(font, rr.position + Vector2(0, -2), "TO " + str(Game.planet.nodes[int(ex["to"])]["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 0.95, 0.6))
+				_ov_text(font, rr.position + Vector2(0, -2), "TO " + str(Game.planet.nodes[int(ex["to"])]["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 0.95, 0.6))
 	if not selected.is_empty():
 		var o: Dictionary = selected["obj"]
 		if o.has("rect"):
@@ -1097,13 +1109,13 @@ func _draw_overlay() -> void:
 			var rr = Rect2(float(r[0]), float(r[1]), float(r[2]) - float(r[0]), float(r[3]) - float(r[1]))
 			overlay.draw_rect(rr, Color(1, 0.3, 0.2, 0.12))
 			overlay.draw_rect(rr, Color(1, 0.35, 0.25), false, 1.0 / cam.zoom.x)
-			overlay.draw_string(ThemeDB.fallback_font, rr.position + Vector2(2, 8 / cam.zoom.x + 2), "FOES %s x%d" % [str(z.get("kinds", [])), int(z.get("count", 0))], HORIZONTAL_ALIGNMENT_LEFT, -1, int(clampf(8.0 / cam.zoom.x, 6, 24)), Color(1, 0.7, 0.6))
+			_ov_text(ThemeDB.fallback_font, rr.position + Vector2(2, 8 / cam.zoom.x + 2), "FOES %s x%d" % [str(z.get("kinds", [])), int(z.get("count", 0))], HORIZONTAL_ALIGNMENT_LEFT, -1, int(clampf(8.0 / cam.zoom.x, 6, 24)), Color(1, 0.7, 0.6))
 		for t in mp["triggers"]:
 			var r: Array = t["rect"]
 			var rr = Rect2(float(r[0]), float(r[1]), float(r[2]) - float(r[0]), float(r[3]) - float(r[1]))
 			overlay.draw_rect(rr, Color(0.8, 0.4, 1, 0.15))
 			overlay.draw_rect(rr, Color(0.85, 0.5, 1), false, 1.0 / cam.zoom.x)
-			overlay.draw_string(ThemeDB.fallback_font, rr.position + Vector2(2, 8 / cam.zoom.x + 2), "EVENT " + str(t.get("event", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, int(clampf(8.0 / cam.zoom.x, 6, 24)), Color(0.9, 0.75, 1))
+			_ov_text(ThemeDB.fallback_font, rr.position + Vector2(2, 8 / cam.zoom.x + 2), "EVENT " + str(t.get("event", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, int(clampf(8.0 / cam.zoom.x, 6, 24)), Color(0.9, 0.75, 1))
 		for md in mp["moods"]:
 			var r: Array = md["rect"]
 			var rr = Rect2(float(r[0]), float(r[1]), float(r[2]) - float(r[0]), float(r[3]) - float(r[1]))
@@ -1113,7 +1125,7 @@ func _draw_overlay() -> void:
 			if float(md.get("dark", 0)) > 0: mt += " DARK"
 			if str(md.get("weather", "")) != "": mt += " " + str(md["weather"]).to_upper()
 			if str(md.get("music", "")) != "": mt += " MUSIC " + str(md["music"]).to_upper()
-			overlay.draw_string(ThemeDB.fallback_font, rr.position + Vector2(2, 8 / cam.zoom.x + 2), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, int(clampf(8.0 / cam.zoom.x, 6, 24)), Color(0.7, 0.8, 1))
+			_ov_text(ThemeDB.fallback_font, rr.position + Vector2(2, 8 / cam.zoom.x + 2), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, int(clampf(8.0 / cam.zoom.x, 6, 24)), Color(0.7, 0.8, 1))
 	if tool == "THINGS" and stamp_i >= 0 and stamp_i < stamps.size() and mouse_cell.x >= 0:
 		overlay.draw_rect(Rect2(Vector2(mouse_cell) * 8.0, Vector2(int(stamps[stamp_i]["w"]), int(stamps[stamp_i]["h"])) * 8.0), Color(0.4, 1, 0.6), false, 1.0 / cam.zoom.x)
 	if dragging and tool in ["COPY", "FILL", "DOOR", "ZONE", "EVENT", "MOOD"] and drag_from.x >= 0:

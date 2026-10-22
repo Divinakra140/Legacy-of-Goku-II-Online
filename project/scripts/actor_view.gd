@@ -96,21 +96,45 @@ func _draw() -> void:
 					continue
 				var p = mid + spots[i] * bb.size * size_scale
 				draw_texture_rect_region(fx["tex"], Rect2(p - Vector2(float(sf["ox"]), float(sf["oy"])), Vector2(sf["w"], sf["h"])), Rect2(fi * int(fx["cell"]), 0, sf["w"], sf["h"]))
+	# names and speech drawn at their real size on screen (drawn at 8 pixels and then zoomed, they were blurry)
+	var z = maxf(0.05, get_global_transform_with_canvas().get_scale().x)
 	if label != "":
-		var font = ThemeDB.fallback_font
-		draw_string_outline(font, Vector2(-70, (f["y"] - 4) * size_scale), label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, 2, Color(0, 0, 0, 0.7))
-		draw_string(font, Vector2(-70, (f["y"] - 4) * size_scale), label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, label_color)
+		var font = _text_font(z)
+		draw_set_transform(Vector2(-70, (f["y"] - 4) * size_scale), 0.0, Vector2.ONE / z)
+		draw_string_outline(font, Vector2.ZERO, label, HORIZONTAL_ALIGNMENT_CENTER, 140 * z, int(round(8 * z)), maxi(1, int(round(2 * z))), Color(0, 0, 0, 0.7))
+		draw_string(font, Vector2.ZERO, label, HORIZONTAL_ALIGNMENT_CENTER, 140 * z, int(round(8 * z)), label_color)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	var top = f["y"] * size_scale - (12 if label != "" else 2)
 	if hp_frac < 0.999 and hp_frac > 0.0:
 		draw_rect(Rect2(-11, top - 3, 22, 4), Color(0, 0, 0, 0.75))
 		draw_rect(Rect2(-10, top - 2, 20 * hp_frac, 2), Color(0.95, 0.25, 0.2) if hp_frac < 0.35 else Color(0.95, 0.8, 0.2))
 		top -= 5
 	if bubble != "":
-		var font2 = ThemeDB.fallback_font
+		var font2 = _text_font(z)
 		var w = minf(160.0, font2.get_string_size(bubble, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x + 8)
 		draw_rect(Rect2(-w / 2, top - 14, w, 12), Color(1, 1, 1, 0.92))
 		draw_rect(Rect2(-w / 2, top - 14, w, 12), Color(0, 0, 0, 0.9), false, 1.0)
-		draw_string(font2, Vector2(-w / 2 + 4, top - 5), bubble, HORIZONTAL_ALIGNMENT_LEFT, w - 6, 8, Color(0.05, 0.05, 0.1))
+		draw_set_transform(Vector2(-w / 2 + 4, top - 5), 0.0, Vector2.ONE / z)
+		draw_string(font2, Vector2.ZERO, bubble, HORIZONTAL_ALIGNMENT_LEFT, (w - 6) * z, int(round(8 * z)), Color(0.05, 0.05, 0.1))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+## in the game the world is drawn at the GBA's size and then enlarged: soft-edged 8-pixel letters came out as blurry
+## blocks, so there the letters are hard-edged pixels (sharp when enlarged); zoomed in (the map editor) they stay smooth
+static var _hard_font: Font
+func _text_font(z: float) -> Font:
+	if z > 1.5:
+		return ThemeDB.fallback_font
+	if _hard_font == null:
+		var f = ThemeDB.fallback_font
+		if f is FontFile:
+			var h: FontFile = f.duplicate()
+			h.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+			h.hinting = TextServer.HINTING_NORMAL
+			h.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+			_hard_font = h
+		else:
+			_hard_font = f
+	return _hard_font
 
 ## the part of a frame that has pixels (cached per sprite set image)
 static var _boxes = {}

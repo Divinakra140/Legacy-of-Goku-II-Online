@@ -883,6 +883,20 @@ func _start_test() -> void:
 	else:
 		Game.begin()
 
+## a keyboard "back" in the menus: Esc, or K / Backspace (the B button, as in the game) - not while typing
+## (a letter board or a text box keeps K and Backspace), and never in the DEV TOOLS
+func _back_key(ev: InputEvent) -> bool:
+	if not (ev is InputEventKey) or not ev.pressed or ev.echo:
+		return false
+	if ev.keycode == KEY_ESCAPE:
+		return true
+	if not (ev.keycode == KEY_K or ev.keycode == KEY_BACKSPACE) or ev.ctrl_pressed or ev.meta_pressed or ev.alt_pressed:
+		return false
+	if world != null or _typing.is_valid() or (dev != null and is_instance_valid(dev)):
+		return false
+	var fo = get_viewport().gui_get_focus_owner()
+	return not (fo is LineEdit or fo is TextEdit)
+
 func _input(ev: InputEvent) -> void:
 	# a name / world name / password board with a keyboard: just type (letters, numbers, space, Backspace, Enter = DONE)
 	if _typing.is_valid() and world == null and (dev == null or not is_instance_valid(dev)) and ev is InputEventKey and ev.pressed and not ev.ctrl_pressed and not ev.meta_pressed and not ev.alt_pressed:
@@ -931,17 +945,17 @@ func _input(ev: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 	# GLOBAL MULTIPLAYER screens: B (or ESC) goes back
-	if _global_back.is_valid() and ui != null and is_instance_valid(ui) and ((ev is InputEventJoypadButton and ev.pressed and ev.button_index == Game.pad_btn("b")) or (ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_ESCAPE)):
+	if _global_back.is_valid() and ui != null and is_instance_valid(ui) and ((ev is InputEventJoypadButton and ev.pressed and ev.button_index == Game.pad_btn("b")) or _back_key(ev)):
 		get_viewport().set_input_as_handled()
 		_global_back.call()
 		return
 	# LOCAL MULTIPLAYER / JOIN GAME: B (or ESC) goes back
-	if in_local_mp and ui != null and is_instance_valid(ui) and ((ev is InputEventJoypadButton and ev.pressed and ev.button_index == Game.pad_btn("b")) or (ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_ESCAPE)):
+	if in_local_mp and ui != null and is_instance_valid(ui) and ((ev is InputEventJoypadButton and ev.pressed and ev.button_index == Game.pad_btn("b")) or _back_key(ev)):
 		get_viewport().set_input_as_handled()
 		in_local_mp = false
 		_mp_choice()
 		return
-	if finding and ui != null and is_instance_valid(ui) and ((ev is InputEventJoypadButton and ev.pressed and ev.button_index == Game.pad_btn("b")) or (ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_ESCAPE)):
+	if finding and ui != null and is_instance_valid(ui) and ((ev is InputEventJoypadButton and ev.pressed and ev.button_index == Game.pad_btn("b")) or _back_key(ev)):
 		get_viewport().set_input_as_handled()
 		_leave_find()
 		return
