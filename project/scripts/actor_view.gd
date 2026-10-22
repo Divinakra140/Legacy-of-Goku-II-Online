@@ -122,7 +122,9 @@ func _draw() -> void:
 ## blocks, so there the letters are hard-edged pixels (sharp when enlarged); zoomed in (the map editor) they stay smooth
 static var _hard_font: Font
 func _text_font(z: float) -> Font:
-	if z > 1.5:
+	# (in the game's own picture - a SubViewport at the GBA's size - always the hard letters: a bigger hero is drawn
+	# scaled up, and by the zoom alone its name (other players' names) got the soft letters and came out blurry)
+	if z > 1.5 and not (get_viewport() is SubViewport):
 		return ThemeDB.fallback_font
 	if _hard_font == null:
 		var f = ThemeDB.fallback_font

@@ -593,6 +593,11 @@ func step(inp: Dictionary, enemies: Array) -> void:
 	if state == "down":
 		down_t -= 1
 		_animate([30, 30, 30, 30], false)
+		# the fall plays once and stays on its last frame (lying there) until a friend helps you up or the time runs out
+		# (the frame went on counting and the picture wrapped round: the fall played again and again)
+		var dn = _frame_count(anim)
+		if dn > 0:
+			frame = mini(frame, dn - 1)
 		return
 	if state == "hurt":
 		_animate([4, 4, 4, 4], false)
@@ -884,6 +889,11 @@ func _step_shots(enemies: Array) -> void:
 				s["w"] = minf(float(s["w0"]), float(s["w"]) + float(s["w0"]) * 0.08)
 			elif s["hold"] > 0:
 				# held: the beam stays as long as the button is held and there is ki to feed it (a point every third of a second)
+				# (hit, knocked out or moved out of the pose: it ends at once - it went on from where it was fired, emptying the ki)
+				var posing = state == "skill" and knock_t <= 0
+				if not posing and s.get("feeding", true):
+					s["feeding"] = false
+					s["hold"] = mini(int(s["hold"]), 1)
 				if sp_held and ep > 0 and s.get("feeding", true):
 					s["hold"] = maxi(int(s["hold"]), 9)
 					s["fed"] = int(s.get("fed", 0)) + 1
