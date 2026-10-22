@@ -33,6 +33,10 @@
 - A held beam stops at once when you are hit or knocked out (it went on from where it was fired, emptying your ki).
 - All the words in the game - names, speech bubbles, the HUD, messages, the START menu - in the cartridge's own
   pixel font, sharp on every screen (they were a modern font, blurry or broken on handhelds).
+- The START menu's words keep their size in the menu at every VIEW SIZE, and long lines go on under themselves.
+  OPTIONS - SHOW CONTROLS shows the keys and buttons (the CONTROLS row did nothing).
+- WORDS ON SCREEN (OPTIONS, and the START menu): off hides the names, the other players' lines, ONLINE, place names
+  and messages, for a quieter screen; speech and chat stay.
 - OPTIONS - SAVE FILES: EXPORT SAVE FILE and IMPORT SAVE FILE (all your heroes in one file - take a PC's heroes to a
   handheld and back).
 - HUD on / off (OPTIONS, and HUD / MINIMAP in the START menu), remembered. The HUD box, the minimap and the START menu

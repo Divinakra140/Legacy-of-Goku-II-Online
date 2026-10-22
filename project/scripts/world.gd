@@ -131,6 +131,12 @@ var ready_done = false
 var minimap_on: bool:
 	get: return bool(Game.cfg.get("minimap_on", true))
 	set(v): Game.cfg["minimap_on"] = v
+var show_controls = false     # START - OPTIONS - SHOW CONTROLS: the keys and buttons, under the options
+## WORDS ON SCREEN (OPTIONS): off hides the game's words - names over heads, the other players' lines, ONLINE,
+## place names, messages - for a quieter screen; speech, chat and the menus stay
+var words_on: bool:
+	get: return bool(Game.cfg.get("words_on", true))
+	set(v): Game.cfg["words_on"] = v
 var hud_on: bool:
 	get: return bool(Game.cfg.get("hud_on", true))
 	set(v): Game.cfg["hud_on"] = v
@@ -2925,8 +2931,10 @@ func _pf_game_px() -> float:
 
 ## the drawing units for one font pixel: frac of a game pixel, rounded to whole screen pixels (crisp)
 func _pf_unit(frac: float) -> float:
-	var g = _pf_game_px()
-	return maxf(1.0, roundf(g * frac)) / (g * _txt_scale)
+	# (in proportion to what it is drawn in - the START menu, the HUD box - which grow and shrink with VIEW SIZE:
+	# kept the same on the screen, the words were tiny at x2 and ran out of the menu at x6)
+	var g = _pf_game_px() * _txt_scale
+	return maxf(1.0, roundf(g * frac)) / g
 
 func _pf_width(t: String, u: float) -> float:
 	var w = 0.0
@@ -2953,6 +2961,25 @@ func _pf_draw(c: Control, pos: Vector2, t: String, col: Color, u: float, edge: b
 			if ch != " ":
 				c.draw_texture_rect_region(_pf_tex, Rect2(Vector2(x, y0) + pp[0], Vector2(gw, _pf_h) * u), Rect2(float(gl[0]), _pf_top, gw, _pf_h), pp[1])
 			x += (gw + 1.0) * u
+
+## a line that is too long for the room it has, cut into lines at spaces (the START menu's controls ran off the menu)
+func _wrap_line(t: String, room: float, size: int) -> Array:
+	var u = _pf_unit(2.0 if size >= 14 else 0.75) if _pf_ok() else 0.0
+	var wf = func(x: String) -> float: return _pf_width(x, u) if _pf_ok() else ThemeDB.fallback_font.get_string_size(x, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	if room <= 0 or wf.call(t) <= room:
+		return [t]
+	var out = []
+	var cur = ""
+	for w in t.split(" "):
+		var nxt = w if cur == "" else cur + " " + w
+		if cur != "" and wf.call(nxt) > room:
+			out.append(cur)
+			cur = w
+		else:
+			cur = nxt
+	if cur != "":
+		out.append(cur)
+	return out
 
 ## draw_string's stand-in (same arguments): pos is the baseline, as with a font
 func _ds(c: Control, font: Font, pos: Vector2, t: String, align: int = HORIZONTAL_ALIGNMENT_LEFT, width: float = -1.0, size: int = 16, col: Color = Color.WHITE) -> void:
@@ -2989,7 +3016,7 @@ func _draw_names(c: Control) -> void:
 			continue
 		var gt: Transform2D = ct * v.get_global_transform()
 		var a = v.modulate.a
-		if v.label != "":
+		if v.label != "" and words_on:
 			var p = gt * Vector2(0, v.label_y)
 			_dso(c, font, Vector2(p.x - 70, p.y), v.label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, 2, Color(0, 0, 0, 0.7 * a))
 			_ds(c, font, Vector2(p.x - 70, p.y), v.label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, Color(v.label_color, v.label_color.a * a))
@@ -3051,11 +3078,11 @@ func _draw_hud() -> void:
 				c.draw_rect(Rect2(sx - 1, 51, tw, 9), Color(0, 0, 0, 0.6))
 				_ds(c, font, Vector2(sx + 2, 58), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Content.color(stt.get("color", "ffffff")))
 				sx += tw + 2
-	if locals.size() == 1 and hud_on:
+	if locals.size() == 1 and hud_on and words_on:
 		_ds(c, font, Vector2(vs.x - 190, 10), Game.planet.title, HORIZONTAL_ALIGNMENT_RIGHT, 184, 8, Color(1, 0.9, 0.5))
 	# partners online
 	var py = 64 if not (minimap_on and locals.size() > 1) else 124
-	for pid in (Game.remote_states if hud_on else {}):
+	for pid in (Game.remote_states if hud_on and words_on else {}):
 		var st: Dictionary = Game.remote_states[pid]
 		var where = "?"
 		var nd = int(st.get("node", -1))
@@ -3075,7 +3102,7 @@ func _draw_hud() -> void:
 	# each player's place name, on their own part of the screen
 	for i in locals.size():
 		var L: Local = locals[i]
-		if L.banner_t > 0:
+		if L.banner_t > 0 and words_on:
 			var sc = _side_centre(i)
 			var bx = clampf(sc.x, 112, vs.x - 112)
 			var by = 72.0 if not split_now else clampf(sc.y - 70, 72, vs.y - 60)
@@ -3094,7 +3121,7 @@ func _draw_hud() -> void:
 			_dso(c, font, Vector2(sc2.x - 100, yy), txt, HORIZONTAL_ALIGNMENT_CENTER, 200, big, 3, Color(0, 0, 0, 0.8))
 			_ds(c, font, Vector2(sc2.x - 100, yy), txt, HORIZONTAL_ALIGNMENT_CENTER, 200, big, Color(1, 0.55, 0.35))
 	var ty = vs.y - 14
-	for i in range(toasts.size() - 1, -1, -1):
+	for i in (range(toasts.size() - 1, -1, -1) if words_on else []):
 		var t = toasts[i]
 		_dso(c, font, Vector2(0, ty), t[0], HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, 3, Color(0, 0, 0, 0.8))
 		_ds(c, font, Vector2(0, ty), t[0], HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, t[1])
@@ -3105,7 +3132,7 @@ func _draw_hud() -> void:
 		_dso(c, font, Vector2(6, cy), cl[0], HORIZONTAL_ALIGNMENT_LEFT, 300, 7, 3, Color(0, 0, 0, 0.8))
 		_ds(c, font, Vector2(6, cy), cl[0], HORIZONTAL_ALIGNMENT_LEFT, 300, 7, cl[1])
 		cy -= 9
-	if Game.cfg["mode"] != "solo" or not Game.remote_states.is_empty():
+	if (Game.cfg["mode"] != "solo" or not Game.remote_states.is_empty()) and words_on:
 		var online = 1 + Game.remote_states.size()
 		var tag = "ONLINE - %d IN THE WORLD" % (online + locals.size() - 1)
 		if Game.reconnect_tries > 0:
@@ -3263,7 +3290,7 @@ func _menu_rows(L: Local) -> Array:
 		"SAY":
 			return PHRASES
 		"OPTIONS":
-			return ["MUSIC", "SOUND", "FULLSCREEN", "VIEW SIZE", "HUD / MINIMAP", "MUSIC TEST", "SOUND TEST", "CONTROLS", "ON-SCREEN BUTTONS", "A/B BUTTONS", "QUIT TO TITLE AND SAVE GAME"]
+			return ["MUSIC", "SOUND", "FULLSCREEN", "VIEW SIZE", "HUD / MINIMAP", "MUSIC TEST", "SOUND TEST", "SHOW CONTROLS", "ON-SCREEN BUTTONS", "A/B BUTTONS", "WORDS ON SCREEN", "QUIT TO TITLE AND SAVE GAME"]
 	return []
 
 func _menu_step(L: Local, raw: Dictionary) -> void:
@@ -3445,7 +3472,12 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 					Game.cfg["pad_layout"] = "xbox" if Game.pad_layout() == "nintendo" else "nintendo"
 					Game.save_options()
 					Game.apply_pad_layout()
+				7:
+					show_controls = not show_controls
 				10:
+					words_on = not words_on
+					Game.save_options()
+				11:
 					_option_pick_quit()
 
 ## QUIT TO TITLE AND SAVE GAME: everything saved, back to the start menu (the app stays open)
@@ -3899,8 +3931,9 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 			menu_hits[i]["rows"].append([Rect2(x0 - 3, Y[0] - 8, W + 6, 10), ri])
 		if sel:
 			c.draw_rect(Rect2(x0 - 3, Y[0] - 8, W + 6, 10), Color(1, 1, 1, 0.12))
-		_ds(c, font, Vector2(x0, Y[0]), t, HORIZONTAL_ALIGNMENT_LEFT, W, size, col)
-		Y[0] += 10
+		for part in _wrap_line(t, W, size):      # (a long line goes on under itself, inside the menu)
+			_ds(c, font, Vector2(x0, Y[0]), part, HORIZONTAL_ALIGNMENT_LEFT, W, size, col)
+			Y[0] += 10
 	match tab:
 		"STATUS":
 			line.call("%s   LEVEL %d   EXP %d" % [f.name, f.level, f.exp], Color(1, 0.9, 0.5), false, 8)
@@ -4024,14 +4057,16 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 				("AUTO (FILLS THE SCREEN)" if int(Game.cfg.get("view_zoom", 0)) == 0 else "PIXELS x%d" % int(Game.cfg["view_zoom"])) + "  %dx%d" % [int(get_viewport().get_visible_rect().size.x), int(get_viewport().get_visible_rect().size.y)],
 				("HUD ON" if hud_on else "HUD OFF") + ", " + ("MINIMAP ON" if minimap_on else "MINIMAP OFF"),
 				("%s%s  (A: NEXT)" % [MUSIC_SLOTS[music_test].to_upper(), " - YOUR FILE" if Music.file_for(MUSIC_SLOTS[music_test]) != "" else " - BUILT-IN TUNE"]) if music_test >= 0 else "(A: PLAY THE SONGS)",
-				("SAMPLE %d  (A: NEXT)" % sound_test) if sound_test >= 0 else "(A: PLAY THE GAME'S SOUNDS)", "",
+				("SAMPLE %d  (A: NEXT)" % sound_test) if sound_test >= 0 else "(A: PLAY THE GAME'S SOUNDS)", "ON" if show_controls else "OFF",
 				{"auto": "AUTO (HIDDEN WITH A PAD)", "on": "ON", "off": "OFF"}.get(str(Game.cfg.get("touch_mode", "auto")), "AUTO"),
-				"NINTENDO / RETROID (A ON THE RIGHT)" if Game.pad_layout() == "nintendo" else "XBOX (A AT THE BOTTOM)", ""]
+				"NINTENDO / RETROID (A ON THE RIGHT)" if Game.pad_layout() == "nintendo" else "XBOX (A AT THE BOTTOM)",
+				"ON" if words_on else "OFF  (ONLY SPEECH AND CHAT)", ""]
 			for j in rows.size():
 				line.call("%s   %s" % [rows[j], vals[j]], Color(1, 1, 1), j == row, 7, j)
 			Y[0] += 4
-			for t in _controls_text(L):
-				line.call(t, Color(0.7, 0.75, 0.9))
+			if show_controls:
+				for t in _controls_text(L):
+					line.call(t, Color(0.7, 0.75, 0.9))
 	_ds(c, font, Vector2(r.position.x, r.end.y - 4), "LEFT/RIGHT: PAGE   UP/DOWN: CHOOSE   A: OK   B / MENU: BACK", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 6, Color(0.55, 0.6, 0.75))
 
 func _controls_text(L: Local) -> Array:

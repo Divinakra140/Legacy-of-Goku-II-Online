@@ -2619,9 +2619,10 @@ func _game_options_screen() -> void:
 		["ON-SCREEN BUTTONS  " + {"auto": "AUTO", "on": "ON", "off": "OFF"}.get(str(Game.cfg.get("touch_mode", "auto")), "AUTO"), func(): _opt_set(3)],
 		["A/B BUTTONS  " + ("NINTENDO" if Game.pad_layout() == "nintendo" else "XBOX"), func(): _opt_set(4)],
 		["HUD  " + ("ON" if bool(Game.cfg.get("hud_on", true)) else "OFF"), func(): _opt_set(5)],
-		["MINIMAP  " + ("ON" if bool(Game.cfg.get("minimap_on", true)) else "OFF"), func(): _opt_set(6)]]
+		["MINIMAP  " + ("ON" if bool(Game.cfg.get("minimap_on", true)) else "OFF"), func(): _opt_set(6)],
+		["WORDS ON SCREEN  " + ("ON" if bool(Game.cfg.get("words_on", true)) else "OFF"), func(): _opt_set(7)]]
 	if not OS.has_feature("mobile"):
-		rows.append(["FULLSCREEN  " + ("ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF"), func(): _opt_set(7)])
+		rows.append(["FULLSCREEN  " + ("ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF"), func(): _opt_set(8)])
 	var out = _glist(rows, 30, 16, true)
 	out[clampi(_opt_row, 0, out.size() - 1)].grab_focus.call_deferred()
 	# what VIEW SIZE means, in plain numbers: your screen, and how much of the world fits on it
@@ -2659,6 +2660,8 @@ func _opt_set(row: int) -> void:
 		6:
 			Game.cfg["minimap_on"] = not bool(Game.cfg.get("minimap_on", true))
 		7:
+			Game.cfg["words_on"] = not bool(Game.cfg.get("words_on", true))
+		8:
 			Game.toggle_fullscreen()
 	Game.save_options()
 	_game_options_screen()
