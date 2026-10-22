@@ -12,8 +12,8 @@
 
 ### Multiplayer fixes
 - A player whose connection blinks now rejoins the same host (before, they were moved into a world of their own).
-- Joining right after opening the game on a PC or Mac: it waits for the network link (with a count) before it
-  tries, instead of giving up after six quick tries.
+- A PC or Mac joining a handheld's game connects at once (the game knocked on the helper's door before it was
+  open, and every try failed). The PC / Mac helper writes bridge.log (in the game's zerotier folder).
 - PC / Mac hosts no longer drop a player every minute or so when two or more join (the helper mixed up connections).
 - Windows: the multiplayer helper is waited for on a slow PC (no more "the multiplayer helper stopped").
 - Joining a game keeps your own outfits, view size, buttons and settings (it took the host's).
@@ -31,8 +31,8 @@
   saves already on the device are moved there the first time.
 - Knocked out: the fall plays once and you lie still until a friend helps you up (it played again and again).
 - A held beam stops at once when you are hit or knocked out (it went on from where it was fired, emptying your ki).
-- Names over people and speech bubbles are drawn at the screen's full sharpness (on handhelds they were blurry
-  or broken).
+- All the words in the game - names, speech bubbles, the HUD, messages, the START menu - in the cartridge's own
+  pixel font, sharp on every screen (they were a modern font, blurry or broken on handhelds).
 - OPTIONS - SAVE FILES: EXPORT SAVE FILE and IMPORT SAVE FILE (all your heroes in one file - take a PC's heroes to a
   handheld and back).
 - HUD on / off (OPTIONS, and HUD / MINIMAP in the START menu), remembered. The HUD box, the minimap and the START menu

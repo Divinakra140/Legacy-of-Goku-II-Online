@@ -141,6 +141,9 @@ class DesktopBridge extends RefCounted:
 	func connectOpen(address: String, port: int) -> int:
 		var lp = 49000 + randi() % 4000
 		_say("CONNECT %s %d %d" % [address, port, lp])
+		# the helper opens that local port a moment after it reads this (1-2 ms in its log): the game connected first,
+		# was refused, and every try failed (a PC joining said it could not connect, 6 of 6). A short wait first.
+		OS.delay_msec(300)
 		return lp
 	func connectClose() -> void:
 		_say("CONNECTCLOSE")

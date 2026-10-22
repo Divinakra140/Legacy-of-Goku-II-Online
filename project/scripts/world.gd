@@ -1251,10 +1251,10 @@ func _draw_talk(c: Control, L: Local, i: int) -> void:
 	var y = vs.y - h - 8 - 11 * toasts.size()
 	c.draw_rect(Rect2(x, y, w, h), Color(0.03, 0.04, 0.12, 0.88))
 	c.draw_rect(Rect2(x, y, w, h), Color(0.95, 0.85, 0.5, 0.9), false, 1.0)
-	c.draw_string(font, Vector2(x + 6, y + 10), who, HORIZONTAL_ALIGNMENT_LEFT, w - 12, 8, Color(1, 0.85, 0.35))
+	_ds(c, font, Vector2(x + 6, y + 10), who, HORIZONTAL_ALIGNMENT_LEFT, w - 12, 8, Color(1, 0.85, 0.35))
 	c.draw_multiline_string(font, Vector2(x + 6, y + 20), t, HORIZONTAL_ALIGNMENT_LEFT, w - 12, 8, 3, Color(1, 1, 1))
 	var more = "A: MORE" if int(L.talk["line"]) < lines.size() - 1 else "A: BYE"
-	c.draw_string(font, Vector2(x + 6, y + h - 3), more, HORIZONTAL_ALIGNMENT_RIGHT, w - 12, 6, Color(0.7, 0.8, 1))
+	_ds(c, font, Vector2(x + 6, y + h - 3), more, HORIZONTAL_ALIGNMENT_RIGHT, w - 12, 6, Color(0.7, 0.8, 1))
 
 func _update_view(av: AreaView) -> void:
 	_update_people(av)
@@ -1872,7 +1872,7 @@ func _draw_map(c: Control) -> void:
 	var vs = c.get_viewport_rect().size
 	var nodes: Array = Game.planet.nodes
 	c.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.02, 0.03, 0.08, 0.88))
-	c.draw_string(font, Vector2(0, 16), Game.planet.title + " - THE WORLD", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 10, Color(1, 0.85, 0.3))
+	_ds(c, font, Vector2(0, 16), Game.planet.title + " - THE WORLD", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 10, Color(1, 0.85, 0.3))
 	var mn = Vector2(1e9, 1e9)
 	var mx = Vector2(-1e9, -1e9)
 	for n in nodes:
@@ -1902,7 +1902,7 @@ func _draw_map(c: Control) -> void:
 		var half = Vector2(cell * 0.36, cell * 0.24)
 		c.draw_rect(Rect2(p - half, half * 2), col)
 		c.draw_rect(Rect2(p - half, half * 2), Color(0.8, 0.85, 1, 0.6), false, 1.0)
-		c.draw_string(font, p + Vector2(-cell / 2, -half.y - 2), str(nodes[i]["name"]), HORIZONTAL_ALIGNMENT_CENTER, cell, 6, Color(0.85, 0.9, 1))
+		_ds(c, font, p + Vector2(-cell / 2, -half.y - 2), str(nodes[i]["name"]), HORIZONTAL_ALIGNMENT_CENTER, cell, 6, Color(0.85, 0.9, 1))
 	# who is where
 	var dots = {}
 	for L in locals:
@@ -1925,15 +1925,15 @@ func _draw_map(c: Control) -> void:
 	var y = vs.y - 46
 	var tg = _map_targets()
 	if tg.is_empty():
-		c.draw_string(font, Vector2(0, y), "NOWHERE ELSE TO GO", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, Color(0.8, 0.8, 0.9))
+		_ds(c, font, Vector2(0, y), "NOWHERE ELSE TO GO", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, Color(0.8, 0.8, 0.9))
 	else:
 		var t = tg[clampi(map_pick, 0, tg.size() - 1)]
 		var what = ("FLY TO " + str(t[0])) if t.size() > 3 else "GO TO %s  (%s)" % [t[0], nodes[int(t[1])]["name"]]
-		c.draw_string(font, Vector2(0, y), "<  %s  >" % what, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 9, Color(0.6, 1, 0.8))
+		_ds(c, font, Vector2(0, y), "<  %s  >" % what, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 9, Color(0.6, 1, 0.8))
 		var tp: Vector2 = pos_of.call(int(t[1]))
 		c.draw_arc(tp, cell * 0.45, 0, TAU, 20, Color(1, 1, 0.4), 1.5)
-		c.draw_string(font, Vector2(0, y + 12), "LEFT / RIGHT: FRIENDS AND PLACES    ENTER / A: TRAVEL THERE", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 7, Color(0.75, 0.8, 0.9))
-	c.draw_string(font, Vector2(0, vs.y - 18), "TAB / M / ESC: CLOSE", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 7, Color(0.6, 0.6, 0.7))
+		_ds(c, font, Vector2(0, y + 12), "LEFT / RIGHT: FRIENDS AND PLACES    ENTER / A: TRAVEL THERE", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 7, Color(0.75, 0.8, 0.9))
+	_ds(c, font, Vector2(0, vs.y - 18), "TAB / M / ESC: CLOSE", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 7, Color(0.6, 0.6, 0.7))
 
 func _on_victory(t: String) -> void:
 	victory_t = 900
@@ -2831,7 +2831,7 @@ func _player_hud(c: Control, L: Local, right: bool) -> void:
 	_gba_bars(c, 0, 0, f.hp / maxf(1.0, f.maxhp), f.ep / maxf(1.0, f.maxep), clampf(float(f.exp - prev0) / maxf(1.0, float(nxt0 - prev0)), 0.0, 1.0), sk, ready, f.set_id)
 	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(_hs, _hs))
 	if locals.size() > 1:      # split screen: whose bars these are
-		c.draw_string(ThemeDB.fallback_font, Vector2(x, 4 + 24 * S + 8), "P%d" % (L.k + 1), HORIZONTAL_ALIGNMENT_LEFT, 30, 8, Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6))
+		_ds(c, ThemeDB.fallback_font, Vector2(x, 4 + 24 * S + 8), "P%d" % (L.k + 1), HORIZONTAL_ALIGNMENT_LEFT, 30, 8, Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6))
 
 ## a small map of the place in the corner: friends, foes, the boss, ways out
 func _minimap(c: Control, L: Local, i: int) -> void:
@@ -2894,6 +2894,86 @@ func _minimap(c: Control, L: Local, i: int) -> void:
 			if o == L:
 				c.draw_arc(q2, 3.5, 0, TAU, 10, Color(1, 1, 1, 0.8), 1.0)
 
+# ------------------------------------------------------------------ the game's own letters
+## every word on the game's screen (names, the HUD's lines, messages, the START menu) in the cartridge's own small
+## font, drawn pixel by pixel on whole screen pixels - a modern smooth font did not look like a GBA game.
+## Sizes: speech 1 font pixel = 1 game pixel ("4x" on a handheld); everything else 3/4 of that ("3x"); big words 2.
+var _pf_tex: Texture2D
+var _pf_glyph = {}
+var _pf_top = 0
+var _pf_h = 8
+var _pf_tried = false
+var _txt_scale = 1.0       # the drawing's own scale just now (the HUD box, the START menu)
+func _pf_ok() -> bool:
+	if not _pf_tried:
+		_pf_tried = true
+		var img = Assets.image(Assets.base_dir.path_join("ui/font_small.png"))
+		var j = Assets.json(Assets.base_dir.path_join("ui/font_small.json"))
+		if img != null and j is Dictionary and j.get("glyphs") is Dictionary:
+			var r = img.get_used_rect()
+			_pf_top = r.position.y
+			_pf_h = maxi(1, r.size.y)
+			_pf_glyph = j["glyphs"]
+			_pf_tex = ImageTexture.create_from_image(img)
+	return _pf_tex != null
+
+## screen pixels for one game pixel here
+func _pf_game_px() -> float:
+	var ws = Vector2(get_window().size)
+	var vs = get_viewport().get_visible_rect().size
+	return maxf(1.0, ws.x / maxf(1.0, vs.x))
+
+## the drawing units for one font pixel: frac of a game pixel, rounded to whole screen pixels (crisp)
+func _pf_unit(frac: float) -> float:
+	var g = _pf_game_px()
+	return maxf(1.0, roundf(g * frac)) / (g * _txt_scale)
+
+func _pf_width(t: String, u: float) -> float:
+	var w = 0.0
+	for ch in t:
+		var gl = _pf_glyph.get(str(ch.unicode_at(0)), _pf_glyph.get(str(ch.to_upper().unicode_at(0)), [0, 3]))
+		w += (float(gl[1]) + 1.0) * u
+	return maxf(0.0, w - u)
+
+## text with its top-left at pos (snapped to whole screen pixels); a thin dark edge for light letters
+func _pf_draw(c: Control, pos: Vector2, t: String, col: Color, u: float, edge: bool) -> void:
+	var px = 1.0 / (_pf_game_px() * _txt_scale)
+	var x0 = roundf(pos.x / px) * px
+	var y0 = roundf(pos.y / px) * px
+	var passes = []
+	if edge:
+		var e = Color(0, 0, 0, 0.75 * col.a)
+		passes = [[Vector2(-u, 0), e], [Vector2(u, 0), e], [Vector2(0, -u), e], [Vector2(0, u), e]]
+	passes.append([Vector2.ZERO, col])
+	for pp in passes:
+		var x = x0
+		for ch in t:
+			var gl = _pf_glyph.get(str(ch.unicode_at(0)), _pf_glyph.get(str(ch.to_upper().unicode_at(0)), [0, 3]))
+			var gw = float(gl[1])
+			if ch != " ":
+				c.draw_texture_rect_region(_pf_tex, Rect2(Vector2(x, y0) + pp[0], Vector2(gw, _pf_h) * u), Rect2(float(gl[0]), _pf_top, gw, _pf_h), pp[1])
+			x += (gw + 1.0) * u
+
+## draw_string's stand-in (same arguments): pos is the baseline, as with a font
+func _ds(c: Control, font: Font, pos: Vector2, t: String, align: int = HORIZONTAL_ALIGNMENT_LEFT, width: float = -1.0, size: int = 16, col: Color = Color.WHITE) -> void:
+	if not _pf_ok():
+		c.draw_string(font, pos, t, align, width, size, col)
+		return
+	var u = _pf_unit(2.0 if size >= 14 else 0.75)
+	var tw = _pf_width(t, u)
+	var x = pos.x
+	if width > 0 and align == HORIZONTAL_ALIGNMENT_CENTER:
+		x += (width - tw) / 2.0
+	elif width > 0 and align == HORIZONTAL_ALIGNMENT_RIGHT:
+		x += width - tw
+	var light = col.r * 0.3 + col.g * 0.59 + col.b * 0.11 > 0.45
+	_pf_draw(c, Vector2(x, pos.y - _pf_h * u), t, col, u, light)
+
+## draw_string_outline's stand-in: the game's letters bring their own edge
+func _dso(c: Control, font: Font, pos: Vector2, t: String, align: int = HORIZONTAL_ALIGNMENT_LEFT, width: float = -1.0, size: int = 16, outline: int = 1, col: Color = Color.WHITE) -> void:
+	if not _pf_ok():
+		c.draw_string_outline(font, pos, t, align, width, size, outline, col)
+
 ## the names over people's heads and their speech bubbles, drawn here on the screen's own layer (full sharpness, like
 ## the HUD's words) - in the small world picture that is then enlarged they were blurry or broken. One screen only:
 ## split screen keeps them in the picture.
@@ -2911,14 +2991,21 @@ func _draw_names(c: Control) -> void:
 		var a = v.modulate.a
 		if v.label != "":
 			var p = gt * Vector2(0, v.label_y)
-			c.draw_string_outline(font, Vector2(p.x - 70, p.y), v.label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, 2, Color(0, 0, 0, 0.7 * a))
-			c.draw_string(font, Vector2(p.x - 70, p.y), v.label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, Color(v.label_color, v.label_color.a * a))
+			_dso(c, font, Vector2(p.x - 70, p.y), v.label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, 2, Color(0, 0, 0, 0.7 * a))
+			_ds(c, font, Vector2(p.x - 70, p.y), v.label, HORIZONTAL_ALIGNMENT_CENTER, 140, 8, Color(v.label_color, v.label_color.a * a))
 		if v.bubble != "":
+			# speech: the game's font at a game pixel to a font pixel (4x on a handheld), dark on the white bubble
 			var b = gt * Vector2(0, v.bubble_y)
-			var w = minf(160.0, font.get_string_size(v.bubble, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x + 8)
-			c.draw_rect(Rect2(b.x - w / 2, b.y - 14, w, 12), Color(1, 1, 1, 0.92 * a))
-			c.draw_rect(Rect2(b.x - w / 2, b.y - 14, w, 12), Color(0, 0, 0, 0.9 * a), false, 1.0)
-			c.draw_string(font, Vector2(b.x - w / 2 + 4, b.y - 5), v.bubble, HORIZONTAL_ALIGNMENT_LEFT, w - 6, 8, Color(0.05, 0.05, 0.1, a))
+			var u = _pf_unit(1.0) if _pf_ok() else 1.0
+			var tw = _pf_width(v.bubble, u) if _pf_ok() else font.get_string_size(v.bubble, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x
+			var bh = (_pf_h + 4) * u if _pf_ok() else 12.0
+			var w = tw + 4 * u
+			c.draw_rect(Rect2(b.x - w / 2, b.y - bh - 2, w, bh), Color(1, 1, 1, 0.92 * a))
+			c.draw_rect(Rect2(b.x - w / 2, b.y - bh - 2, w, bh), Color(0, 0, 0, 0.9 * a), false, maxf(1.0, u))
+			if _pf_ok():
+				_pf_draw(c, Vector2(b.x - tw / 2, b.y - bh - 2 + 2 * u), v.bubble, Color(0.05, 0.05, 0.1, a), u, false)      # (inside the box, 2 font pixels down)
+			else:
+				c.draw_string(font, Vector2(b.x - w / 2 + 4, b.y - 5), v.bubble, HORIZONTAL_ALIGNMENT_LEFT, w - 6, 8, Color(0.05, 0.05, 0.1, a))
 
 func _draw_hud() -> void:
 	var c = hud_draw
@@ -2945,6 +3032,7 @@ func _draw_hud() -> void:
 	vs = vs / hs
 	_hud_vs = vs
 	_hs = hs
+	_txt_scale = hs
 	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(hs, hs))
 	for i in locals.size():
 		if hud_on:
@@ -2959,12 +3047,12 @@ func _draw_hud() -> void:
 				var stt = Content.state(id)
 				var left = int(Ls.fighter.states[id])
 				var lab = str(stt.get("name", id)) + ("" if left < 0 else " %d" % ceili(left / 60.0))
-				var tw = font.get_string_size(lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 6).x + 6
+				var tw = (_pf_width(lab, _pf_unit(0.75)) if _pf_ok() else font.get_string_size(lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 6).x) + 6
 				c.draw_rect(Rect2(sx - 1, 51, tw, 9), Color(0, 0, 0, 0.6))
-				c.draw_string(font, Vector2(sx + 2, 58), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Content.color(stt.get("color", "ffffff")))
+				_ds(c, font, Vector2(sx + 2, 58), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Content.color(stt.get("color", "ffffff")))
 				sx += tw + 2
 	if locals.size() == 1 and hud_on:
-		c.draw_string(font, Vector2(vs.x - 190, 10), Game.planet.title, HORIZONTAL_ALIGNMENT_RIGHT, 184, 8, Color(1, 0.9, 0.5))
+		_ds(c, font, Vector2(vs.x - 190, 10), Game.planet.title, HORIZONTAL_ALIGNMENT_RIGHT, 184, 8, Color(1, 0.9, 0.5))
 	# partners online
 	var py = 64 if not (minimap_on and locals.size() > 1) else 124
 	for pid in (Game.remote_states if hud_on else {}):
@@ -2977,11 +3065,12 @@ func _draw_hud() -> void:
 		for Lp in locals:
 			if Lp.party.has(pid):
 				ptag = "[PARTY] "
-		c.draw_string(font, Vector2(6, py), ptag + ("%s LV %d - %s" % [str(st.get("name", "P2")), int(st.get("lvl", 1)), where] if str(st.get("name", "")) == Assets.CHARACTERS[clampi(int(st.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)] else "%s (%s) LV %d - %s" % [str(st.get("name", "P2")), Assets.CHARACTERS[clampi(int(st.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)], int(st.get("lvl", 1)), where]), HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color(0.6, 0.9, 1))
+		_ds(c, font, Vector2(6, py), ptag + ("%s LV %d - %s" % [str(st.get("name", "P2")), int(st.get("lvl", 1)), where] if str(st.get("name", "")) == Assets.CHARACTERS[clampi(int(st.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)] else "%s (%s) LV %d - %s" % [str(st.get("name", "P2")), Assets.CHARACTERS[clampi(int(st.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)], int(st.get("lvl", 1)), where]), HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color(0.6, 0.9, 1))
 		_bar(c, 6, py + 2, 50, float(st.get("hp", 0)), float(st.get("maxhp", 1)), Color(0.2, 0.8, 0.9))
 		py += 14
 	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_hs = 1.0
+	_txt_scale = 1.0
 	vs = vs_real
 	# each player's place name, on their own part of the screen
 	for i in locals.size():
@@ -2991,7 +3080,7 @@ func _draw_hud() -> void:
 			var bx = clampf(sc.x, 112, vs.x - 112)
 			var by = 72.0 if not split_now else clampf(sc.y - 70, 72, vs.y - 60)
 			c.draw_rect(Rect2(bx - 110, by - 12, 220, 16), Color(0, 0, 0, 0.6))
-			c.draw_string(font, Vector2(bx - 110, by), L.banner, HORIZONTAL_ALIGNMENT_CENTER, 220, 9, Color(1, 1, 0.8))
+			_ds(c, font, Vector2(bx - 110, by), L.banner, HORIZONTAL_ALIGNMENT_CENTER, 220, 9, Color(1, 1, 0.8))
 	for i in locals.size():
 		_draw_talk(c, locals[i], i)
 		var Ld: Local = locals[i]
@@ -3002,26 +3091,26 @@ func _draw_hud() -> void:
 			var txt = ("%d" % ceili(t2 / 60.0)) if t2 >= 60 else ("FIGHT!" if t2 > 0 else ("DUEL: %s VS %s" % [Ld.name, Ld.duel["name"]] if same_pc and not split_now else "DUEL: %s" % Ld.duel["name"]))
 			var big = 18 if t2 > 0 else 7
 			var yy = sc2.y - 40 if t2 > 0 else 84.0
-			c.draw_string_outline(font, Vector2(sc2.x - 100, yy), txt, HORIZONTAL_ALIGNMENT_CENTER, 200, big, 3, Color(0, 0, 0, 0.8))
-			c.draw_string(font, Vector2(sc2.x - 100, yy), txt, HORIZONTAL_ALIGNMENT_CENTER, 200, big, Color(1, 0.55, 0.35))
+			_dso(c, font, Vector2(sc2.x - 100, yy), txt, HORIZONTAL_ALIGNMENT_CENTER, 200, big, 3, Color(0, 0, 0, 0.8))
+			_ds(c, font, Vector2(sc2.x - 100, yy), txt, HORIZONTAL_ALIGNMENT_CENTER, 200, big, Color(1, 0.55, 0.35))
 	var ty = vs.y - 14
 	for i in range(toasts.size() - 1, -1, -1):
 		var t = toasts[i]
-		c.draw_string_outline(font, Vector2(0, ty), t[0], HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, 3, Color(0, 0, 0, 0.8))
-		c.draw_string(font, Vector2(0, ty), t[0], HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, t[1])
+		_dso(c, font, Vector2(0, ty), t[0], HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, 3, Color(0, 0, 0, 0.8))
+		_ds(c, font, Vector2(0, ty), t[0], HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, t[1])
 		ty -= 11
 	var cy = vs.y - 60
 	for i in range(chat_log.size() - 1, -1, -1):
 		var cl = chat_log[i]
-		c.draw_string_outline(font, Vector2(6, cy), cl[0], HORIZONTAL_ALIGNMENT_LEFT, 300, 7, 3, Color(0, 0, 0, 0.8))
-		c.draw_string(font, Vector2(6, cy), cl[0], HORIZONTAL_ALIGNMENT_LEFT, 300, 7, cl[1])
+		_dso(c, font, Vector2(6, cy), cl[0], HORIZONTAL_ALIGNMENT_LEFT, 300, 7, 3, Color(0, 0, 0, 0.8))
+		_ds(c, font, Vector2(6, cy), cl[0], HORIZONTAL_ALIGNMENT_LEFT, 300, 7, cl[1])
 		cy -= 9
 	if Game.cfg["mode"] != "solo" or not Game.remote_states.is_empty():
 		var online = 1 + Game.remote_states.size()
 		var tag = "ONLINE - %d IN THE WORLD" % (online + locals.size() - 1)
 		if Game.reconnect_tries > 0:
 			tag = "RECONNECTING..."
-		c.draw_string(font, Vector2(vs.x / 2 - 60, vs.y - 3), tag, HORIZONTAL_ALIGNMENT_CENTER, 120, 6, Color(0.6, 0.9, 1) if Game.reconnect_tries == 0 else Color(1, 0.6, 0.4))
+		_ds(c, font, Vector2(vs.x / 2 - 60, vs.y - 3), tag, HORIZONTAL_ALIGNMENT_CENTER, 120, 6, Color(0.6, 0.9, 1) if Game.reconnect_tries == 0 else Color(1, 0.6, 0.4))
 	if map_open:
 		_draw_map(c)
 	_draw_timers(c, vs)
@@ -3033,24 +3122,24 @@ func _draw_hud() -> void:
 			"%s - %s" % [RenderingServer.get_current_rendering_driver_name(), RenderingServer.get_video_adapter_name()]]
 		c.draw_rect(Rect2(4, vs.y - 44, 300, 40), Color(0, 0, 0, 0.7))
 		for k in pl.size():
-			c.draw_string(font, Vector2(8, vs.y - 32 + k * 11), pl[k], HORIZONTAL_ALIGNMENT_LEFT, 296, 7, Color(0.6, 1, 0.6))
+			_ds(c, font, Vector2(8, vs.y - 32 + k * 11), pl[k], HORIZONTAL_ALIGNMENT_LEFT, 296, 7, Color(0.6, 1, 0.6))
 	if credits_t >= 0:
 		_draw_credits(c, vs)
 	if victory_t > 0:
 		c.draw_rect(Rect2(vs.x / 2 - 130, vs.y / 2 - 40, 260, 80), Color(0, 0, 0.1, 0.85))
-		c.draw_string(font, Vector2(vs.x / 2 - 130, vs.y / 2 - 18), victory_text, HORIZONTAL_ALIGNMENT_CENTER, 260, 11, Color(1, 0.85, 0.3))
+		_ds(c, font, Vector2(vs.x / 2 - 130, vs.y / 2 - 18), victory_text, HORIZONTAL_ALIGNMENT_CENTER, 260, 11, Color(1, 0.85, 0.3))
 		var kills = 0
 		var lv = []
 		for L in locals:
 			kills += L.kills
 			lv.append(str(L.fighter.level))
-		c.draw_string(font, Vector2(vs.x / 2 - 130, vs.y / 2 + 2), "FOES BEATEN %d   LEVEL %s" % [kills, " / ".join(PackedStringArray(lv))], HORIZONTAL_ALIGNMENT_CENTER, 260, 8, Color(1, 1, 1))
-		c.draw_string(font, Vector2(vs.x / 2 - 130, vs.y / 2 + 20), "THE PLANET STAYS OPEN", HORIZONTAL_ALIGNMENT_CENTER, 260, 8, Color(0.6, 1, 0.6))
+		_ds(c, font, Vector2(vs.x / 2 - 130, vs.y / 2 + 2), "FOES BEATEN %d   LEVEL %s" % [kills, " / ".join(PackedStringArray(lv))], HORIZONTAL_ALIGNMENT_CENTER, 260, 8, Color(1, 1, 1))
+		_ds(c, font, Vector2(vs.x / 2 - 130, vs.y / 2 + 20), "THE PLANET STAYS OPEN", HORIZONTAL_ALIGNMENT_CENTER, 260, 8, Color(0.6, 1, 0.6))
 	for i in locals.size():
 		if not locals[i].menu.is_empty():
 			_draw_menu(c, locals[i], i)
 	if paused:
-		c.draw_string(font, Vector2(0, vs.y - 6), "THE WORLD WAITS WHILE YOUR MENU IS OPEN", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 6, Color(0.7, 0.7, 0.8))
+		_ds(c, font, Vector2(0, vs.y - 6), "THE WORLD WAITS WHILE YOUR MENU IS OPEN", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 6, Color(0.7, 0.7, 0.8))
 
 func _exit_tree() -> void:
 	ActorView.labels_outside = false      # (the map editor draws its own)
@@ -3775,7 +3864,9 @@ func _menu_rect(i: int) -> Rect2:
 func _draw_menu(c: Control, L: Local, i: int) -> void:
 	var ms = _menu_scale()
 	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(ms, ms))
+	_txt_scale = ms
 	_draw_menu_at(c, L, i)
+	_txt_scale = 1.0
 	c.draw_set_transform(Vector2.ZERO)
 	if menu_hits.has(i):
 		menu_hits[i]["s"] = ms
@@ -3793,7 +3884,7 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 		var on = t == int(m["tab"])
 		if on:
 			c.draw_rect(Rect2(r.position.x + t * tw, r.position.y, tw, 12), Color(1, 0.85, 0.3, 0.25))
-		c.draw_string(font, Vector2(r.position.x + t * tw, r.position.y + 9), TABS[t] if tw >= 52 else TABS_SHORT[t], HORIZONTAL_ALIGNMENT_CENTER, tw, 6, Color(1, 0.9, 0.4) if on else Color(0.6, 0.65, 0.8))
+		_ds(c, font, Vector2(r.position.x + t * tw, r.position.y + 9), TABS[t] if tw >= 52 else TABS_SHORT[t], HORIZONTAL_ALIGNMENT_CENTER, tw, 6, Color(1, 0.9, 0.4) if on else Color(0.6, 0.65, 0.8))
 	var x0 = r.position.x + 6
 	var Y = [r.position.y + 24]
 	var W = r.size.x - 12
@@ -3808,7 +3899,7 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 			menu_hits[i]["rows"].append([Rect2(x0 - 3, Y[0] - 8, W + 6, 10), ri])
 		if sel:
 			c.draw_rect(Rect2(x0 - 3, Y[0] - 8, W + 6, 10), Color(1, 1, 1, 0.12))
-		c.draw_string(font, Vector2(x0, Y[0]), t, HORIZONTAL_ALIGNMENT_LEFT, W, size, col)
+		_ds(c, font, Vector2(x0, Y[0]), t, HORIZONTAL_ALIGNMENT_LEFT, W, size, col)
 		Y[0] += 10
 	match tab:
 		"STATUS":
@@ -3941,7 +4032,7 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 			Y[0] += 4
 			for t in _controls_text(L):
 				line.call(t, Color(0.7, 0.75, 0.9))
-	c.draw_string(font, Vector2(r.position.x, r.end.y - 4), "LEFT/RIGHT: PAGE   UP/DOWN: CHOOSE   A: OK   B / MENU: BACK", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 6, Color(0.55, 0.6, 0.75))
+	_ds(c, font, Vector2(r.position.x, r.end.y - 4), "LEFT/RIGHT: PAGE   UP/DOWN: CHOOSE   A: OK   B / MENU: BACK", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 6, Color(0.55, 0.6, 0.75))
 
 func _controls_text(L: Local) -> Array:
 	var i = locals.find(L)
@@ -4249,8 +4340,8 @@ func _draw_timers(c: Control, vs: Vector2) -> void:
 			if left <= 0:
 				continue        # (run out: IF TIMER sees it)
 			var txt = "%s  %d:%02d" % [sk.substr(6).to_upper(), left / 60000, (left / 1000) % 60]
-			c.draw_string_outline(font, Vector2(0, y), txt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 10, 3, Color(0, 0, 0, 0.8))
-			c.draw_string(font, Vector2(0, y), txt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 10, Color(1, 0.85, 0.4) if left > 10000 else Color(1, 0.4, 0.3))
+			_dso(c, font, Vector2(0, y), txt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 10, 3, Color(0, 0, 0, 0.8))
+			_ds(c, font, Vector2(0, y), txt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 10, Color(1, 0.85, 0.4) if left > 10000 else Color(1, 0.4, 0.3))
 			y += 12
 
 ## F8: what the story knows right now
@@ -4289,7 +4380,7 @@ func _draw_debug(c: Control, vs: Vector2) -> void:
 	var h = 10 + lines.size() * 10
 	c.draw_rect(Rect2(4, vs.y - h - 70, minf(vs.x - 8, 470), h), Color(0, 0, 0.08, 0.85))
 	for i in lines.size():
-		c.draw_string(font, Vector2(8, vs.y - h - 60 + i * 10), lines[i], HORIZONTAL_ALIGNMENT_LEFT, minf(vs.x - 16, 462), 7, Color(0.7, 1, 0.8) if i == 0 else Color(0.9, 0.92, 1))
+		_ds(c, font, Vector2(8, vs.y - h - 60 + i * 10), lines[i], HORIZONTAL_ALIGNMENT_LEFT, minf(vs.x - 16, 462), 7, Color(0.7, 1, 0.8) if i == 0 else Color(0.9, 0.92, 1))
 
 ## THE END: the credits roll, then back to the title
 func show_credits() -> void:
@@ -4309,7 +4400,7 @@ func _draw_credits(c: Control, vs: Vector2) -> void:
 	for i in credits_lines.size():
 		var y = y0 + i * 16
 		if y > -20 and y < vs.y + 20:
-			c.draw_string(font, Vector2(0, y), str(credits_lines[i]), HORIZONTAL_ALIGNMENT_CENTER, vs.x, 12 if i == 0 or i == credits_lines.size() - 1 else 9, Color(1, 0.85, 0.35) if i == 0 else Color(1, 1, 1))
+			_ds(c, font, Vector2(0, y), str(credits_lines[i]), HORIZONTAL_ALIGNMENT_CENTER, vs.x, 12 if i == 0 or i == credits_lines.size() - 1 else 9, Color(1, 0.85, 0.35) if i == 0 else Color(1, 1, 1))
 	if y0 + credits_lines.size() * 16 < vs.y / 2 - 30 and credits_t > 300:
 		credits_t = -1
 		save_all()

@@ -50,6 +50,18 @@ static void set_state(const std::string& s, const std::string& m = "") { std::lo
 static void sleep_ms(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
 static long long now_ms() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
+// bridge.log in the storage folder: what the connections did (the game cannot see this program's output)
+static std::string log_path;
+static std::mutex LM;
+static void blog(const std::string& m) {
+    if (log_path.empty()) return;
+    std::lock_guard<std::mutex> g(LM);
+    FILE* f = std::fopen(log_path.c_str(), "a");
+    if (!f) return;
+    std::fprintf(f, "%lld %s\n", now_ms(), m.c_str());
+    std::fclose(f);
+}
+
 static void on_event(void* msg) {
     zts_event_msg_t* e = static_cast<zts_event_msg_t*>(msg);
     switch (e->event_code) {
@@ -79,6 +91,7 @@ static void bring_up(std::string storage, uint64_t id) {
     char buf[ZTS_IP_MAX_STR_LEN] = {0};
     if (zts_addr_get_str(id, ZTS_AF_INET6, buf, sizeof buf) != ZTS_ERR_OK || !buf[0]) { set_state("error", "The multiplayer network did not respond."); return; }
     { std::lock_guard<std::mutex> g(SM); address = buf; state = "ready"; message = ""; }
+    blog(std::string("network ready, this device is ") + buf);
     ready = true;
 }
 
@@ -161,6 +174,7 @@ static void host_loop(int zport, int lport, int mine) {
         char ra[ZTS_IP_MAX_STR_LEN]; unsigned short rp = 0; int c;
         { std::lock_guard<std::mutex> g(ZT); c = zts_accept(ls, ra, sizeof ra, &rp); }
         if (c < 0) { sleep_ms(50); continue; }
+        blog(std::string("host: a player connected from ") + ra);
         sock_t l = local_connect(lport);
         if (bad(l)) { zt_close(c); continue; }
         std::thread(carry, l, c, &host_gen, mine).detach();
@@ -171,20 +185,26 @@ static void host_loop(int zport, int lport, int mine) {
 // guest: the game connects to 127.0.0.1:lport, each connection linked to the host's address over ZeroTier
 static void join_loop(std::string addr, int rport, int lport, int mine) {
     sock_t ls = local_listen(lport);
-    if (bad(ls)) return;
+    if (bad(ls)) { blog("join: could not open local port " + std::to_string(lport)); return; }
+    blog("join: waiting for the game on local port " + std::to_string(lport));
     while (join_gen == mine) {
         fd_set rs; FD_ZERO(&rs); FD_SET(ls, &rs);
         timeval tv{0, 200000};
         if (select(static_cast<int>(ls) + 1, &rs, nullptr, nullptr, &tv) <= 0) continue;
         sock_t l = accept(ls, nullptr, nullptr);
         if (bad(l)) continue;
+        blog("join: the game connected locally");
         while (join_gen == mine && !ready) sleep_ms(100);
         int z = zts_bsd_socket(ZTS_AF_INET6, ZTS_SOCK_STREAM, 0);
+        long long t0 = now_ms();
+        blog("join: connecting to " + addr + " port " + std::to_string(rport));
         if (z < 0 || zts_connect(z, addr.c_str(), static_cast<unsigned short>(rport), 15000) != ZTS_ERR_OK) {
+            blog("join: could not connect after " + std::to_string(now_ms() - t0) + " ms (errno " + std::to_string(zts_errno) + ")");
             if (z >= 0) zt_close(z);
             CLOSESOCK(l);
             continue;
         }
+        blog("join: connected after " + std::to_string(now_ms() - t0) + " ms");
         std::thread(carry, l, z, &join_gen, mine).detach();
     }
     CLOSESOCK(ls);
@@ -196,6 +216,9 @@ int main(int argc, char** argv) {
     WSADATA wd; WSAStartup(MAKEWORD(2, 2), &wd);
 #endif
     const int port = std::atoi(argv[2]), ctrl = std::atoi(argv[3]);
+    log_path = std::string(argv[1]) + "/bridge.log";
+    { FILE* f = std::fopen(log_path.c_str(), "w"); if (f) std::fclose(f); }      // (a new one each start)
+    blog("helper started");
     net_id = 0xff00000000000000ULL | (static_cast<uint64_t>(port) << 40) | (static_cast<uint64_t>(port) << 24);
     sock_t cl = local_listen(ctrl);
     if (bad(cl)) return 3;
@@ -225,6 +248,7 @@ int main(int argc, char** argv) {
         size_t nl;
         while ((nl = line.find('\n')) != std::string::npos) {
             std::string c = line.substr(0, nl); line.erase(0, nl + 1);
+            blog("command: " + c);
             char a[128] = {0}; int x = 0, y = 0;
             if (std::sscanf(c.c_str(), "HOST %d %d", &x, &y) == 2) { int g = ++host_gen; std::thread(host_loop, x, y, g).detach(); }
             else if (c.rfind("HOSTCLOSE", 0) == 0) ++host_gen;

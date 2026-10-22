@@ -337,6 +337,9 @@ func _ws_room(p: WebSocketMultiplayerPeer) -> void:
 	p.inbound_buffer_size = 4 << 20
 	p.outbound_buffer_size = 4 << 20
 	p.max_queued_packets = 16384
+	# the first link to a device over ZeroTier can take several seconds to find its way (the helper waits 15): the
+	# default 3 s cut every try off first (a PC joining a handheld's game right after starting said it could not connect)
+	p.handshake_timeout = 20.0
 
 ## port: the local end of the bridge to the host (Online.join)
 func join_game_online(port: int) -> bool:
