@@ -12,6 +12,8 @@
 
 ### Multiplayer fixes
 - A player whose connection blinks now rejoins the same host (before, they were moved into a world of their own).
+- Joining right after opening the game on a PC or Mac: it waits for the network link (with a count) before it
+  tries, instead of giving up after six quick tries.
 - PC / Mac hosts no longer drop a player every minute or so when two or more join (the helper mixed up connections).
 - Windows: the multiplayer helper is waited for on a slow PC (no more "the multiplayer helper stopped").
 - Joining a game keeps your own outfits, view size, buttons and settings (it took the host's).

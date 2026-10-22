@@ -741,6 +741,17 @@ func _pick_online_game(g: Dictionary) -> void:
 		_online_action(func(): _join_online(g, ""))
 
 func _join_online(g: Dictionary, password: String, tries: int = 0) -> void:
+	# first this device's own link to the game network (a PC's helper can take half a minute or more after the game
+	# opens - joining at once used its six tries up before it was there and said it could not connect)
+	if tries == 0 and not Online.is_online():
+		var gen0 = _screen_gen
+		var t0 = Time.get_ticks_msec()
+		while not Online.is_online() and Time.get_ticks_msec() - t0 < 120000:
+			if is_instance_valid(lobby_label):
+				lobby_label.text = Online.status_text() + "  (%d)" % int((Time.get_ticks_msec() - t0) / 1000)
+			await get_tree().create_timer(0.5).timeout
+			if gen0 != _screen_gen:
+				return      # (left the screen)
 	Online.browse(false)
 	Game.net_error = ""
 	Game.cfg["mode"] = "join"
