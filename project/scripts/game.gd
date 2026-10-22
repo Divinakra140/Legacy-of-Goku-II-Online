@@ -930,16 +930,88 @@ static func _slot(f: FighterSim, k: int) -> String:
 	return str(f.ch) if k == 0 else "%d_p%d" % [f.ch, k + 1]
 
 ## the save file of this world ("land:0" -> fighters_land_0.json; a colon is not allowed in a Windows file name)
+# ------------------------------------------------------------------ where the saves live
+## the heroes' saves: on Android in Android/data/com.log2coop.game/files/saves (reachable with a cable, to copy them
+## off or bring a PC's over - the app's private folder can't be reached from outside); elsewhere the user folder.
+## The first time, saves still in the private folder are moved there (nobody loses a hero).
+var _saves_dir = ""
+func saves_dir() -> String:
+	if _saves_dir != "":
+		return _saves_dir
+	_saves_dir = "user://"
+	if OS.get_name() == "Android" and Engine.has_singleton("JavaClassWrapper"):
+		var w = Engine.get_singleton("JavaClassWrapper").wrap("com.godot.game.LoG2Storage")
+		var ext = str(w.externalFilesDir()) if w != null else ""
+		if ext != "":
+			var d = ext.path_join("saves")
+			DirAccess.make_dir_recursive_absolute(d)
+			var probe = FileAccess.open(d.path_join(".can_write"), FileAccess.WRITE)
+			if probe != null:
+				probe.close()
+				DirAccess.remove_absolute(d.path_join(".can_write"))
+				_saves_dir = d + "/"
+				_move_old_saves()
+	print("[game] saves in ", _saves_dir)
+	return _saves_dir
+
+func _move_old_saves() -> void:
+	for fn in DirAccess.get_files_at("user://"):
+		if not (fn.begins_with("fighters_") and fn.ends_with(".json")):
+			continue
+		var to = _saves_dir + fn
+		if FileAccess.file_exists(to):
+			continue      # (already there: the one there is the newer)
+		var fa = FileAccess.open(to, FileAccess.WRITE)
+		if fa == null:
+			continue
+		fa.store_string(FileAccess.get_file_as_string("user://" + fn))
+		fa.close()
+		if FileAccess.file_exists(to):
+			DirAccess.remove_absolute("user://" + fn)      # moved: an old copy left behind would bring a deleted hero back
+			print("[game] save moved to ", to)
+
+## EXPORT / IMPORT (OPTIONS - SAVE FILES): every hero's saves (free play, stories) in one file
+func export_saves(path: String) -> int:
+	var all = {}
+	for fn in DirAccess.get_files_at(saves_dir()):
+		if fn.begins_with("fighters_") and fn.ends_with(".json") and fn != "fighters_playtest.json":
+			var t = JSON.parse_string(FileAccess.get_file_as_string(saves_dir() + fn))
+			if t is Dictionary:
+				all[fn] = t
+	var fa = FileAccess.open(path, FileAccess.WRITE)
+	if fa == null:
+		return -1
+	fa.store_string(JSON.stringify({"log2_saves": 1, "files": all}, "\t"))
+	fa.close()
+	return all.size()
+
+func import_saves(path: String) -> int:
+	var t = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not (t is Dictionary) or not (t.get("files") is Dictionary):
+		return -1
+	var n = 0
+	for fn in t["files"]:
+		var fname = str(fn).get_file()
+		if not (fname.begins_with("fighters_") and fname.ends_with(".json")) or not (t["files"][fn] is Dictionary):
+			continue
+		var fa = FileAccess.open(saves_dir() + fname, FileAccess.WRITE)
+		if fa:
+			fa.store_string(JSON.stringify(t["files"][fn]))
+			fa.close()
+			n += 1
+	return n
+
 func _save_path() -> String:
 	if cfg.has("dev_return"):
-		return "user://fighters_playtest.json"     # a play-test from the DEV TOOLS never touches your own heroes
+		return saves_dir() + "fighters_playtest.json"     # a play-test from the DEV TOOLS never touches your own heroes
 	if cfg.has("story"):
-		return "user://fighters_story_%s.json" % str(cfg["story"])       # a story's own save slot
-	return "user://fighters_%s.json" % str(cfg["adventure"]).replace(":", "_")
+		return saves_dir() + "fighters_story_%s.json" % str(cfg["story"])       # a story's own save slot
+	return saves_dir() + "fighters_%s.json" % str(cfg["adventure"]).replace(":", "_")
 
 ## FREE PLAY: a hero's growth (level, numbers, items, zeni, moves) is shared by every map - level 16 Piccolo is level 16
 ## everywhere; what belongs to one world (where you stand, its quests and flags) stays in that world's own file.
-const SHARED_SAVE = "user://fighters_free.json"
+var SHARED_SAVE: String:
+	get: return saves_dir() + "fighters_free.json"
 const WORLD_KEYS = ["where", "quests", "qdone", "flags"]
 func _shared_saves() -> bool:
 	return not cfg.has("dev_return") and not cfg.has("story")
@@ -981,12 +1053,12 @@ func shared_entry(slot: String) -> Dictionary:
 	if shared.get(slot) is Dictionary:
 		return shared[slot]
 	var best = {}
-	var dir = DirAccess.open("user://")
+	var dir = DirAccess.open(saves_dir())
 	if dir:
 		for fn in dir.get_files():
 			if not fn.begins_with("fighters_") or fn.begins_with("fighters_story") or fn in ["fighters_playtest.json", "fighters_free.json"]:
 				continue
-			var e = _read_json_dict("user://" + fn).get(slot)
+			var e = _read_json_dict(saves_dir() + fn).get(slot)
 			if e is Dictionary and e.has("level") and (best.is_empty() or int(e.get("level", 1)) * 10000000 + int(e.get("exp", 0)) > int(best.get("level", 1)) * 10000000 + int(best.get("exp", 0))):
 				best = e.duplicate(true)
 	for key in WORLD_KEYS:
@@ -995,8 +1067,8 @@ func shared_entry(slot: String) -> Dictionary:
 
 func load_fighter(f: FighterSim, k: int = 0) -> void:
 	var path = _save_path()
-	if not FileAccess.file_exists(path) and FileAccess.file_exists("user://fighters_%s.json" % str(cfg["adventure"])):
-		path = "user://fighters_%s.json" % str(cfg["adventure"])     # saved by an older version
+	if not FileAccess.file_exists(path) and FileAccess.file_exists(saves_dir() + "fighters_%s.json" % str(cfg["adventure"])):
+		path = saves_dir() + "fighters_%s.json" % str(cfg["adventure"])     # saved by an older version
 	var t = _read_json_dict(path)
 	var d = {}
 	if t.get(_slot(f, k)) is Dictionary:

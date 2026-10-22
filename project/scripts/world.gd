@@ -936,8 +936,22 @@ func _step_local(L: Local) -> void:
 		var home = Game.cfg.get("home_at")      # a map that starts in a room of its own (GOKU'S HOUSE: Gohan's room)
 		if home is Dictionary and str(Game.planet.nodes[L.node_i]["key"]) == str(home.get("key", "")):
 			back = Vector2(float(home["x"]), float(home["y"]))
-		f.revive(back.x, back.y)
-		toasts.append(["%s: KNOCKED OUT! BACK ON YOUR FEET" % L.name, Color(1, 0.6, 0.5), 150])
+		var sp: Dictionary = f.save_spot
+		var sn = -1
+		for ni in Game.planet.nodes.size():
+			if not sp.is_empty() and str(Game.planet.nodes[ni]["key"]) == str(sp.get("key", "")):
+				sn = ni
+				break
+		if sn >= 0:
+			# the last Capsule Corp pad you saved at this session (on this map or another)
+			back = Vector2(float(sp["x"]), float(sp["y"]))
+			f.revive(back.x, back.y)
+			if sn != L.node_i:
+				_warp(L, sn, back)
+			toasts.append(["%s: KNOCKED OUT! BACK AT YOUR LAST SAVE POINT" % L.name, Color(1, 0.6, 0.5), 150])
+		else:
+			f.revive(back.x, back.y)
+			toasts.append(["%s: KNOCKED OUT! BACK ON YOUR FEET" % L.name, Color(1, 0.6, 0.5), 150])
 	# walking from one of the original areas into another inside a land: its name shows
 	if L.area.has("land") and Engine.get_physics_frames() % 20 == L.k:
 		for pt in L.area["land"]["parts"]:
@@ -1076,6 +1090,7 @@ func _save_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) -> Dic
 			return inp      # a foe right here and you are not on the pad itself: A punches (the farm's animals no longer stop a save)
 	f.hp = f.maxhp
 	f.ep = f.maxep
+	f.save_spot = {"key": str(Game.planet.nodes[L.node_i]["key"]), "x": f.x, "y": f.y}      # knocked out: back here
 	save_all()
 	print("[world] game saved at a save point: ", L.name, " hp ", f.hp, "/", f.maxhp, " ki ", f.ep, "/", f.maxep)
 	toasts.append(["%s: GAME SAVED - HEALTH AND KI RESTORED" % L.name, Color(0.6, 1, 0.7), 180])

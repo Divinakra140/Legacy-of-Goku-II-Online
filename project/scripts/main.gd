@@ -477,7 +477,7 @@ func _dev_tools() -> void:
 		Game.cfg["start_at"] = at
 		Game.cfg["mode"] = "solo"
 		Game.cfg["adventure"] = "land:0"
-		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://fighters_playtest.json"))   # (a fresh hero each time: events run again)
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Game.saves_dir() + "fighters_playtest.json"))   # (a fresh hero each time: events run again)
 		Game.begin())
 	dev.closed.connect(func():
 		dev.queue_free()
@@ -490,7 +490,7 @@ func _dev_tools() -> void:
 		_fit_view()
 		Game.cfg["mode"] = "solo"
 		Game.cfg["adventure"] = "land:0"
-		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://fighters_playtest.json"))   # (a fresh hero each time: events run again)
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Game.saves_dir() + "fighters_playtest.json"))   # (a fresh hero each time: events run again)
 		Game.begin())
 
 var _dev_scripted = false
@@ -520,7 +520,7 @@ func _story_row(v: Control) -> void:
 	var row = HBoxContainer.new(); vv.add_child(row)
 	var slot = OptionButton.new(); slot.add_theme_font_size_override("font_size", 8)
 	for i in 3:
-		var path = "user://fighters_story_%s_%d.json" % [_story_id(), i + 1]
+		var path = Game.saves_dir() + "fighters_story_%s_%d.json" % [_story_id(), i + 1]
 		var txt = "SLOT %d - NEW STORY" % (i + 1)
 		if FileAccess.file_exists(path):
 			var t = JSON.parse_string(FileAccess.get_file_as_string(path))
@@ -534,7 +534,7 @@ func _story_row(v: Control) -> void:
 	_button(row, "ERASE SLOT", func():
 		var d = ConfirmationDialog.new(); d.dialog_text = "Erase slot %d of this story?" % (slot.selected + 1)
 		d.confirmed.connect(func():
-			DirAccess.remove_absolute(ProjectSettings.globalize_path("user://fighters_story_%s_%d.json" % [_story_id(), slot.selected + 1]))
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(Game.saves_dir() + "fighters_story_%s_%d.json" % [_story_id(), slot.selected + 1]))
 			_menu())
 		add_child(d); d.popup_centered())
 
@@ -2326,7 +2326,7 @@ func _story_slots() -> void:
 	_gheading("Select Game")
 	var items = []
 	for i in 3:
-		var path = "user://fighters_story_%s_%d.json" % [_story_id(), i + 1]
+		var path = Game.saves_dir() + "fighters_story_%s_%d.json" % [_story_id(), i + 1]
 		var txt = "NEW GAME"
 		var saved = -1
 		if FileAccess.file_exists(path):
@@ -2461,7 +2461,54 @@ func _saves_screen() -> void:
 	_gba_screen()
 	_global_back = _options_screen
 	_gheading("Save Files")
-	_glist([["STORY MODE", _story_saves_screen], ["FREE PLAY", _free_saves_screen]], 60, 22, true)
+	_glist([["STORY MODE", _story_saves_screen], ["FREE PLAY", _free_saves_screen],
+		["EXPORT SAVE FILE", _export_saves], ["IMPORT SAVE FILE", _import_saves]], 40, 22, true)
+	_saves_note = _gtext(gba, "", Vector2(0, 136), false, Color(0.6, 1, 0.7))
+	_saves_note.size = Vector2(GW, 30); _saves_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_saves_note.autowrap_mode = TextServer.AUTOWRAP_WORD
+
+## EXPORT / IMPORT SAVE FILE: all the heroes (free play and stories) in one file - to keep, or to take to another
+## device (a PC's heroes to a handheld, and back)
+var _saves_note: Label
+var _saves_dialog: FileDialog
+func _saves_file_dialog(save: bool, done: Callable) -> void:
+	_saves_dialog = FileDialog.new()
+	_saves_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE if save else FileDialog.FILE_MODE_OPEN_FILE
+	_saves_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_saves_dialog.use_native_dialog = true
+	_saves_dialog.filters = PackedStringArray(["*.json ; LoG2 Online saves"]) if not OS.has_feature("android") else PackedStringArray()
+	_saves_dialog.current_file = "LoG2Online_saves.json"
+	_saves_dialog.size = Vector2i(420, 260)
+	_saves_dialog.file_selected.connect(done)
+	ui.add_child(_saves_dialog)
+	_saves_dialog.popup_centered()
+
+func _export_saves() -> void:
+	if OS.has_feature("android"):
+		# (a phone: next to the saves, in Android/data/com.log2coop.game/files - copy it off with a cable)
+		var path = Game.saves_dir().get_base_dir().get_base_dir().path_join("LoG2Online_saves.json") if not Game.saves_dir().begins_with("user://") else OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS).path_join("LoG2Online_saves.json")
+		_export_to(path)
+		return
+	_saves_file_dialog(true, _export_to)
+
+func _export_to(path: String) -> void:
+	var n = Game.export_saves(path)
+	if is_instance_valid(_saves_note):
+		_saves_note.text = ("EXPORTED %d SAVE FILE(S) TO %s" % [n, path]).to_upper() if n >= 0 else "COULD NOT WRITE THERE - TRY ANOTHER FOLDER"
+
+func _import_saves() -> void:
+	_saves_file_dialog(false, func(path: String):
+		_gba_screen()
+		_global_back = _saves_screen
+		_gheading("Import?")
+		var l = _gtext(gba, "HEROES IN THE FILE REPLACE THE SAME SAVES HERE", Vector2(0, 50), false, Color(1, 0.85, 0.4))
+		l.size = Vector2(GW, 12); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var bs = _glist([["NO, KEEP MINE", _saves_screen], ["YES, IMPORT", func():
+			var n = Game.import_saves(path)
+			_saves_screen()
+			if is_instance_valid(_saves_note):
+				_saves_note.text = ("IMPORTED %d SAVE FILE(S)" % n) if n >= 0 else "THAT IS NOT A LOG2 ONLINE SAVE FILE"]], 90, 22, true)
+		bs[0].grab_focus.call_deferred())
 
 func _save_label(e: Variant) -> String:
 	if not (e is Dictionary):
@@ -2474,7 +2521,7 @@ func _story_saves_screen() -> void:
 	_global_back = _saves_screen
 	_gheading("Story Mode")
 	var items = []
-	var files = Array(DirAccess.get_files_at("user://"))
+	var files = Array(DirAccess.get_files_at(Game.saves_dir()))
 	files.sort()
 	for fn in files:
 		if not fn.begins_with("fighters_story_") or not fn.ends_with(".json"):
@@ -2483,10 +2530,10 @@ func _story_saves_screen() -> void:
 		var cut = id.rfind("_")
 		var story = id.left(cut).replace("_", " ").strip_edges().to_upper() if cut > 0 else id.to_upper()
 		var slot = id.substr(cut + 1) if cut > 0 else "1"
-		var t = JSON.parse_string(FileAccess.get_file_as_string("user://" + fn))
+		var t = JSON.parse_string(FileAccess.get_file_as_string(Game.saves_dir() + fn))
 		var who = _save_label(t.values()[0]) if t is Dictionary and not t.is_empty() else "EMPTY"
 		var txt = "%s  SLOT %s  %s" % [story.left(14), slot, who]
-		items.append([txt, _confirm_delete.bind(txt, func(): DirAccess.remove_absolute("user://" + fn), _story_saves_screen)])
+		items.append([txt, _confirm_delete.bind(txt, func(): DirAccess.remove_absolute(Game.saves_dir() + fn), _story_saves_screen)])
 	if items.is_empty():
 		var l = _gtext(gba, "NO STORY SAVES YET", Vector2(0, 70), false, Color(0.75, 0.85, 1))
 		l.size = Vector2(GW, 12); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -2496,9 +2543,9 @@ func _story_saves_screen() -> void:
 ## free play: every hero's shared save (and any copy of it in the older one-file-per-map saves, or it comes back)
 func _free_play_files() -> Array:
 	var out = []
-	for fn in DirAccess.get_files_at("user://"):
+	for fn in DirAccess.get_files_at(Game.saves_dir()):
 		if fn.begins_with("fighters_") and fn.ends_with(".json") and not fn.begins_with("fighters_story") and fn != "fighters_playtest.json":
-			out.append("user://" + fn)
+			out.append(Game.saves_dir() + fn)
 	return out
 
 func _free_saves_screen() -> void:

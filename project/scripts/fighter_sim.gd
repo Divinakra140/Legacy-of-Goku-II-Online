@@ -103,6 +103,9 @@ func setup(character: int, levels: Array) -> void:
 var where = {}
 var flags = {}             # the story so far (DEV TOOLS - EVENTS): flag name -> true, "event:<id>" once played             # the world and the place this fighter was last in: {world, node, x, y}
 
+var save_spot = {}      # the Capsule Corp pad saved at last this session: {key: the map, x, y} - knocked out, you are back
+                        # there. Not kept in the save: a new session starts everyone at the map's own spawn (friends together)
+
 func to_save() -> Dictionary:
 	return {"ch": ch, "maxhp": maxhp, "maxep": maxep, "str": str_v, "pwr": pwr_v, "end": end_v, "exp": exp, "level": level,
 		"inv": inv, "zeni": zeni, "skill": skill_i, "quick": quick, "equip": equip, "quests": quests, "qdone": qdone, "flags": flags,

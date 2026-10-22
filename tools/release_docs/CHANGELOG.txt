@@ -23,6 +23,12 @@
 - Menus: K and Backspace go back too (like Esc and the B button).
 - Map editor: SELECT a person to change their name, look and lines (the game's own people too), then SAVE CHANGES.
 - Map editor: after placing a person, SAVE TO THE PERSON JUST PLACED gives them a new name, look or lines at once.
+- Knocked out? You are back at the last Capsule Corp save point you saved at (this play session; a new session starts
+  at the map's own spawn, so friends start together).
+- Android: the saves are in Android/data/com.log2coop.game/files/saves (reachable with a cable or a file manager);
+  saves already on the device are moved there the first time.
+- OPTIONS - SAVE FILES: EXPORT SAVE FILE and IMPORT SAVE FILE (all your heroes in one file - take a PC's heroes to a
+  handheld and back).
 - HUD on / off (OPTIONS, and HUD / MINIMAP in the START menu), remembered. The HUD box, the minimap and the START menu
   are the same size on the screen at any VIEW SIZE (tiny at PIXELS x2 and too big or cut off at x6 before).
 - Map editor: Control+Z / Command+Z undo works again, and J (go where a door leads) is never taken by a side button
