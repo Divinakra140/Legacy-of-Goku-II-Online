@@ -877,6 +877,37 @@ func _pick_object(w: Vector2) -> Dictionary:
 				break
 	return best
 
+## SELECT on a person: their name, look and lines to change (the game's own people too: they are taken away and put
+## back changed, on the same spot - one Ctrl+Z undoes it)
+func _person_editor(o: Dictionary) -> void:
+	_lab("PERSON - change and press SAVE CHANGES:")
+	var nm = _line(side, "name", str(o.get("name", "")), func(_t): pass)
+	var st = _spin(side, "sprite set", 0, 3999, int(o.get("set", 0)), func(_v): pass)
+	_lab("What they say (one line each, A goes to the next):")
+	var txt = []
+	for l in o.get("lines", []):
+		var t = str(l[2]) if l is Array and l.size() > 2 else str(l)
+		if t.strip_edges() != "":
+			txt.append(t.strip_edges())
+	var te = TextEdit.new(); te.text = "\n".join(PackedStringArray(txt)); te.custom_minimum_size = Vector2(230, 110)
+	side.add_child(te)
+	var sv = Button.new(); sv.text = "SAVE CHANGES"; side.add_child(sv)
+	sv.pressed.connect(func():
+		var e: Dictionary = o.duplicate(true)
+		var pname = nm.text.strip_edges().to_upper()
+		e["name"] = pname
+		e["set"] = int(st.value)
+		var lines = []
+		for l in te.text.split("\n"):
+			if l.strip_edges() != "":
+				lines.append(["", pname, l.strip_edges()])
+		e["lines"] = lines
+		selected["obj"] = e
+		_move_selected(Vector2(float(e["x"]), float(e["y"])))
+		selected = {"kind": "person", "obj": e}
+		_refresh_side()
+		_say("%s changed. SAVE to keep it (Ctrl+Z undoes)." % pname))
+
 func _delete_selected() -> void:
 	if selected.is_empty():
 		return
@@ -1620,7 +1651,10 @@ func _refresh_side() -> void:
 				_lab("Click a foe (red), person (blue), treasure (gold) or door (yellow).")
 			else:
 				var o: Dictionary = selected["obj"]
-				_lab(str(selected["kind"]).to_upper() + ": " + JSON.stringify(o).left(300))
+				if str(selected["kind"]) == "person":
+					_person_editor(o)
+				else:
+					_lab(str(selected["kind"]).to_upper() + ": " + JSON.stringify(o).left(300))
 				var db = Button.new(); db.text = "DELETE (Del)"; db.pressed.connect(_delete_selected); side.add_child(db)
 				_lab("Drag it to move it.")
 		"COPY", "PASTE":
