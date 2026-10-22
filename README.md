@@ -13,7 +13,7 @@ GLOBAL multiplayer together. Formerly "Legacy of Goku II - Co-op".
   game's balance (level cap 50), original game music recorded from your own cartridge, and shared saves.
 - **The dev tools:** a much better map editor (redo, brush sizes, mirrored copy and paste, keep-the-ground pasting,
   save points in THINGS, a foe picture list, door jumping) and the Earth editor, with guides included
-  (DEV TOOLS.txt, Earth Editor Guide.txt).
+  (DEV TOOLS.txt, Earth Editor Guide.txt). and a [Video Guide](https://www.youtube.com/watch?v=eD4ifri5Pkg) by Divinakra.
 
 **No game data is included.** On first start the game asks for your own *Dragon Ball Z - The Legacy of Goku II (USA)*
 .gba (CHOOSE MY GAME) and reads its maps, sprites and sounds on your device. Earth ships as tile numbers only
