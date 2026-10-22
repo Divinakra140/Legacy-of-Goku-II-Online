@@ -100,6 +100,7 @@ func _music_text() -> String:
 var _screen_gen = 0       # every new screen: a waiting join retry from an older screen gives up
 func _clear() -> void:
 	_screen_gen += 1
+	_typing = Callable()      # (every screen change: a letter board's typing must not follow you into the next screen's text box)
 	if ui:
 		ui.queue_free()
 	ui = Control.new()

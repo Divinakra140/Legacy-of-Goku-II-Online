@@ -410,9 +410,14 @@ func _input(ev: InputEvent) -> void:
 	if tab != "MAP" or area.is_empty() or not (ev is InputEventKey) or not ev.pressed or ev.echo:
 		return
 	var kk: InputEventKey = ev
+	var fo = get_viewport().gui_get_focus_owner()
+	# J, Z, Space and Enter also mean "press the chosen button" (the menus' A): on the map they are the map's
+	# (J: go where a door leads) - a side button clicked earlier must not take them
+	if fo is BaseButton and not (kk.ctrl_pressed or kk.meta_pressed or kk.alt_pressed) and kk.keycode in [KEY_J, KEY_Z, KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
+		fo.release_focus()
+		return
 	if not (kk.ctrl_pressed or kk.meta_pressed) or not (kk.keycode == KEY_Z or kk.keycode == KEY_Y):
 		return
-	var fo = get_viewport().gui_get_focus_owner()
 	if (fo is LineEdit and not fo.get_parent() is SpinBox and fo.editable) or (fo is TextEdit and fo.editable):
 		return
 	if kk.keycode == KEY_Y or kk.shift_pressed:
