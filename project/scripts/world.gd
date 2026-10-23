@@ -197,7 +197,7 @@ func _ready() -> void:
 	hud.add_child(hud_draw)
 	chat_box = LineEdit.new()
 	chat_box.visible = false
-	chat_box.placeholder_text = "SAY SOMETHING (ENTER: SEND, R3: CANCEL)" if OS.has_feature("android") else "SAY SOMETHING (ENTER: SEND, ESC: CANCEL)"
+	chat_box.placeholder_text = "SAY SOMETHING (ENTER: SEND, R3 OR B: CANCEL)" if OS.has_feature("android") else "SAY SOMETHING (ENTER: SEND, ESC: CANCEL)"
 	chat_box.max_length = 80
 	chat_box.add_theme_font_size_override("font_size", 8)
 	chat_box.position = Vector2(6, 200)
@@ -590,7 +590,7 @@ func _input_for(L: Local) -> Dictionary:
 		if not typing:
 			for st in sets:
 				for key in st.get(b, []):
-					if Input.is_key_pressed(key):
+					if _keys_down.get(key, false):
 						on = true
 		for p in my_pads:
 			if PAD.has(b) and Input.is_joy_button_pressed(p, PAD[b]):
@@ -605,7 +605,7 @@ func _input_for(L: Local) -> Dictionary:
 		k["runt"] = k.get("runt", false) or Input.get_joy_axis(p, JOY_AXIS_TRIGGER_RIGHT) > 0.5      # R2: sprint on / off
 		k["fly"] = k["fly"] or Input.get_joy_axis(p, JOY_AXIS_TRIGGER_LEFT) > 0.5      # L2: fly / land (FREE PLAY)
 	if i == 0 and not typing:
-		k["ok"] = Input.is_key_pressed(KEY_ENTER) or Input.is_key_pressed(KEY_KP_ENTER) or Input.is_key_pressed(KEY_SPACE)      # (the menu: OK)
+		k["ok"] = _keys_down.get(KEY_ENTER, false) or _keys_down.get(KEY_KP_ENTER, false) or _keys_down.get(KEY_SPACE, false)      # (the menu: OK)
 	if i == 0 and touch != null and touch.shown and not map_open:
 		for b in touch.keys:
 			k[b] = k.get(b, false) or touch.keys[b]
@@ -669,6 +669,18 @@ func _menu_mouse(ev: InputEvent) -> bool:
 	return false
 
 var perf_on = false
+## the keyboard's keys as this game has seen them pressed and let go (not Input.is_key_pressed): a phone's
+## on-screen keyboard sends letters as key presses - chat's "d" stayed "held" and the hero walked right by himself
+var _keys_down = {}
+func _input(ev: InputEvent) -> void:
+	if ev is InputEventKey and not ev.echo and not chat_open:
+		_keys_down[ev.keycode] = ev.pressed
+	# chat open: R3 again (or B) closes it - here, before the chat box: the box took the pad's buttons and R3 did nothing,
+	# leaving you stuck typing until you sent something
+	if chat_open and ev is InputEventJoypadButton and ev.pressed and (ev.button_index == JOY_BUTTON_RIGHT_STICK or ev.button_index == Game.pad_btn("b")):
+		_chat_close()
+		get_viewport().set_input_as_handled()
+
 func _unhandled_input(ev: InputEvent) -> void:
 	if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_F3:
 		perf_on = not perf_on
@@ -727,6 +739,7 @@ func _toggle_player2() -> void:
 
 # ------------------------------------------------------------------ the tick
 func _physics_process(_dt: float) -> void:
+	_chat_poll()
 	_touch_tick()
 	if Engine.get_physics_frames() % 600 == 0:
 		var nowf = Engine.get_physics_frames()
@@ -1785,20 +1798,58 @@ func _chat_send(t: String) -> void:
 	Game.say(locals[0].name, t, 0)
 	_chat_close()
 
+## Android: the phone keyboard never full screen over the game, and closed for sure (LoG2Keyboard.java - its grey
+## layer stayed over the game after a message now and then)
+func _android_keyboard(what: String) -> void:
+	if not (Engine.has_singleton("AndroidRuntime") and Engine.has_singleton("JavaClassWrapper")):
+		return
+	var act = Engine.get_singleton("AndroidRuntime").getActivity()
+	var kb = Engine.get_singleton("JavaClassWrapper").wrap("com.godot.game.LoG2Keyboard")
+	if act == null or kb == null:
+		return
+	if what == "setup":
+		kb.setup(act)
+	else:
+		kb.hide(act)
+
+var _chat_asking = null      # (the phone's chat box is open: its answer is taken in _process)
+func _chat_poll() -> void:
+	if _chat_asking == null:
+		return
+	var r = str(_chat_asking.take())
+	if r == "":
+		return
+	_chat_asking = null
+	_keys_down.clear()
+	if r.begins_with("S:") and r.substr(2).strip_edges() != "" and not locals.is_empty():
+		Game.say(locals[0].name, r.substr(2).strip_edges().left(80), 0)
+
 func _chat_open() -> void:
+	_keys_down.clear()
+	if OS.has_feature("android") and Engine.has_singleton("AndroidRuntime") and Engine.has_singleton("JavaClassWrapper"):
+		# a phone: a little "say something" box of the app's own (LoG2Keyboard.ask - one line, Enter sends, B or R3
+		# cancels); with the game's hidden text box the keyboard got stuck (a grey layer, R3 never reached the game)
+		var kb = Engine.get_singleton("JavaClassWrapper").wrap("com.godot.game.LoG2Keyboard")
+		if kb != null:
+			kb.ask(Engine.get_singleton("AndroidRuntime").getActivity(), "SAY SOMETHING")
+			_chat_asking = kb
+			return
 	chat_open = true
 	chat_box.visible = true
 	chat_box.text = ""
 	chat_box.grab_focus()
 	if OS.has_feature("android"):
+		_android_keyboard("setup")
 		DisplayServer.virtual_keyboard_show("")
 
 func _chat_close() -> void:
+	_keys_down.clear()      # (what was typed must not stay "held" - see _keys_down)
 	chat_open = false
 	chat_box.visible = false
 	chat_box.release_focus()
 	if OS.has_feature("android"):
 		DisplayServer.virtual_keyboard_hide()
+		_android_keyboard("hide")
 
 func _on_chat(from: String, text: String, pid: int) -> void:
 	bubbles[pid] = [text, 300]

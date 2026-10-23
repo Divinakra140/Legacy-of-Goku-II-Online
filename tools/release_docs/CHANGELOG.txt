@@ -17,7 +17,8 @@
 - PC / Mac hosts no longer drop a player every minute or so when two or more join (the helper mixed up connections).
 - Windows: the multiplayer helper is waited for on a slow PC (no more "the multiplayer helper stopped").
 - Joining a game keeps your own outfits, view size, buttons and settings (it took the host's).
-- Android: R3 opens the chat with the on-screen keyboard (Enter sends, R3 again closes).
+- Android chat (R3): a small SAY SOMETHING box with the keyboard up at once - Enter sends, B or R3 cancels. The game
+  no longer goes grey after a message, and typed letters no longer leave your hero walking by himself.
 - Windows / Mac: names, world names and passwords can be typed on the keyboard (and the typing stays on that screen: it no longer
   follows you into the next screen's address or password box).
 - QUIT GAME closes at once, even while a song is being recorded.
