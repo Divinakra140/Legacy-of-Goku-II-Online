@@ -34,6 +34,8 @@
 - A held beam stops at once when you are hit or knocked out (it went on from where it was fired, emptying your ki).
 - All the words in the game - names, speech bubbles, the HUD, messages, the START menu - in the cartridge's own
   pixel font, sharp on every screen (they were a modern font, blurry or broken on handhelds).
+- VIEW SIZE offers only sizes that look different on your screen (on a small laptop x6 looked like x5), and the
+  START menu's words no longer turn tiny at full screen x5.
 - The START menu's words keep their size in the menu at every VIEW SIZE, and long lines go on under themselves.
   OPTIONS - SHOW CONTROLS shows the keys and buttons (the CONTROLS row did nothing).
 - WORDS ON SCREEN (OPTIONS, and the START menu): off hides the names, the other players' lines, ONLINE, place names

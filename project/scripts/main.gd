@@ -2646,7 +2646,7 @@ func _opt_set(row: int) -> void:
 			Sfx.volume = 0.0 if Sfx.volume > 0.95 else clampf(snappedf(Sfx.volume + 0.1, 0.1), 0.0, 1.0)
 			Sfx.play("menu")
 		2:
-			var zs = [0, 2, 3, 4, 5, 6]
+			var zs = Game.view_sizes()
 			Game.cfg["view_zoom"] = zs[(zs.find(int(Game.cfg.get("view_zoom", 0))) + 1) % zs.size()]
 			_fit_view()      # at once, not only when the game starts
 		3:

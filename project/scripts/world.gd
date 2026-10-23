@@ -2985,7 +2985,9 @@ func _pf_unit(frac: float) -> float:
 	# (in proportion to what it is drawn in - the START menu, the HUD box - which grow and shrink with VIEW SIZE:
 	# kept the same on the screen, the words were tiny at x2 and ran out of the menu at x6)
 	var g = _pf_game_px() * _txt_scale
-	return maxf(1.0, roundf(g * frac)) / g
+	# (a hair over a half rounds up: exactly 1.5 screen pixels - full screen x5 on a 1366x768 laptop - came out as
+	# 1.4999 and the words at half size)
+	return maxf(1.0, floorf(g * frac + 0.501)) / g
 
 func _pf_width(t: String, u: float) -> float:
 	var w = 0.0
@@ -3493,7 +3495,7 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 				2:
 					Game.toggle_fullscreen()
 				3:      # how big the game's pixels are: AUTO fits the screen; smaller = see more of the world
-					var zs = [0, 2, 3, 4, 5, 6]
+					var zs = Game.view_sizes()
 					Game.cfg["view_zoom"] = zs[(zs.find(int(Game.cfg.get("view_zoom", 0))) + 1) % zs.size()]
 					Game.save_options()
 					if get_tree().root.has_node("Main"): get_tree().root.get_node("Main")._fit_view()

@@ -861,6 +861,24 @@ var local_levels = {}     # local player k -> level (for the world boss's streng
 # ------------------------------------------------------------------ the pad's A/B/X/Y
 ## "xbox": A is the bottom button (a PC pad). "nintendo": A on the right, B at the bottom, X on top, Y on the left
 ## (the labels on a Retroid and other handhelds) - the default on Android
+## VIEW SIZE's choices: only pixel sizes that look different on this screen
+func view_sizes() -> Array:
+	var ws = Vector2(get_window().size)
+	var out = [0]
+	var last = 0.0
+	for k in [2, 3, 4, 5, 6]:
+		# how big the pixels really come out (the world never shows less than 240 x 160): a size that looks the same
+		# as the one before is left out (on a 1366 x 768 laptop full screen x5 is still bigger than x4, x6 is not)
+		var eff = minf(float(k), minf(ws.x / 240.0, ws.y / 160.0))
+		if eff > last + 0.05:
+			out.append(k)
+			last = eff
+	var cur = int(cfg.get("view_zoom", 0))
+	if not out.has(cur):
+		out.append(cur)      # (the size chosen before stays in the list until changed)
+		out.sort()
+	return out
+
 func pad_layout() -> String:
 	return str(cfg.get("pad_layout", "nintendo" if OS.has_feature("android") else "xbox"))
 
