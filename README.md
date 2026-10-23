@@ -4,7 +4,7 @@
 This is the world's first ever Online Multiplayer Godot rebuild of **Legacy of Goku II** by **Puni Puni** and **Divinakra**
 (YouTube: [@PuniPuni2026](https://www.youtube.com/@PuniPuni2026), [@DivinakraCreations](https://www.youtube.com/@DivinakraCreations)),
 for **Android** (Handhelds and phones), **Windows** and **Mac** (Apple Silicon and Intel). All three play
-GLOBAL multiplayer together. Formerly "Legacy of Goku II - Co-op".
+GLOBAL multiplayer together. Also known as "Legacy of Goku II - Co-op".
 
 **Improvements** LoG2 Online v44 has some exciting impovements to both the game on all three platforms and bundled map editor
  on PC and Mac:
