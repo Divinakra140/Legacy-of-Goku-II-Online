@@ -2694,7 +2694,10 @@ func _credits_screen() -> void:
 		["SUPERNOVA, DEATH BALL, DEATH BEAM, DESTRUCTO DISK", none, A],
 		["AND DARKNESS EYE BEAM ANIMATIONS BY DIVINAKRA", none, A],
 		["FLYING LEFT AND RIGHT ANIMATIONS FOR COOLER,", none, A],
-		["MR. SATAN AND TEEN TRUNKS BY DIVINAKRA", none, A]]
+		["MR. SATAN AND TEEN TRUNKS BY DIVINAKRA", none, A],
+		["SHADOW, SSB AURA, SS BLUE, SHIRTLESS, SS GOKU,", none, A],
+		["TORN / YELLOW PICCOLO AND THE MISSING YAMCHA,", none, A],
+		["KRILLIN AND TIEN FRAMES BY PUNI PUNI", none, A]]
 	var bs = _gscroll(rows.map(func(r): return [r[0], r[1]]), 24, GH - 28)
 	for k in bs.size():
 		bs[k].add_theme_color_override("font_color", rows[k][2])

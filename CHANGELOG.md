@@ -77,12 +77,15 @@
 ### Controls and moves
 - L3: sprint until you stop (and boost while flying). R2: sprint on / off. B lands while flying, Y boosts.
 - Held beams drain ki and end when you let go or run out. Upward beams and their charge glow are drawn behind you.
+- Tien's Tri Beam fires from the middle of his chest (facing up or down it came out to one side).
 - Spirit Bomb as strong as Supernova, Spirit Ball as strong as Death Ball. Specials can be switched while flying.
 
 ### New heroes and art
 - Yamcha, Krillin, Tien, Android 18 and Android 17. Every villain playable except King Cold.
 - Perfect Cell's walk (Chris Ruok), Teen Trunks flying in all directions, Mecha Frieza's redesign and new attack
   animations (Divinakra). Galick Gun and Sword Slash icons. Credits scroll, with a SPRITE ART section.
+  Credits: Shadow, SSB Aura, SS Blue, Shirtless, SS Goku, Torn / Yellow Piccolo and the missing Yamcha, Krillin and
+  Tien frames by Puni Puni.
 
 ### DEV TOOLS (Windows / Mac)
 - Map editor: REDO, brush size, smooth strokes, mirror a copy (X / Y), KEEP THE GROUND when pasting, a SAVE POINT

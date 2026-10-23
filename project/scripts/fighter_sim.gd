@@ -445,6 +445,14 @@ func _anim_or(a: int, alt: int) -> int:
 func _eyes() -> Vector2:
 	return Assets.eye_point(set_id, anim, dir) * size_scale()
 
+## "from": "chest" (TRI BEAM): facing up or down, from the middle of the body at the hands' height (from the hand it
+## came out to one side); left or right, from the hands
+func _chest_or_hand(sk: Dictionary, a: int) -> Vector2:
+	var h = hand(a)
+	if str(sk.get("from", "")) == "chest" and dir < 2:
+		return Vector2(0.0, h.y)
+	return h
+
 func hand(a: int) -> Vector2:
 	return Assets.hand_point(set_id, a, dir) * size_scale()
 
@@ -1055,7 +1063,7 @@ func _step_skill(enemies: Array) -> void:
 			var pa = _pose(sk, "beam")
 			_pose_frame(pa, t < ch_t, t - ch_t)
 			if t < ch_t:
-				var hc = _eyes() if str(sk.get("from", "")) == "eyes" else Assets.charge_point(set_id, pa, dir) * size_scale()
+				var hc = _eyes() if str(sk.get("from", "")) == "eyes" else (_chest_or_hand(sk, pa) if str(sk.get("from", "")) == "chest" else Assets.charge_point(set_id, pa, dir) * size_scale())
 				var look = str(sk.get("look", ""))
 				if str(sk.get("from", "")) == "eyes":
 					pass                # an eye beam: no glow on the face, the beam just leaves the eye
@@ -1073,7 +1081,7 @@ func _step_skill(enemies: Array) -> void:
 				var sp = float(sk.get("speed", 6))
 				var r = Rules.ki_damage(_stat_of(sk), power, rng)
 				shot_seq += 1
-				var hb = _eyes() if str(sk.get("from", "")) == "eyes" else hand(pa)
+				var hb = _eyes() if str(sk.get("from", "")) == "eyes" else _chest_or_hand(sk, pa)
 				var ox = x + hb.x
 				var oy = y + hb.y
 				shots.append({"id": shot_seq, "x": ox, "y": oy, "ox": ox, "oy": oy, "vx": fwd.x * sp, "vy": fwd.y * sp, "dir": dir,
