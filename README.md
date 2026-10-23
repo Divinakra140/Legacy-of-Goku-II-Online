@@ -1,7 +1,7 @@
 <img width="1920" height="1080" alt="release 4 4" src="https://github.com/user-attachments/assets/6eff3797-949f-471c-9ffb-90cb23c0606b" />
  
 
-This is the world's first ever online multiplayer Godot rebuild of **Legacy of Goku II** by **Puni Puni** and **Divinakra**
+The world's first ever online multiplayer Godot rebuild of **Legacy of Goku II** by **Puni Puni** and **Divinakra**
 (YouTube: [@PuniPuni2026](https://www.youtube.com/@PuniPuni2026), [@DivinakraCreations](https://www.youtube.com/@DivinakraCreations)),
 for **Android** (Handhelds and phones), **Windows** and **Mac** (Apple Silicon and Intel). All three play
 GLOBAL multiplayer together. Also known as "Legacy of Goku II - Co-op".
