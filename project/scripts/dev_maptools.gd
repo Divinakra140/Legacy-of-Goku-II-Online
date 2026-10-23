@@ -358,6 +358,15 @@ static func tile_color(cell: int) -> Color:
 	_tile_col[id] = col
 	return col
 
+## the minimap's colour of a cell as the importer draws it: a wall at half brightness (walkable ground shows lighter
+## - painting a changed cell without this lost the difference, e.g. a path made walkable under trees)
+static func mini_color(v: Array, walk: int) -> Color:
+	var c = cell_color(v)
+	if not (walk & 1):
+		c = Color(c.r * 0.5, c.g * 0.5, c.b * 0.5)
+	c.a = 1.0
+	return c
+
 static func cell_color(v: Array) -> Color:
 	for l in [4, 3, 2, 1, 0]:
 		if int(v[l]) != 0 and not (int(v[l]) & (1 << 18)):
@@ -378,8 +387,8 @@ static func mini_image(a: Dictionary, max_px: int = 220) -> Image:
 				var xy = str(k).split(",")
 				var x = int(xy[0]); var y = int(xy[1])
 				if x >= 0 and y >= 0 and x < im.get_width() and y < im.get_height():
-					var col = cell_color(ch[k]); col.a = 1.0
-					im.set_pixel(x, y, col)
+					var cv: Array = ch[k]
+					im.set_pixel(x, y, mini_color(cv, int(cv[5]) if cv.size() > 5 else 1))
 			return im
 	var tw: int = a["tw"]; var th: int = a["th"]
 	var step = maxi(1, int(ceil(maxf(tw, th) / float(max_px))))

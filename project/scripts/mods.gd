@@ -380,8 +380,7 @@ func apply_cells(key: String, a: Dictionary) -> void:
 			for j in idx.size():
 				var x = idx[j] % tw; var y = idx[j] / tw
 				if x < iw and y < ih:
-					var col: Color = MT.cell_color(vals[j]); col.a = 1.0
-					img.set_pixel(x, y, col)
+					img.set_pixel(x, y, MT.mini_color(vals[j], int(vals[j][5]) if vals[j].size() > 5 else 1))
 			a["mini"] = ImageTexture.create_from_image(img)
 	# people added / taken away
 	var ppl: Array = a.get("people", [])

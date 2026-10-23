@@ -108,7 +108,7 @@ func exe_dir() -> String:
 ## Android: no folder next to the program - the game's folders (content, modpacks, imported...) come packed in
 ## the APK (res://bundle/gamedata.pack, made by tools/make_pack.py) and are unpacked into the app's own folder
 ## on the first start: [8 bytes: index length][index JSON: [{"p", "s"}...]][the files, in that order]
-const BUNDLE_VERSION = "v44-73"
+const BUNDLE_VERSION = "v44-75"
 var _android_root = ""
 func _remove_tree(path: String) -> void:
 	if not DirAccess.dir_exists_absolute(path):
@@ -1446,7 +1446,7 @@ func _earth_base(bin_path: String) -> void:
 	# the minimap has a stamp of its own: a device whose picture missed a redraw (it was not there yet, an older Earth)
 	# is redrawn once with this Earth - after an update nobody keeps a minimap of an old Earth
 	var mini_stamp_path = bin_path.get_base_dir().path_join("0_mini.txt")
-	var mini_ok = FileAccess.file_exists(mini_stamp_path) and FileAccess.get_file_as_string(mini_stamp_path).strip_edges() == ver
+	var mini_ok = FileAccess.file_exists(mini_stamp_path) and FileAccess.get_file_as_string(mini_stamp_path).strip_edges() == ver + "|walls"
 	if mini_ok and FileAccess.file_exists(stamp_path) and FileAccess.get_file_as_string(stamp_path).strip_edges() == stamp:
 		return      # laid in already (a new import or a new Earth lays it again)
 	var body = FileAccess.get_file_as_bytes(src).decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
@@ -1471,18 +1471,18 @@ func _earth_base(bin_path: String) -> void:
 		var ls = []
 		for k in 5:
 			ls.append(body.slice(8 + k * n * 4, 8 + (k + 1) * n * 4).to_int32_array())
+		var wk = body.slice(8 + n * 20, 8 + n * 21)      # (walls drawn darker, as the importer does)
 		var MT = preload("res://scripts/dev_maptools.gd")
 		var iw = img.get_width(); var ih = img.get_height()
 		for i in idx:
 			var x = i % tw; var y = i / tw
 			if x < iw and y < ih:
-				var col: Color = MT.cell_color([ls[0][i], ls[1][i], ls[2][i], ls[3][i], ls[4][i]]); col.a = 1.0
-				img.set_pixel(x, y, col)
+				img.set_pixel(x, y, MT.mini_color([ls[0][i], ls[1][i], ls[2][i], ls[3][i], ls[4][i]], wk[i] if i < wk.size() else 1))
 		img.save_png(mini_path)
 		_tex.erase(mini_path)
 		var ms = FileAccess.open(mini_stamp_path, FileAccess.WRITE)
 		if ms:
-			ms.store_string(ver)
+			ms.store_string(ver + "|walls")      # (a redraw without the darker walls is done again)
 			ms.close()
 	var sf = FileAccess.open(stamp_path, FileAccess.WRITE)
 	if sf:
