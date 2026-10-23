@@ -52,6 +52,8 @@
 - Earth reworked by hand: new forests, roads, rivers, doors, and strong foes out at the edges. It ships as the base
   map (tile numbers only - drawn from your own game file), so everybody walks the same Earth and it loads quickly.
 - Improved by hand: the area around Goku's House, Triceratops Jungle and West City.
+- The minimap of Earth is redrawn once whenever a new Earth arrives (a device could keep an old picture: trees and
+  ground you changed did not show on it).
 - Every room behind a door has plain black round it (no more mirrored copies of the room). City Hall, the
   Antiquities shop and the West City apartments have their stone floors back. The minimap shows the edits.
 - GOKU'S HOUSE: a new choice in SELECT MAP - Earth, starting in Gohan's bedroom (and back there when beaten).

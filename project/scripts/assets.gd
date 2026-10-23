@@ -108,7 +108,7 @@ func exe_dir() -> String:
 ## Android: no folder next to the program - the game's folders (content, modpacks, imported...) come packed in
 ## the APK (res://bundle/gamedata.pack, made by tools/make_pack.py) and are unpacked into the app's own folder
 ## on the first start: [8 bytes: index length][index JSON: [{"p", "s"}...]][the files, in that order]
-const BUNDLE_VERSION = "v44-72"
+const BUNDLE_VERSION = "v44-73"
 var _android_root = ""
 func _remove_tree(path: String) -> void:
 	if not DirAccess.dir_exists_absolute(path):
@@ -1443,7 +1443,11 @@ func _earth_base(bin_path: String) -> void:
 	var ver = FileAccess.get_file_as_string(builtin_dir().path_join("earth/version.txt")).strip_edges()
 	var stamp_path = bin_path.get_base_dir().path_join("earth_base.txt")
 	var stamp = "%s|%d" % [ver, FileAccess.get_modified_time(bin_path)]
-	if FileAccess.file_exists(stamp_path) and FileAccess.get_file_as_string(stamp_path).strip_edges() == stamp:
+	# the minimap has a stamp of its own: a device whose picture missed a redraw (it was not there yet, an older Earth)
+	# is redrawn once with this Earth - after an update nobody keeps a minimap of an old Earth
+	var mini_stamp_path = bin_path.get_base_dir().path_join("0_mini.txt")
+	var mini_ok = FileAccess.file_exists(mini_stamp_path) and FileAccess.get_file_as_string(mini_stamp_path).strip_edges() == ver
+	if mini_ok and FileAccess.file_exists(stamp_path) and FileAccess.get_file_as_string(stamp_path).strip_edges() == stamp:
 		return      # laid in already (a new import or a new Earth lays it again)
 	var body = FileAccess.get_file_as_bytes(src).decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
 	var head = FileAccess.get_file_as_bytes(bin_path).slice(0, 8)
@@ -1476,6 +1480,10 @@ func _earth_base(bin_path: String) -> void:
 				img.set_pixel(x, y, col)
 		img.save_png(mini_path)
 		_tex.erase(mini_path)
+		var ms = FileAccess.open(mini_stamp_path, FileAccess.WRITE)
+		if ms:
+			ms.store_string(ver)
+			ms.close()
 	var sf = FileAccess.open(stamp_path, FileAccess.WRITE)
 	if sf:
 		sf.store_string("%s|%d" % [ver, FileAccess.get_modified_time(bin_path)])
