@@ -79,7 +79,7 @@ Tools
            when it won't open. Once opened with a used-up key it stays open (saved).
   PERSON   (also) a SHOP the person keeps, or an EVENT that starts when you talk to them
 
-VIEW (top bar)  LITTLE MAP (click it to jump), SHOW LAYER 0-4 (hide layers to see under roofs),
+VIEW (top bar)  LITTLE MAP (shows where you are), SHOW LAYER 0-4 (hide layers to see under roofs),
                 THE WHOLE WORLD (all of Earth at once with the place names - click to zoom there).
                 Zoom far out with the wheel and it switches to the whole-world view by itself.
 CHANGES         marks every cell your team changed (and the mods switched on) in colour.

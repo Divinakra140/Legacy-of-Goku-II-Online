@@ -1292,7 +1292,7 @@ func _build_ui() -> void:
 	sidep.add_child(ss)
 	side = VBoxContainer.new(); side.custom_minimum_size = Vector2(236, 0)
 	ss.add_child(side)
-	# the little map (click: go there)
+	# the little map (shows where you are; clicks do nothing)
 	minimap = Control.new()
 	minimap.anchor_top = 1.0; minimap.anchor_bottom = 1.0
 	minimap.offset_left = 4; minimap.offset_top = -200; minimap.offset_right = 184; minimap.offset_bottom = -26
@@ -1357,13 +1357,10 @@ func _draw_minimap() -> void:
 	var vr = Rect2(r.position + (cam.position - vs / 2) * sc, vs * sc)
 	minimap.draw_rect(vr, Color(1, 1, 0.3), false, 1.0)
 
+## the little map only shows where you are: a click on it does nothing (it moved the view there, and a click while
+## painting drew a streak of wall or ground across the whole map) - and it never reaches the map under it
 func _minimap_input(ev: InputEvent) -> void:
-	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT or ev is InputEventMouseMotion and ev.button_mask & MOUSE_BUTTON_MASK_LEFT:
-		var r = _mini_rect()
-		if r.size.x <= 0:
-			return
-		var p = (ev.position - r.position) / r.size.x * float(area["w"])
-		cam.position = p
+	if ev is InputEventMouseButton or ev is InputEventMouseMotion:
 		minimap.accept_event()
 
 func _refresh_minimap() -> void:

@@ -2623,17 +2623,16 @@ func _game_options_screen() -> void:
 		["WORDS ON SCREEN  " + ("ON" if bool(Game.cfg.get("words_on", true)) else "OFF"), func(): _opt_set(7)]]
 	if not OS.has_feature("mobile"):
 		rows.append(["FULLSCREEN  " + ("ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF"), func(): _opt_set(8)])
-	var out = _glist(rows, 30, 16, true)
+	var gap = 14 if rows.size() <= 8 else 13      # (more rows than before: the words under them ran into the hint)
+	var out = _glist(rows, 28, gap, true)
 	out[clampi(_opt_row, 0, out.size() - 1)].grab_focus.call_deferred()
 	# what VIEW SIZE means, in plain numbers: your screen, and how much of the world fits on it
 	var ws = get_window().size
 	var kmax = maxi(1, mini(int(ws.x / 480), int(ws.y / 270)))
 	var k = zoom if zoom > 0 else kmax
-	var info = "YOUR SCREEN %d X %d - %s" % [ws.x, ws.y, "AUTO FITS IT" if zoom == 0 else "EACH GAME PIXEL %dX BIGGER" % k]
-	var info2 = "YOU SEE %d X %d OF THE WORLD" % [maxi(240, ws.x / k), maxi(160, ws.y / k)]
-	for i in 2:
-		var l = _gtext(gba, [info, info2][i], Vector2(0, 30 + rows.size() * 16 + 4 + i * 10), false, Color(0.75, 0.85, 1))
-		l.size = Vector2(GW, 10); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var info = "SCREEN %d X %d - YOU SEE %d X %d OF THE WORLD" % [ws.x, ws.y, maxi(240, ws.x / k), maxi(160, ws.y / k)]
+	var l = _gtext(gba, info, Vector2(0, mini(28 + rows.size() * gap + 2, GH - 26)), false, Color(0.75, 0.85, 1))
+	l.size = Vector2(GW, 10); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var hint = _gtext(gba, "A: CHANGE   B: BACK", Vector2(0, GH - 14), false, Color(0.7, 0.75, 0.9))
 	hint.size = Vector2(GW, 10); hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 

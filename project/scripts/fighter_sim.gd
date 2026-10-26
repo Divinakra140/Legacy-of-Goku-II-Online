@@ -418,6 +418,7 @@ func force_form(id: String) -> bool:
 	pending_form = i
 	state = "transform"
 	skill_t = 0
+	_tf_look(i)
 	var tf_frames = Assets.sprite_set(set_id).get("slots", [])
 	game_tf = int(forms[i].get("set", -1)) > 0 and tf_frames.size() > Rules.A_TRANSFORM * 4 and tf_frames[Rules.A_TRANSFORM * 4].size() >= 3
 	set_anim(_anim_or(Rules.A_TRANSFORM, _anim_or(Rules.A_CHARGE, Rules.A_IDLE)))
@@ -1233,6 +1234,13 @@ func _step_skill(enemies: Array) -> void:
 			_skill_done()
 
 # ------------------------------------------------------------------ transformations
+## this look has no transformation frames (Gohan's own): the form's look plays them (it showed a walk instead)
+func _tf_look(target: int) -> void:
+	var has_tf = func(fr: Array) -> bool: return fr.size() > Rules.A_TRANSFORM * 4 and fr[Rules.A_TRANSFORM * 4].size() >= 3
+	var tset = int(forms[target].get("set", -1))
+	if not has_tf.call(Assets.sprite_set(set_id).get("slots", [])) and tset > 0 and has_tf.call(Assets.sprite_set(tset).get("slots", [])):
+		set_id = tset
+
 func _transform_next() -> void:
 	var u = unlocked_forms()
 	if u.is_empty():
@@ -1259,6 +1267,7 @@ func _transform_next() -> void:
 	pending_form = nxt
 	state = "transform"
 	skill_t = 0
+	_tf_look(nxt)
 	var tf_frames = Assets.sprite_set(set_id).get("slots", [])
 	# the game's own animation for the game's own forms (Super Saiyan, Piccolo dropping his cape...); not for Kaioken
 	game_tf = int(forms[nxt].get("set", -1)) > 0 and tf_frames.size() > Rules.A_TRANSFORM * 4 and tf_frames[Rules.A_TRANSFORM * 4].size() >= 3

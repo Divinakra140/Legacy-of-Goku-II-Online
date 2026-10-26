@@ -5,7 +5,7 @@ YouTube: https://www.youtube.com/@PuniPuni2026   https://www.youtube.com/@Divina
 New in v44 - LoG2 ONLINE: ANDROID, WINDOWS AND MAC, PLAYING TOGETHER
 - A new name: LEGACY OF GOKU 2 ONLINE (it was LoG2 Co-op). Your saved fighters and settings carry over.
 - One game on three systems: Android (the Retroid Pocket and phones), Windows, and Mac (one app for both
-  Apple Silicon and Intel Macs, macOS 10.15 or newer).
+  Apple Silicon and Intel Macs, macOS 11 Big Sur or newer).
 - GLOBAL MULTIPLAYER: play with anyone over the internet - public games, or private ones with a password.
   Android, Windows and Mac players all join the same games. LOCAL MULTIPLAYER: the same Wi-Fi.
   No Hamachi needed any more. Allow the game and log2_ztbridge when Windows' firewall asks.

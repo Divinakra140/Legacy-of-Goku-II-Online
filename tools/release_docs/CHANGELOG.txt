@@ -4,7 +4,7 @@
 
 ### Now on Android, Windows and Mac - and a new name
 - **LoG2 Online** (Legacy of Goku 2 Online): Android (Retroid Pocket and phones), Windows, and Mac (one app for
-  Apple Silicon and Intel, macOS 10.15+). All three play GLOBAL multiplayer together. Saves carry over.
+  Apple Silicon and Intel, macOS 11 Big Sur or newer). All three play GLOBAL multiplayer together. Saves carry over.
 - Windows / Mac: fullscreen by default (remembered), a window that fits the screen when windowed, the menus fill the
   screen at any size, keyboard (Enter / Space / J / Z select, Esc back) and mouse in every menu, QUIT GAME in OPTIONS,
   F3 shows the frame rate. The computer's own file browser for picking your game file. Dragon Ball app icon.
@@ -34,6 +34,10 @@
 - A held beam stops at once when you are hit or knocked out (it went on from where it was fired, emptying your ki).
 - All the words in the game - names, speech bubbles, the HUD, messages, the START menu - in the cartridge's own
   pixel font, sharp on every screen (they were a modern font, blurry or broken on handhelds).
+- OPTIONS - OPTIONS: the words under the list no longer run into each other on handhelds.
+- Map editor: a click on the little map does nothing (it jumped the view, and while painting drew a streak across the
+  map).
+- Mac: needs macOS 11 Big Sur or newer (the game engine does not start on 10.15 - an older Mac now says so).
 - VIEW SIZE offers only sizes that look different on your screen (on a small laptop x6 looked like x5), and the
   START menu's words no longer turn tiny at full screen x5.
 - The START menu's words keep their size in the menu at every VIEW SIZE, and long lines go on under themselves.
@@ -77,6 +81,8 @@
 ### Controls and moves
 - L3: sprint until you stop (and boost while flying). R2: sprint on / off. B lands while flying, Y boosts.
 - Held beams drain ki and end when you let go or run out. Upward beams and their charge glow are drawn behind you.
+- Gohan: Super Saiyan and Super Saiyan 2 look right (they were swapped), and his first transformation plays its
+  animation (a walk showed instead).
 - Tien's Tri Beam fires from the middle of his chest (facing up or down it came out to one side).
 - Spirit Bomb as strong as Supernova, Spirit Ball as strong as Death Ball. Specials can be switched while flying.
 
