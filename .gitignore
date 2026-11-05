@@ -53,8 +53,10 @@ art_work/
 
 # --- release builds and local backups (the zips go on the GitHub release page, not in the repo) ---
 release/
+release_*/
 build_mac/
 build_win/
 data/backups/
 data/imported_*/
+project/backups/
 __pycache__/
