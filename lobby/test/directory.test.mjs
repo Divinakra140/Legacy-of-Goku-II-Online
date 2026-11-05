@@ -14,6 +14,8 @@ assert.equal(all[0].name, "World 1");
 assert.ok(!("key" in all[0]) && !("client" in all[0]) && !("seen" in all[0]), "secrets stay private");
 assert.equal((await post(1, { players: 3 })).status, 200);
 assert.equal((await list())[0].players, 3, "re-announce updates in place");
+assert.equal((await post(1, { players: 3, bots: 7 })).status, 200);
+assert.equal((await list())[0].bots, 7, "the bots a game has are listed");
 assert.equal((await post(2, { players: 9, private: true, name: "x".repeat(99) })).status, 200);
 all = await list();
 assert.equal(all[1].players, 4); assert.equal(all[1].private, true); assert.equal(all[1].name.length, 24);

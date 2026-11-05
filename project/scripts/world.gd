@@ -48,6 +48,7 @@ class Local:
 	var banner = ""
 	var banner_t = 0
 	var kills = 0
+	var dmg_taken = {}             # BRAWL / HEROES VS VILLAINS: attacker pid -> {dmg, ch, name} since you were last at full health - whoever dealt the most gets the kill (brawl.gd mirrors this for brawlers)
 	var send_t = 0
 	var cam = Vector2.ZERO        # where this player's camera looks (area coordinates)
 	var shake = 0.0
@@ -63,10 +64,12 @@ class Local:
 	var talk = {}                 # talking with someone: {i, line, t}
 	var cut_cam = {}              # a story scene's camera: {from, to, t, n, zoom}
 	var comps = []                # companions fighting beside you: [{name, set, lv, x, y, dir, t, cool, v}]
+	var clash = {}                # a BEAM CLASH going on (clash.gd): {with, t, mine, theirs, ref, p, col, col2}
 	var mood = {}                 # the MOOD box you stand in (darkness, weather, music)
 	var talk_hold = false         # A still held from a talk press (it must not punch)
 	var near_npc = -1             # the person close enough to talk with (-1: nobody)
 	var near_save = false         # standing on a Capsule Corp save point
+	var near_computer = false     # standing at the Capsule Corp computer terminal (the villain database)
 	var mouse_ok = false          # the menu: a mouse click (A) / right click (B) waiting
 	var mouse_back = false
 	var pvp_ask = false           # R2 on a save point: "ENTER PVP MODE?" waiting for A / B
@@ -95,6 +98,8 @@ class AreaView:
 	var chunks = {}              # a land: chunks drawn now (Vector2i -> true)
 	var pops = []                # [text, pos, ticks, color]
 	var sparks = []              # [pos, ticks, color]
+	var shards = []              # a BEAM CLASH's sparks: [pos, velocity, ticks, of ticks, color] - flying straight out
+	var clash_core = {}          # a BEAM CLASH going on: point -> [ticks left, colour, other colour] (the white-hot middle)
 	var spawn_seen = {}          # enemy id -> ticks shown while it comes back (fade in)
 	var npc_views = []           # the people standing here (ActorView per person of area["people"])
 	var npc_done = false
@@ -111,6 +116,9 @@ var hud_draw: Control
 var toasts = []                  # [text, color, ticks]
 var victory_t = 0
 var victory_text = ""
+var match_won_info = {}          # {} empty: no BRAWL / HEROES VS VILLAINS win screen up. Else {"mode": "brawl", "winner": name} or {"mode": "hvv", "heroes_won": bool}
+var match_won_t = 0              # ticks the win screen shows before QUIT TO TITLE
+var match_score_info = {}        # the host's running score (Game.match_score): the STAT screen's standings
 var paused = false
 var save_t = 0
 var test_keys = []               # test aid: scripted input per local player
@@ -126,6 +134,89 @@ var chat_log = []                # [text, color, ticks]
 var bubbles = {}                 # player id -> [text, ticks]
 var map_open = false
 var map_pick = 0
+var database_open = false
+var database_idx = 0
+var database_scroll = 0      # how many lines of the current entry's description have scrolled off the top
+## FREE PLAY's own villain/character database (the GBA game's Capsule Corp computer, scaled down to a simple
+## A-to-open list since there's no story mode here to unlock it room by room) - real numbers only, copied from
+## the user's own screenshots of the original screen; not every character has one yet
+## "face": the game's own dialogue-portrait index (Story.face(n)) - the same art already used for Future Gohan
+## and Teen Trunks in the story demo, not a crop of the body sprite; -1 where the right face wasn't found yet
+## "live": for a character this port actually lets you play (see data/builtin/heroes.json), the hp/str/pow/end
+## below are only a fallback - _draw_database pulls their real current numbers from Assets.hero_stats() instead,
+## same as the GBA game itself left its own playable party off this screen entirely ("???" stats, not fixed ones)
+const DATABASE: Array = [
+	{"name": "GOKU", "set": 60, "face": 55, "live": "GOKU", "hp": 0, "str": 0, "pow": 0, "end": 0,
+		"desc": "Noted as a powerful martial artist and former World Tournament winner who trained under Master Roshi."},
+	{"name": "HERCULE (MR. SATAN)", "set": 72, "face": 59, "live": "MR. SATAN", "hp": 0, "str": 0, "pow": 0, "end": 0,
+		"desc": "Claims to be the martial arts world champion (though no data confirms which), holds records for feats like pulling buses and breaking wood with a chop, and is a major celebrity."},
+	{"name": "FRIEZA", "set": 48, "face": 41, "live": "FRIEZA", "hp": 1974, "str": 30, "pow": 37, "end": 20,
+		"desc": "This extraterrestrial being is believed to be a powerful tyrant feared on many planets.  Little is known about Frieza other than what has been discovered through the study of extraterrestrial broadcasts intercepted by space telescopes, and other unsubstantiated reports.  Frieza is believed to be dead, however this is unconfirmed."},
+	{"name": "FRIEZA (MECHA)", "set": 49, "face": 42, "live": "FRIEZA", "hp": 1974, "str": 30, "pow": 37, "end": 20,
+		"desc": "Cybernetic resurrection of the tyrannical galactic overlord Frieza.  After sustaining near-fatal injuries on Planet Namek, his physical remains were recovered and rebuilt with mechanical components."},
+	{"name": "KING COLD", "set": 74, "face": 62, "live": "KING COLD", "hp": 1180, "str": 24, "pow": 28, "end": 10,
+		"desc": "King Cold is Frieza's father, known for a brutal inner-galaxy regime where he and his sons (Frieza and Cooler) destroy planets to meet their goals.  After his ship was tracked entering Earth's atmosphere and destroyed, Capsule Corporation began studying the wreckage."},
+	{"name": "COOLER", "set": 34, "face": 36, "live": "COOLER", "hp": 10200, "str": 75, "pow": 85, "end": 79,
+		"desc": "High-energy polymorphic extraterrestrial suspected to be King Cold's son."},
+	{"name": "BULMA", "set": 23, "face": 28, "hp": 22, "str": 2, "pow": 1, "end": 2,
+		"desc": "Bulma Briefs is the daughter of Dr. Briefs, the founder and president of Capsule Corporation."},
+	{"name": "CHI-CHI", "set": 33, "face": 35, "hp": 29, "str": 5, "pow": 1, "end": 4,
+		"desc": "Former tournament fighter and daughter of Ox-King."},
+	{"name": "KRILLIN", "set": 76, "face": 65, "live": "KRILLIN", "hp": 1800, "str": 23, "pow": 24, "end": 17,
+		"desc": "Master Roshi's student capable of the Destructo Disc attack."},
+	{"name": "YAMCHA", "set": 156, "face": 106, "live": "YAMCHA", "hp": 800, "str": 18, "pow": 12, "end": 14,
+		"desc": "Former bandit turned martial artist, Wolf Fang Fist user, and Titans baseball player."},
+	{"name": "TIEN SHINHAN", "set": 121, "face": 87, "live": "TIEN", "hp": 2110, "str": 35, "pow": 29, "end": 27,
+		"desc": "Three-eyed martial artist skilled in the Tri-beam Cannon and Solar Flare."},
+	{"name": "CHIAOTZU", "set": 32, "face": 34, "hp": 142, "str": 9, "pow": 9, "end": 7,
+		"desc": "Telekinetic child-like martial artist trained by Master Shen and Roshi."},
+	{"name": "PUAR", "set": 107, "face": 83, "hp": 24, "str": 2, "pow": 1, "end": 2,
+		"desc": "Shape-shifting companion of Yamcha."},
+	{"name": "OOLONG", "set": 102, "face": 81, "hp": 56, "str": 3, "pow": 2, "end": 5,
+		"desc": "Intelligent swine."},
+	{"name": "DR. BRIEFS", "set": 41, "face": 40, "hp": 36, "str": 3, "pow": 1, "end": 2,
+		"desc": "Capsule Corporation founder and inventor of the Dyna-Cap."},
+	{"name": "MRS. BRIEFS", "set": 94, "face": 75, "hp": 32, "str": 2, "pow": 1, "end": 2,
+		"desc": "Wife of Dr. Briefs, renowned for her extraordinary baking abilities."},
+	{"name": "MAYOR OF WEST CITY", "set": 89, "face": 73, "hp": 32, "str": 2, "pow": 1, "end": 2,
+		"desc": "A beloved dog serving four terms as West City's Mayor, a dog's rights advocate, and soon running for a fifth term."},
+	{"name": "MARON", "set": 87, "face": 71, "hp": 32, "str": 2, "pow": 1, "end": 2,
+		"desc": "Subject showing no detectable brain waves on scouter analysis."},
+	{"name": "KAMI", "set": 73, "face": 61, "hp": 230, "str": 23, "pow": 30, "end": 13,
+		"desc": "Enshrouded in mystery and superstition; legends of his floating castle aside, analysis reveals he is actually a Namekian alien, tasked with protecting Earth."},
+	{"name": "DENDE", "set": 36, "face": 38, "hp": 172, "str": 22, "pow": 32, "end": 11,
+		"desc": "A young Namekian child who traveled to Earth to replace Kami as the planet's Guardian."},
+	{"name": "MR. POPO", "set": 93, "face": 74, "hp": 830, "str": 14, "pow": 40, "end": 25,
+		"desc": "Scanners indicate great power that is hard to interpret, and cell analysis is impossible as the scouter cannot distinguish any cells."},
+	{"name": "KORIN", "set": 75, "face": 64, "hp": 3470, "str": 25, "pow": 59, "end": 43,
+		"desc": "Mythical tower-dwelling cat-like being."},
+	{"name": "YAJIROBE", "set": 155, "face": 105, "hp": 110, "str": 12, "pow": 1, "end": 15,
+		"desc": "Swordsman frequently spotted near Korin's Tower."},
+	{"name": "MASTER ROSHI", "set": 88, "face": 72, "hp": 87, "str": 9, "pow": 15, "end": 4,
+		"desc": "Iconic Turtle Hermit and creator of the Kamehameha."},
+	{"name": "TURTLE", "set": 136, "face": 96, "hp": 32, "str": 2, "pow": 1, "end": 2,
+		"desc": "Ancient sea turtle."},
+	{"name": "ANDROID 16", "set": 8, "face": 18, "hp": 4480, "str": 42, "pow": 50, "end": 39,
+		"desc": "An Android built by Dr. Gero with an unanalyzable neural matrix; holographic files confirm his primary mission is to destroy Goku, though his full power is unknown."},
+	{"name": "ANDROID 17", "set": 9, "face": 20, "live": "ANDROID 17", "hp": 3550, "str": 32, "pow": 39, "end": 34,
+		"desc": "Unpredictable teenage-model cyborg programmed to eliminate Goku."},
+	{"name": "ANDROID 18", "set": 11, "face": 21, "live": "ANDROID 18", "hp": 2910, "str": 29, "pow": 34, "end": 27,
+		"desc": "Independent-minded cyborg counterpart to Android 17."},
+	{"name": "ANDROID 19", "set": 12, "face": 22, "hp": 2970, "str": 21, "pow": 14, "end": 11,
+		"desc": "Clown-themed energy-absorbing combat android."},
+	{"name": "ANDROID 20 (DR. GERO)", "set": 14, "face": 24, "hp": 2810, "str": 24, "pow": 19, "end": 14,
+		"desc": "Cybernetic fugitive scientist formerly of the Red Ribbon Army."},
+	{"name": "CELL (IMPERFECT)", "set": 28, "face": 30, "hp": 5210, "str": 32, "pow": 32, "end": 37,
+		"desc": "Genetically engineered armored bio-android with a life-sapping tail."},
+	{"name": "CELL (SEMI-PERFECT)", "set": 29, "face": 31, "hp": 4850, "str": 39, "pow": 41, "end": 26,
+		"desc": "Genetically engineered armored bio-android with a life-sapping tail.  Post-absorption form with heightened mass and complex energy signatures."},
+	{"name": "CELL (PERFECT)", "set": 30, "face": 32, "hp": 5160, "str": 44, "pow": 46, "end": 50,
+		"desc": "Genetically engineered armored bio-android with a life-sapping tail.  Humanoid-featured peak evolution form."},
+	{"name": "CELL JUNIOR", "set": 31, "face": -1, "hp": 4990, "str": 46, "pow": 50, "end": 46,
+		"desc": "Asexually spawned miniature replicas of Cell."},
+	{"name": "CYBORG / GENERAL TAO", "set": 50, "face": 45, "hp": 6400, "str": 50, "pow": 55, "end": 60,
+		"desc": "Merciless assassin upgraded with cybernetic limbs and weaponry."},
+]
 var ready_done = false
 ## HUD / MINIMAP: kept in the options (OPTIONS in the menu, or OPTIONS - OPTIONS before you play)
 var minimap_on: bool:
@@ -155,9 +246,15 @@ var touch                     # on-screen controls (phones, tablets) - scripts/t
 var touch_prev = {}
 
 var events_rt
+var breakables      # the game's rocks to smash (breakables.gd)
+var brawl           # BRAWL: the fighters the computer plays (brawl.gd, the host)
+var clash_rt        # BEAM CLASHES between players (clash.gd)
 
 func _ready() -> void:
 	events_rt = preload("res://scripts/events.gd").new(self)
+	breakables = preload("res://scripts/breakables.gd").new(self)
+	brawl = preload("res://scripts/brawl.gd").new(self)
+	clash_rt = preload("res://scripts/clash.gd").new(self)
 	touch = preload("res://scripts/touch.gd").new()
 	add_child(touch)
 	levels = Assets.data["levels"]
@@ -165,6 +262,8 @@ func _ready() -> void:
 	Game.exp_gained.connect(_on_exp)
 	Game.hurt.connect(_on_hurt)
 	Game.victory.connect(_on_victory)
+	Game.match_won.connect(_on_match_won)
+	Game.match_score.connect(func(info): match_score_info = info)
 	# the shared world and the first camera
 	var sv0 = _make_viewport()
 	world_root = Node2D.new()
@@ -378,6 +477,26 @@ func _view_for(n: int) -> AreaView:
 			tl.rendering_quadrant_size = 32
 			av.root.add_child(tl)
 			av.tiles.append(tl)
+		# places the GBA draws with a layer added on at half strength (the fire picture: its flames' glow over them)
+		var blends = []
+		for pt in av.area["land"].get("parts", []):
+			if pt.size() > 3 and PLACE_BLEND.has(str(pt[3])):
+				var pr: Rect2 = pt[0]
+				blends.append([Rect2i(int(pr.position.x / 8), int(pr.position.y / 8), int(pr.size.x / 8), int(pr.size.y / 8)), int(PLACE_BLEND[str(pt[3])][0])])
+		if not blends.is_empty():
+			var btl = TileMapLayer.new()
+			btl.navigation_enabled = false
+			btl.collision_enabled = false
+			btl.tile_set = ts
+			btl.z_index = -44
+			btl.rendering_quadrant_size = 32
+			var bm = CanvasItemMaterial.new()
+			bm.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+			btl.material = bm
+			btl.modulate = Color(1, 1, 1, float(PLACE_BLEND.values()[0][1]))
+			av.root.add_child(btl)
+			av.root.set_meta("blend_tl", btl)
+			av.root.set_meta("blends", blends)
 		order = []
 	for k in order:
 		var front = int(pri[k]) <= 1 and int(pri[k]) < int(pri[order[0]])
@@ -398,6 +517,7 @@ func _view_for(n: int) -> AreaView:
 	av.ents = Node2D.new()
 	av.ents.y_sort_enabled = true
 	av.root.add_child(av.ents)
+	breakables.attach(av)
 	av.shots_view = Node2D.new()
 	av.shots_view.z_index = 15
 	av.shots_view.draw.connect(_draw_shots.bind(av))
@@ -458,12 +578,19 @@ func _stream(av: AreaView, all_now: bool = false) -> void:
 			_fill_chunk(av, q, false)
 			av.chunks.erase(q)
 
+## the GBA's blended places (measured in mGBA): place -> [its layer drawn added on, how strong] (the fire picture
+## 1_3: BLDCNT 0x1844, BLDALPHA 0x1008 - its second layer at 8/16 over the flames)
+## Rooms lit by a light layer the importer did not take for one (soft grey spots on black, drawn solid they were black
+## squares): their front layer (EARTH layer 4) added on the same way - the strength as measured for 1_3
+const PLACE_BLEND = {"1_3": [1, 0.5], "8_38": [4, 0.5], "6_15": [4, 0.5], "6_58": [4, 0.5], "6_59": [4, 0.5], "2_45": [4, 0.5], "2_47": [4, 0.5], "2_48": [4, 0.5], "6_61": [4, 0.5]}      # 2_45/47/48: East District 439 (the fountain basement); 6_61: New Namek - reported dark instead of lit
+
 func _fill_chunk(av: AreaView, q: Vector2i, on: bool) -> void:
 	var tw: int = av.area["tw"]
 	var th: int = av.area["th"]
 	var cells: Array = av.area["land"]["cells"]
 	var x0 = q.x * CHUNK
 	var y0 = q.y * CHUNK
+	var blends: Array = av.root.get_meta("blends", [])
 	for k in 5:
 		var tl: TileMapLayer = av.tiles[k]
 		var L: PackedInt32Array = cells[k]
@@ -473,12 +600,16 @@ func _fill_chunk(av: AreaView, q: Vector2i, on: bool) -> void:
 				var c = L[row + x]
 				if c == 0:
 					continue
+				var to_tl = tl
+				for bl in blends:
+					if int(bl[1]) == k and (bl[0] as Rect2i).has_point(Vector2i(x, y)):
+						to_tl = av.root.get_meta("blend_tl"); break
 				if on:
 					var r = Assets.kit_cell(c)
 					if not r.is_empty():
-						tl.set_cell(Vector2i(x, y), r[2], r[0], r[1])
+						to_tl.set_cell(Vector2i(x, y), r[2], r[0], r[1])
 				else:
-					tl.erase_cell(Vector2i(x, y))
+					to_tl.erase_cell(Vector2i(x, y))
 
 func _release_view(n: int) -> void:
 	if n < 0 or not views.has(n):
@@ -561,7 +692,7 @@ const KEYS_LEFT = {"up": [KEY_W], "down": [KEY_S], "left": [KEY_A], "right": [KE
 const KEYS_RIGHT = {"up": [KEY_UP], "down": [KEY_DOWN], "left": [KEY_LEFT], "right": [KEY_RIGHT], "a": [KEY_PERIOD, KEY_KP_1],
 	"b": [KEY_SLASH, KEY_KP_2], "sp": [KEY_SEMICOLON, KEY_KP_3], "tr": [KEY_APOSTROPHE, KEY_KP_5], "it": [KEY_BRACKETLEFT, KEY_KP_6],
 	"nx": [KEY_BRACKETRIGHT, KEY_KP_4], "mn": [KEY_BACKSLASH, KEY_KP_0, KEY_BACKSPACE], "run": [KEY_ENTER, KEY_KP_ENTER]}
-const KEYS_SOLO_EXTRA = {"a": [KEY_Z], "b": [KEY_X], "sp": [KEY_C], "tr": [KEY_V], "it": [KEY_F], "nx": [KEY_E], "run": [KEY_SHIFT], "fly": [KEY_G]}
+const KEYS_SOLO_EXTRA = {"a": [KEY_Z], "b": [KEY_X], "sp": [KEY_C], "tr": [KEY_V], "it": [KEY_F], "nx": [KEY_E], "run": [KEY_SHIFT], "fly": [KEY_G], "runt": [KEY_R]}
 ## (A/B/X/Y by their labels: OPTIONS - A/B BUTTONS picks the pad's layout)
 func _pad() -> Dictionary:
 	return {"a": Game.pad_btn("a"), "b": Game.pad_btn("b"), "sp": Game.pad_btn("x"), "tr": Game.pad_btn("y"), "it": JOY_BUTTON_LEFT_SHOULDER,
@@ -585,7 +716,7 @@ func _input_for(L: Local) -> Dictionary:
 	var typing = chat_open
 	var k = {}
 	var PAD = _pad()
-	for b in ["up", "down", "left", "right", "a", "b", "sp", "tr", "it", "nx", "mn", "run", "fly"]:
+	for b in ["up", "down", "left", "right", "a", "b", "sp", "tr", "it", "nx", "mn", "run", "fly", "runt"]:
 		var on = false
 		if not typing:
 			for st in sets:
@@ -711,6 +842,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 	if map_open and _map_input(ev):
 		get_viewport().set_input_as_handled()
 		return
+	if database_open and _database_input(ev):
+		get_viewport().set_input_as_handled()
+		return
 	if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_T and not _any_menu():
 		_chat_open()
 		get_viewport().set_input_as_handled()
@@ -738,7 +872,55 @@ func _toggle_player2() -> void:
 		_on_resize()
 
 # ------------------------------------------------------------------ the tick
+var _tp = {}      # TEMPTIME
+var _last_frame_us = 0      # TEMPTIME: a freeze anywhere (drawing, loading pictures...) shows as a long gap between frames
+## TEMPTIME: a watchdog - when the screen stops for over a second, macOS's `sample` writes down what the game is
+## doing right then (the engine's own work included) next to the game's log
+var _wd_thread: Thread = null
+var _wd_beat = 0
+var _wd_quit = false
+func _wd_loop() -> void:
+	var last_sample = -100000
+	while not _wd_quit:
+		OS.delay_msec(200)
+		var now = Time.get_ticks_msec()
+		if _wd_beat > 0 and now - _wd_beat > 1000 and now - last_sample > 20000:
+			last_sample = now
+			var out = OS.get_user_data_dir().path_join("logs/freeze_%s.txt" % Time.get_datetime_string_from_system().replace(":", "."))
+			# the files open right then (the one being read off a sleeping disk among them)
+			var lo = []
+			OS.execute("/usr/sbin/lsof", ["-p", str(OS.get_process_id())], lo, true)
+			var fl = FileAccess.open(out.replace(".txt", "_files.txt"), FileAccess.WRITE)
+			if fl:
+				fl.store_string(str(lo[0]) if not lo.is_empty() else "")
+				fl.close()
+			var res = []
+			var code = OS.execute("/usr/bin/sample", [str(OS.get_process_id()), "2", "-mayDie", "-file", out], res, true)
+			print("[freeze] sampled into ", out, " (", code, ") ", str(res).substr(0, 200))
+func _wd_stop() -> void:
+	_wd_quit = true
+	if _wd_thread != null:
+		_wd_thread.wait_to_finish()
+		_wd_thread = null
+
+func _process(_dt: float) -> void:
+	if _wd_thread == null and OS.get_name() == "macOS":
+		_wd_thread = Thread.new()
+		_wd_thread.start(_wd_loop)
+	_wd_beat = Time.get_ticks_msec()
+	var now = Time.get_ticks_usec()
+	if _last_frame_us > 0 and now - _last_frame_us > 350000:
+		print("[freeze] %d ms between frames at %s (physics tick %d, %d brawlers, %d views)" % [(now - _last_frame_us) / 1000, Time.get_time_string_from_system(), Engine.get_physics_frames(), brawl.bots.size() if brawl != null else 0, views.size()])
+	_last_frame_us = now
 func _physics_process(_dt: float) -> void:
+	var _t0 = Time.get_ticks_usec()      # TEMPTIME
+	_tp = {}
+	_physics_inner()
+	var _el = Time.get_ticks_usec() - _t0
+	if _el > 60000:
+		print("[slow] tick %d took %d ms " % [Engine.get_physics_frames(), _el / 1000], _tp)
+
+func _physics_inner() -> void:
 	_chat_poll()
 	_touch_tick()
 	if Engine.get_physics_frames() % 600 == 0:
@@ -761,6 +943,7 @@ func _physics_process(_dt: float) -> void:
 	if Game.is_host():
 		for e in Game.host_step(states):
 			_on_hurt(int(e["k"]), e["atk"], e["kx"], e["ky"], str(e.get("st", "")))
+		var _tb = Time.get_ticks_usec(); brawl.tick(); _tp["brawl"] = (Time.get_ticks_usec() - _tb) / 1000      # TEMPTIME
 	for s in states:
 		var L: Local = _local_of(s["k"])
 		L.send_t += 1
@@ -823,16 +1006,28 @@ func _physics_process(_dt: float) -> void:
 							L.shake = maxf(L.shake, 3.0)
 		for sp in av.sparks:
 			sp[1] -= 1
+			if sp.size() > 3 and str(sp[2]) == "pebble":      # (a rock's pebble: thrown, falling)
+				sp[0] += sp[3]
+				sp[3].y += 0.25
 		av.sparks = av.sparks.filter(func(sp): return sp[1] > 0)
+		for sh2 in av.shards:
+			sh2[0] += sh2[1]
+			sh2[1] *= 0.93      # (slowing as they go)
+			sh2[2] -= 1
+		av.shards = av.shards.filter(func(sh2): return sh2[2] > 0)
+		for cp in av.clash_core.keys():
+			av.clash_core[cp][0] -= 1
+			if av.clash_core[cp][0] <= 0:
+				av.clash_core.erase(cp)
 		av.shots_view.queue_redraw()
 		av.back_shots_view.queue_redraw()
 		av.pops_view.queue_redraw()
 	save_t += 1
 	if save_t >= 600:
 		save_t = 0
-		save_all()
+		var _ts = Time.get_ticks_usec(); save_all(); _tp["save"] = (Time.get_ticks_usec() - _ts) / 1000      # TEMPTIME
 	if not preload_q.is_empty():
-		Assets.area(preload_q.pop_front())
+		var _tq = Time.get_ticks_usec(); var _qk = preload_q.pop_front(); Assets.area(_qk); _tp["preload " + str(_qk)] = (Time.get_ticks_usec() - _tq) / 1000      # TEMPTIME
 	for pid in bubbles.keys():
 		bubbles[pid][1] -= 1
 		if bubbles[pid][1] <= 0:
@@ -845,6 +1040,10 @@ func _physics_process(_dt: float) -> void:
 	toasts = toasts.filter(func(t): return t[2] > 0)
 	if victory_t > 0:
 		victory_t -= 1
+	if match_won_t > 0:      # a fallback only: it waits for Z/A (below, in _step_local) and only times out after a while
+		match_won_t -= 1
+		if match_won_t == 0:
+			_option_pick_quit()
 	_update_cameras()
 	for i in locals.size():
 		var L: Local = locals[i]
@@ -876,9 +1075,16 @@ func _step_local(L: Local) -> void:
 	var snap: Array = Game.area_states.get(key, [])
 	var elist = []
 	for e in snap:
-		elist.append({"id": int(e[0]), "x": float(e[1]), "y": float(e[2]), "alive": (int(e[9]) & 4) == 0, "big": (int(e[9]) & 16) != 0})
+		elist.append({"id": int(e[0]), "x": float(e[1]), "y": float(e[2]), "alive": (int(e[9]) & 4) == 0, "big": (int(e[9]) & 16) != 0, "set": int(e[6])})
 	_social_tick(L, elist)
-	var raw = {} if (L.fade_dir > 0 or ((chat_open or map_open) and L.k == 0 and test_keys.is_empty())) else _input_for(L)
+	var real_raw = _input_for(L)      # kept for L.mprev even on a tick whose gameplay input gets blanked below, so
+	# an edge (a key newly pressed vs. still held) stays correct across that blank - closing the database with Z
+	# was reopening it the instant the key let go, because the blanked tick made the next one look like a fresh press
+	var raw = {} if (L.fade_dir > 0 or ((chat_open or map_open or database_open) and L.k == 0 and test_keys.is_empty())) else real_raw
+	if not match_won_info.is_empty():      # the BRAWL / HEROES VS VILLAINS win screen: up until Z / A (or the 2-minute fallback)
+		if _pressed(L, raw, "a"):
+			_option_pick_quit()
+		return
 	var inp = raw
 	if not L.ev.is_empty() and L.menu.is_empty():
 		if events_rt.tick(L, raw):
@@ -892,14 +1098,17 @@ func _step_local(L: Local) -> void:
 		inp = {}
 	inp = _talk_step(L, raw, inp, elist)
 	inp = _save_step(L, raw, inp, elist)
+	inp = _database_step(L, raw, inp, elist)
 	if not L.near_save and L.menu.is_empty() and _pressed(L, raw, "runt"):
 		L.run_toggle = not L.run_toggle
 		toasts.append(["%s: SPRINT %s" % [L.name, "ON (R2 AGAIN: OFF)" if L.run_toggle else "OFF"], Color(0.7, 0.9, 1), 90])
 	if L.run_toggle and not inp.is_empty():
 		inp = inp.duplicate()
 		inp["run"] = true
-	L.mprev = raw.duplicate()
+	L.mprev = real_raw.duplicate()
 	f.can_fly = not Game.cfg.has("story")      # flying is a FREE PLAY thing (stories keep their walls)
+	if clash_rt.step(L, raw):
+		return      # in a beam clash: held in the pose, tapping (clash.gd)
 	f.step(inp, elist)
 	_bump(L)
 	_step_comps(L, elist)
@@ -919,8 +1128,9 @@ func _step_local(L: Local) -> void:
 				for e in elist:
 					if e["id"] == ev["enemy"]:
 						if int(ev["dmg"]) > 0:
-							av.pops.append([str(ev["dmg"]), Vector2(e["x"], e["y"] - 30), 40, Color(1, 0.4, 0.3) if ev["crit"] else Color(1, 1, 1)])
-							av.sparks.append([Vector2(e["x"], e["y"] - 14), 10, Color(1, 0.9, 0.5) if not ev["crit"] else Color(1, 0.5, 0.3)])
+							av.pops.append([str(ev["dmg"]), Vector2(e["x"], e["y"] - 30), 40, Color(1, 0.85, 0.3) if ev["crit"] else Color(0.97, 0.16, 0.16)])      # (red, as the game's; a critical hit gold)
+							if ev.get("ki", false):      # (a punch: no burst, the foe only flashes red; a ki blast: the game's spark, purple)
+								ki_spark(L.node_i, Vector2(e["x"], e["y"]), float(ev["kx"]), float(ev["ky"]))
 							Sfx.play("crit" if ev["crit"] else "hit", 0.8)
 						else:
 							av.pops.append(["DAZED", Vector2(e["x"], e["y"] - 30), 50, Color(1, 1, 0.6)])
@@ -937,7 +1147,7 @@ func _step_local(L: Local) -> void:
 	# orbs: walk over one to take it (the host gives it to whoever reaches it first)
 	if f.state != "down":
 		for d in Game.area_drops.get(key, []):
-			if Vector2(float(d[2]) - f.x, float(d[3]) - f.y).length() < 14.0 and not L.asked.has(int(d[0])):
+			if Vector2(float(d[2]) - f.x - 8.0, float(d[3]) - f.y - 4.0).length() < 14.0 and not L.asked.has(int(d[0])):      # (from the middle of the feet box)
 				L.asked[int(d[0])] = true
 				Game.try_pickup(L.node_i, int(d[0]), L.k)
 	if f.state == "down" and not L.was_down:
@@ -950,9 +1160,11 @@ func _step_local(L: Local) -> void:
 	_help_friends(L)
 	if Engine.get_physics_frames() % 4 == L.k and L.fade_dir == 0:
 		events_rt.check_area(L)
+	if L.fade_dir == 0:
+		breakables.check(L)
 	if f.state == "down" and f.down_t <= 0:
 		var back = Game.planet.arrival(L.node_i, 0) if L.node_i != Game.planet.start else Game.planet.start_point()
-		var home = Game.cfg.get("home_at")      # a map that starts in a room of its own (GOKU'S HOUSE: Gohan's room)
+		var home = Game.cfg.get("home_at")      # a map that starts in a room of its own (EARTH: Gohan's room at Goku's house)
 		if home is Dictionary and str(Game.planet.nodes[L.node_i]["key"]) == str(home.get("key", "")):
 			back = Vector2(float(home["x"]), float(home["y"]))
 		var sp: Dictionary = f.save_spot
@@ -988,7 +1200,8 @@ func _step_local(L: Local) -> void:
 			var r: Array = ex["rect"]
 			if f.flying and r[0] > 16 and r[1] > 16 and r[2] < int(L.area["tw"]) * 8 - 16 and r[3] < int(L.area["th"]) * 8 - 16:
 				continue      # flying: no going in through a door (the map's edges still lead on)
-			if f.x >= r[0] - 2 and f.x <= r[2] + 2 and f.y >= r[1] - 2 and f.y <= r[3] + 2:
+			var fc = Vector2(f.x + 8.0, f.y + 4.0)      # (the middle of the feet box - fighter_sim._under)
+			if fc.x >= r[0] - 2 and fc.x <= r[2] + 2 and fc.y >= r[1] - 2 and fc.y <= r[3] + 2:
 				inside = true
 				if L.exits_armed and not _door_open(L, ex):
 					L.exits_armed = false
@@ -1067,6 +1280,9 @@ func _talk_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) -> Dic
 ## (Android port; the pads were only scenery before)
 func _save_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) -> Dictionary:
 	var f: FighterSim = L.fighter
+	var brawl_on = _brawl_game()
+	if brawl_on and not f.pvp:
+		f.pvp = true      # BRAWL / HEROES VS VILLAINS: PVP always on (the whole game is the fight)
 	var saves: Array = L.area.get("saves", [])
 	var near = false
 	var on_pad = false
@@ -1080,7 +1296,7 @@ func _save_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) -> Dic
 				on_pad = on_pad or pad.has_point(at)
 				break
 	if near and not L.near_save:
-		toasts.append(["CAPSULE CORP SAVE POINT - A: SAVE AND HEAL   R2: PVP MODE", Color(0.6, 0.85, 1), 150])
+		toasts.append(["CAPSULE CORP SAVE POINT - A: SAVE (NO HEAL IN THIS GAME)" if brawl_on else "CAPSULE CORP SAVE POINT - A: SAVE AND HEAL   R2: PVP MODE", Color(0.6, 0.85, 1), 150])
 	L.near_save = near
 	if L.pvp_ask:
 		if not near or _pressed(L, raw, "b"):
@@ -1095,6 +1311,12 @@ func _save_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) -> Dic
 		inp = inp.duplicate()
 		inp["a"] = false; inp["b"] = false
 		return inp
+	if near and _pressed(L, raw, "runt") and brawl_on:
+		toasts.append(["PVP MODE IS ALWAYS ON IN THIS GAME", Color(1, 0.6, 0.4), 160])
+		Sfx.play("error", 0.7)
+		inp = inp.duplicate()
+		inp["run"] = false
+		return inp
 	if near and _pressed(L, raw, "runt"):
 		L.pvp_ask = true
 		toasts.append(["%s PVP MODE?   A: YES   B: NO" % ("LEAVE" if f.pvp else "ENTER"), Color(1, 0.85, 0.4), 600])
@@ -1107,14 +1329,56 @@ func _save_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) -> Dic
 	for e in elist:
 		if not on_pad and e["alive"] and Vector2(e["x"] - f.x, e["y"] - f.y).length() < 44.0:
 			return inp      # a foe right here and you are not on the pad itself: A punches (the farm's animals no longer stop a save)
-	f.hp = f.maxhp
-	f.ep = f.maxep
+	if not brawl_on:      # BRAWL / HEROES VS VILLAINS: a save point only sets where you come back - no free heal mid-fight
+		f.hp = f.maxhp
+		f.ep = f.maxep
 	f.save_spot = {"key": str(Game.planet.nodes[L.node_i]["key"]), "x": f.x, "y": f.y}      # knocked out: back here
 	save_all()
 	print("[world] game saved at a save point: ", L.name, " hp ", f.hp, "/", f.maxhp, " ki ", f.ep, "/", f.maxep)
-	toasts.append(["%s: GAME SAVED - HEALTH AND KI RESTORED" % L.name, Color(0.6, 1, 0.7), 180])
+	toasts.append(["%s: GAME SAVED - YOU'LL COME BACK HERE" % L.name, Color(0.6, 1, 0.8), 180] if brawl_on else ["%s: GAME SAVED - HEALTH AND KI RESTORED" % L.name, Color(0.6, 1, 0.7), 180])
 	Sfx.play("levelup", 0.6)
 	L.talk_hold = true          # (A held on must not punch)
+	inp = inp.duplicate()
+	inp["a"] = false
+	return inp
+
+## the Capsule Corp computer (the villain database): same pattern as a save point exactly - a fixed spot in a
+## specific room, not a "is anyone nearby" guess, so it can never fire mid-fight somewhere else in the world
+const COMPUTER_PLACE = "LAND/0/0"      # FREE PLAY's one continuous world map, not the story's "zone_area" rooms
+const COMPUTER_POS = Vector2(12821, 18401)      # the user's own F8 reading, standing right at the terminal
+func _database_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) -> Dictionary:
+	var f: FighterSim = L.fighter
+	var near = false
+	# no "not a story" check: story rooms use "zone_area" keys, never "LAND/x/y", so matching COMPUTER_PLACE
+	# below is already a stronger guarantee on its own - the story check was redundant and, in dev-tools
+	# playtesting specifically, apparently unreliable (a leftover flag that erasing it didn't fix outright)
+	# case-insensitive: the debug overlay's custom pixel font only HAS uppercase glyphs and silently draws any
+	# lowercase letter as its uppercase form, so "LAND/0/0" on screen proved nothing about the real stored case
+	if not DATABASE.is_empty() and f.state != "down" and L.menu.is_empty() and L.fade_dir == 0 \
+			and str(Game.planet.nodes[L.node_i].get("key", "")).to_lower() == COMPUTER_PLACE.to_lower():
+		var pad = Rect2(COMPUTER_POS + Vector2(-24, -24), Vector2(64, 56))      # the same pad size a save point uses
+		near = pad.grow(6.0).has_point(Vector2(f.x, f.y))
+	if near:
+		# refreshed every frame while standing here, so it stays up the whole time instead of fading out after a
+		# few seconds like a one-shot toast would - it only starts counting down once you actually walk away
+		var found = false
+		for t in toasts:
+			if str(t[0]).begins_with("CAPSULE CORP COMPUTER"):
+				t[2] = 30
+				found = true
+				break
+		if not found:
+			toasts.append(["CAPSULE CORP COMPUTER - Z: VIEW THE DATABASE", Color(0.6, 0.85, 1), 30])
+	L.near_computer = near
+	if not near or database_open or not _pressed(L, raw, "a"):
+		return inp
+	for e in elist:
+		if e["alive"] and Vector2(e["x"] - f.x, e["y"] - f.y).length() < 44.0:
+			return inp      # a foe right here: A punches
+	database_open = true
+	database_idx = 0
+	database_scroll = 0
+	Sfx.play("menu", 0.7)
 	inp = inp.duplicate()
 	inp["a"] = false
 	return inp
@@ -1183,13 +1447,15 @@ func _update_people(av: AreaView) -> void:
 		var want = Vector2(roundf(float(pd["x"])), roundf(float(pd["y"])))
 		if v.position != want:
 			v.position = want
-		if pd.has("cut_dir") or pd.has("cut_pose") or pd.get("cut_walk", false) or pd.has("emote"):
+		if pd.has("cut_dir") or pd.has("cut_pose") or pd.get("cut_walk", false) or pd.get("cut_fly", false) or pd.has("emote"):
 			# a story scene moves this person: its own facing, walk, pose and emotion
 			var cd = int(pd.get("cut_dir", 0))
 			var an = 0
 			var fr = 0
 			var now = Engine.get_physics_frames()
-			if pd.get("cut_walk", false):
+			if pd.get("cut_fly", false):
+				an = 12; fr = (now / 10) % maxi(1, v.frames_of(12, cd).size())      # flying (a story scene: Gohan)
+			elif pd.get("cut_walk", false):
 				an = 1; fr = (now / 8) % maxi(1, v.frames_of(1, cd).size())
 			elif pd.get("cut_pose", []).size() == 3:
 				var cpz: Array = pd["cut_pose"]
@@ -1231,7 +1497,7 @@ func _update_people(av: AreaView) -> void:
 			if who.near_npc == i:
 				lab = str(people[i]["name"])
 				if who.talk.is_empty():
-					bub = "A: TALK"
+					bub = Game.keys("A: TALK")
 		v.label_color = Color(1, 0.95, 0.7)
 		if v.dir != dir or v.label != lab or v.bubble != bub:
 			v.label = lab
@@ -1262,6 +1528,10 @@ func _draw_talk(c: Control, L: Local, i: int) -> void:
 			who = str(ln[ln.size() - 2])
 		ln = ln.back() if not ln.is_empty() else ""
 	var t = str(ln).replace("%s", L.name)
+	if Assets.gba_font("font_talk") != null:      # the story's own box, border, font and "Z" - ported to the open world too
+		events_rt.draw_npc_talk(c, who, t, toasts.size())
+		return
+	# (the game's own talk box isn't imported: a plain one instead of nothing)
 	var vs = c.get_viewport_rect().size
 	var font = ThemeDB.fallback_font
 	var w = minf(320.0, vs.x - 16) if locals.size() == 1 else minf(232.0, vs.x / 2 - 8)
@@ -1272,8 +1542,28 @@ func _draw_talk(c: Control, L: Local, i: int) -> void:
 	c.draw_rect(Rect2(x, y, w, h), Color(0.95, 0.85, 0.5, 0.9), false, 1.0)
 	_ds(c, font, Vector2(x + 6, y + 10), who, HORIZONTAL_ALIGNMENT_LEFT, w - 12, 8, Color(1, 0.85, 0.35))
 	c.draw_multiline_string(font, Vector2(x + 6, y + 20), t, HORIZONTAL_ALIGNMENT_LEFT, w - 12, 8, 3, Color(1, 1, 1))
-	var more = "A: MORE" if int(L.talk["line"]) < lines.size() - 1 else "A: BYE"
+	var more = Game.keys("A: MORE" if int(L.talk["line"]) < lines.size() - 1 else "A: BYE")
 	_ds(c, font, Vector2(x + 6, y + h - 3), more, HORIZONTAL_ALIGNMENT_RIGHT, w - 12, 6, Color(0.7, 0.8, 1))
+
+## (looking for the tiger men that slide: a foe that moves half a second in one picture is written to the log -
+## its pose, flags and, on the host, the state the game's behaviour has it in)
+func _slide_watch(v, e: Array, id: int) -> void:
+	var pose = [int(e[3]), int(e[4]), int(e[5])]
+	var p = Vector2(float(e[1]), float(e[2]))
+	var w: Dictionary = v.get_meta("slide", {})
+	if w.get("pose", []) == pose and p.distance_to(w.get("p", p)) > 0.2:
+		w["n"] = int(w.get("n", 0)) + 1
+		if int(w["n"]) == 30:
+			var st = ""
+			for sim in Game.sims.values():
+				if id >= 0 and id < sim.enemies.size() and int(sim.enemies[id]["id"]) == id and Vector2(sim.enemies[id]["x"], sim.enemies[id]["y"]).distance_to(p) < 4.0:
+					st = "%s %s" % [str(sim.enemies[id].get("st", {}).get("id", sim.enemies[id].get("state", ""))), str(sim.enemies[id].get("ai_stack", []).map(func(q): return q[1]))]
+			print("[slide] foe %d set %d anim %d dir %d frame %d flags %d host-state %s" % [id, int(e[6]), pose[0], pose[1], pose[2], int(e[9]), st])
+	else:
+		w["n"] = 0
+	w["pose"] = pose
+	w["p"] = p
+	v.set_meta("slide", w)
 
 func _update_view(av: AreaView) -> void:
 	_update_people(av)
@@ -1305,8 +1595,9 @@ func _update_view(av: AreaView) -> void:
 			v.label = "DOWN %d" % ceili(f.down_t / 60.0)
 		v.label_color = Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6)
 		v.hero = true
+		v.visible = not bool(L.ev.get("hide_player", false))      # (a story picture: the game shows no hero)
 		v.position = Vector2(roundf(f.x) + f.draw_dx, roundf(f.y))
-		v.z_index = 110 if f.flying else 0      # flying: above the trees and roofs
+		v.z_index = 110 if f.flying or f.on_high() else 0      # flying, or landed on a platform top: above the trees and roofs
 		if f.flying and f.dir >= 2 and not Assets.has_side_fly(f.set_id):
 			v.show_frame(Rules.A_WALK, f.dir, f.frame % maxi(1, v.frames_of(Rules.A_WALK, f.dir).size()))
 		else:
@@ -1335,6 +1626,7 @@ func _update_view(av: AreaView) -> void:
 		v.position = target if Game.is_host() else v.position.lerp(target, 0.5)
 		var flags = int(e[9])
 		v.show_frame(int(e[3]), int(e[4]), int(e[5]))
+		_slide_watch(v, e, id)
 		v.tint = Color(1.0, 0.85, 0.35) if flags & 3 else Color(1, 1, 1)
 		v.size_scale = 1.0      # elites and bosses keep the game's own size (scaled-up sprites looked blurry); gold tint + name show them
 		v.flash = (flags & 8) != 0
@@ -1348,9 +1640,11 @@ func _update_view(av: AreaView) -> void:
 			v.modulate.a = clampf(av.spawn_seen[id] / 45.0, 0.1, 0.9)
 		else:
 			av.spawn_seen.erase(id)
-			v.modulate.a = 0.5 if flags & 4 else 1.0
+			v.modulate.a = 1.0
+		v.dying = (flags & 4) != 0      # (beaten: gone in a cloud of brown smoke - a robot in the game's white ring - actor_view)
+		v.robot = Rules.is_robot_set(int(e[6]))
 		v.label = str(e[10]) if flags & 2 else ""
-		v.hp_frac = float(e[7]) / maxf(1.0, float(e[8]))
+		v.hp_frac = float(e[7]) / maxf(1.0, float(e[8])) if bool(Game.cfg.get("foe_bars", false)) else 1.0      # (ENEMY HEALTH BARS: off, as the game has none)
 		v.queue_redraw()
 	for id in av.enemy_views.keys():
 		if not seen.has(id):
@@ -1385,9 +1679,10 @@ func _update_view(av: AreaView) -> void:
 			v.label = str(st.get("name", "P2")) + " - DOWN! HELP!"
 		var b = bubbles.get(pid)
 		v.bubble = b[0] if b != null else ""
-		v.hp_frac = float(st.get("hp", 1)) / maxf(1.0, float(st.get("maxhp", 1)))
+		v.hp_frac = float(st.get("hp", 1)) / maxf(1.0, float(st.get("maxhp", 1))) if bool(Game.cfg.get("foe_bars", false)) else 1.0      # (the other players and brawlers: the same option)
+		v.flash = bool(st.get("hurt", false))      # hit: red, as the foes are
 		v.position = v.position.lerp(Vector2(float(st["x"]) + float(st.get("dx", 0)), st["y"]), 0.5)
-		v.z_index = 110 if st.get("fly", false) else 0
+		v.z_index = 110 if st.get("fly", false) or st.get("high", false) else 0
 		if st.get("fly", false) and int(st["dir"]) >= 2 and not Assets.has_side_fly(int(st.get("set", 0))):
 			v.show_frame(Rules.A_WALK, int(st["dir"]), int(st["frame"]) % maxi(1, v.frames_of(Rules.A_WALK, int(st["dir"])).size()))
 		else:
@@ -1578,6 +1873,12 @@ func _on_exp(k: int, lv: int, mult: float, info: Dictionary = {}) -> void:
 				Game.send_social(pid, _my_pid(L), L.name, "party_exp", {"lv": lv, "mult": mult * float(Content.social_cfg.get("party", {}).get("share", 0.5))})
 	if views.has(L.node_i):
 		views[L.node_i].pops.append(["+%d EXP" % n, Vector2(f.x, f.y - 34), 70, Color(0.6, 1, 0.6)])
+	var zn = int(info.get("zeni", 0))      # the foe's zeni: straight to you (none on the ground)
+	if zn > 0:
+		f.zeni += zn
+		Sfx.play("zeni")
+		if views.has(L.node_i):
+			views[L.node_i].pops.append(["+%d ZENI" % zn, Vector2(f.x, f.y - 44), 70, Color(1, 0.9, 0.4)])
 	if up:
 		toasts.append(["%s LEVEL UP! LEVEL %d" % [f.name, f.level], Color(1, 1, 0.4), 180])
 		Sfx.play("levelup")
@@ -1595,7 +1896,7 @@ func _on_hurt(k: int, atk: float, kx: float, ky: float, st: String = "") -> void
 	if L == null:
 		return
 	var f: FighterSim = L.fighter
-	if f.invuln > 0 or f.state == "down":
+	if f.invuln > 0 or f.state == "down" or f.on_high():      # (on high ground: out of the foes' reach - _out_of_reach)
 		return
 	var d = Rules.taken_damage(atk, f.eff_end(), f.rng)
 	Sfx.play("hurt", 0.9)
@@ -1631,6 +1932,12 @@ func _on_item(k: int, kind: String, n: int) -> void:
 			Sfx.play("pickup")
 		"orb_ep":
 			var e = maxi(1, roundi(f.maxep * 0.6)); f.ep = mini(f.maxep, f.ep + e); txt = "+%d EP" % e; col = Color(0.5, 0.8, 1)
+			Sfx.play("pickup")
+		"food":      # a breakable's (the game's 0x0800F593: n % of max HP, never past it)
+			var h = maxi(1, f.maxhp * n / 100); h = mini(h, f.maxhp - f.hp); f.hp += h; txt = "+%d HP" % h; col = Color(0.4, 1, 0.5)
+			Sfx.play("pickup")
+		"ki":        # (0x0800F639: n % of max EP)
+			var e2 = maxi(1, f.maxep * n / 100); e2 = mini(e2, f.maxep - f.ep); f.ep += e2; txt = "+%d EP" % e2; col = Color(0.5, 0.8, 1)
 			Sfx.play("pickup")
 		"zeni":
 			f.zeni += n; txt = "+%d ZENI" % n; col = Color(1, 0.9, 0.4)
@@ -1676,7 +1983,7 @@ func _help_friends(L: Local) -> void:
 	var cands = []
 	for pid in Game.remote_states:
 		var st: Dictionary = Game.remote_states[pid]
-		if st.get("down", false) and int(st.get("node", -1)) == L.node_i:
+		if st.get("down", false) and int(st.get("node", -1)) == L.node_i and not st.get("bot", false):      # (a BRAWL fighter gets up by itself)
 			cands.append([int(pid), Vector2(float(st["x"]), float(st["y"])), str(st.get("name", "?"))])
 	for o in locals:
 		if o != L and o.node_i == L.node_i and o.fighter.state == "down":
@@ -1924,6 +2231,32 @@ func _map_input(ev: InputEvent) -> bool:
 		return true
 	return false
 
+## the villain database: left/right (or up/down) pages through it, Z / A / B / Esc closes it again
+func _database_input(ev: InputEvent) -> bool:
+	var key = -1
+	if ev is InputEventKey and ev.pressed and not ev.echo:
+		key = ev.keycode
+	elif ev is InputEventJoypadButton and ev.pressed:
+		key = {JOY_BUTTON_DPAD_LEFT: KEY_LEFT, JOY_BUTTON_DPAD_RIGHT: KEY_RIGHT, JOY_BUTTON_DPAD_UP: KEY_UP, JOY_BUTTON_DPAD_DOWN: KEY_DOWN, Game.pad_btn("a"): KEY_Z, Game.pad_btn("b"): KEY_ESCAPE}.get(ev.button_index, -1)
+	if key in [KEY_Z, KEY_X, KEY_ESCAPE, KEY_TAB]:
+		database_open = false
+		return true
+	if key in [KEY_LEFT, KEY_A] and not DATABASE.is_empty():
+		database_idx = (database_idx - 1 + DATABASE.size()) % DATABASE.size()
+		database_scroll = 0
+		return true
+	if key in [KEY_RIGHT, KEY_D] and not DATABASE.is_empty():
+		database_idx = (database_idx + 1) % DATABASE.size()
+		database_scroll = 0
+		return true
+	if key in [KEY_UP, KEY_W]:
+		database_scroll = maxi(0, database_scroll - 1)
+		return true
+	if key in [KEY_DOWN, KEY_S]:
+		database_scroll += 1      # clamped against the real line count when drawn
+		return true
+	return key != -1
+
 func _draw_map(c: Control) -> void:
 	var font = ThemeDB.fallback_font
 	var vs = c.get_viewport_rect().size
@@ -1989,7 +2322,7 @@ func _draw_map(c: Control) -> void:
 		_ds(c, font, Vector2(0, y), "<  %s  >" % what, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 9, Color(0.6, 1, 0.8))
 		var tp: Vector2 = pos_of.call(int(t[1]))
 		c.draw_arc(tp, cell * 0.45, 0, TAU, 20, Color(1, 1, 0.4), 1.5)
-		_ds(c, font, Vector2(0, y + 12), "LEFT / RIGHT: FRIENDS AND PLACES    ENTER / A: TRAVEL THERE", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 7, Color(0.75, 0.8, 0.9))
+		_ds(c, font, Vector2(0, y + 12), Game.keys("LEFT / RIGHT: FRIENDS AND PLACES    ENTER / A: TRAVEL THERE"), HORIZONTAL_ALIGNMENT_CENTER, vs.x, 7, Color(0.75, 0.8, 0.9))
 	_ds(c, font, Vector2(0, vs.y - 18), "TAB / M / ESC: CLOSE", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 7, Color(0.6, 0.6, 0.7))
 
 func _on_victory(t: String) -> void:
@@ -2000,6 +2333,42 @@ func _on_victory(t: String) -> void:
 		f.add_exp(Rules.level_of(f.exp, levels) * 40, levels)
 		f.hp = f.maxhp
 		Game.save_fighter(f, L.k)
+
+## a BRAWL / HEROES VS VILLAINS match was won (brawl.gd, through Game.match_won - every machine gets this): the win
+## screen stays up until you press Z / A, or two minutes pass (the fallback), then QUIT TO TITLE
+func _on_match_won(info: Dictionary) -> void:
+	if not match_won_info.is_empty():
+		return      # (already showing one: the host's "won" message only once)
+	match_won_info = info
+	match_won_t = 7200      # a fallback only (2 minutes): Z / A sends everyone back sooner (_step_local)
+	print("[world] match won: ", info)
+	Sfx.play("levelup")
+	Music.play("victory")
+
+## BRAWL: "GOKU LVL 34 WON!"; HEROES VS VILLAINS: "HEROES WON!" / "VILLAINS WON!"
+func _match_won_text() -> String:
+	if str(match_won_info.get("mode", "")) == "hvv":
+		return "HEROES WON!" if bool(match_won_info.get("heroes_won", false)) else "VILLAINS WON!"
+	return "%s LVL %d WON!" % [str(match_won_info.get("winner", "?")).to_upper(), int(match_won_info.get("lvl", 1))]
+
+func _match_won_color() -> Color:
+	if str(match_won_info.get("mode", "")) == "hvv":
+		return Color(0.55, 0.85, 1) if bool(match_won_info.get("heroes_won", false)) else Color(1, 0.4, 0.4)
+	return Color(1, 0.85, 0.3)
+
+func _draw_match_won(c: Control, vs: Vector2) -> void:
+	c.draw_rect(Rect2(0, 0, vs.x, vs.y), Color(0, 0, 0, 0.75))
+	var font = ThemeDB.fallback_font
+	# _dso draws only the black outline (and only outside the game's own pixel-font mode - see _pf_ok); the actual
+	# readable letters are _ds, on top, at the very same spot - every other outlined line in the HUD is this same pair
+	var t1 = _match_won_text()
+	var p1 = Vector2(0, vs.y / 2.0 - 40)
+	_dso(c, font, p1, t1, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 40, 3, Color(0, 0, 0, 0.9))
+	_ds(c, font, p1, t1, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 40, _match_won_color())
+	var t2 = Game.keys("A: BACK TO THE TITLE")
+	var p2 = Vector2(0, vs.y / 2.0 + 40)
+	_dso(c, font, p2, t2, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 18, 2, Color(0, 0, 0, 0.9))
+	_ds(c, font, p2, t2, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 18, Color(1, 1, 1))
 
 # ------------------------------------------------------------------ drawing
 const CHARGE_FX = ["rfx", "xcharge", "glow", "gather"]
@@ -2090,11 +2459,14 @@ func _draw_shots(av: AreaView, back: bool = false) -> void:
 			else:
 				# an eye beam: a half-round flare opening forward from the eye - nothing drawn back over the face
 				var fr0 = w * (1.5 + 0.2 * sin(tt * 1.9))
-				for ring in [[1.0, Color(col.r, col.g, col.b, 0.45)], [0.7, col], [0.4, Color(1, 1, 1, 0.95)]]:
-					var pts = PackedVector2Array()
-					for k in 13:
-						pts.append(o + dirv.rotated(-PI / 2 + PI * k / 12.0) * fr0 * float(ring[0]))
-					n.draw_colored_polygon(pts, ring[1])
+				var rings = [[1.0, Color(col.r, col.g, col.b, 0.45)], [0.7, col], [0.4, Color(1, 1, 1, 0.95)]]
+				if fr0 * 0.4 < 0.5 or dirv.length_squared() < 0.01:      # (no width or no way yet: nothing to draw)
+					rings = []
+				for ring in rings:      # (a fan of triangles from the eye: no shape for the engine to cut up, at any size)
+					var rr = fr0 * float(ring[0])
+					var cols = PackedColorArray([ring[1], ring[1], ring[1]])
+					for k in 12:
+						n.draw_primitive(PackedVector2Array([o, o + dirv.rotated(-PI / 2 + PI * k / 12.0) * rr, o + dirv.rotated(-PI / 2 + PI * (k + 1) / 12.0) * rr]), cols, PackedVector2Array())
 		elif kind == 2:
 			var r = maxf(4.0, float(e[8]))
 			n.draw_circle(p, r * 1.5, Color(col.r, col.g, col.b, 0.3))
@@ -2291,6 +2663,32 @@ func _draw_eshot(n: Node2D, sh: Array) -> void:
 			_efx_obj(n, "e_bomb", ((t >> 2) & 3) if ((t >> 2) & 3) != 3 else 1, p)
 		_:
 			n.draw_circle(p, 4.0, Color(1, 0.6, 0.3))
+
+## a ki blast hitting a foe: the game's purple spark (fx kihit) for a tenth of a second where it struck. An import from
+## before it was read: the game's spark e_spark coloured purple by brightness instead
+var _kihit_tex = null
+func _kihit_draw(n: Node2D, p: Vector2) -> void:
+	if _efx_c(n, "kihit", 0, p):
+		return
+	var i = 2
+	var fx = Assets.efx("e_spark")
+	if fx.is_empty() or i >= fx["frames"].size():
+		return
+	if _kihit_tex == null:
+		var img: Image = fx["tex"].get_image()
+		img.convert(Image.FORMAT_RGBA8)
+		for y in img.get_height():
+			for x in img.get_width():
+				var c = img.get_pixel(x, y)
+				if c.a > 0.0:
+					var l = c.get_luminance()
+					img.set_pixel(x, y, Color(0.78, 0.5, 0.98, c.a).lerp(Color(1, 1, 1, c.a), clampf((l - 0.88) / 0.12, 0.0, 1.0)))
+		_kihit_tex = ImageTexture.create_from_image(img)
+	var f: Dictionary = fx["frames"][i]
+	var w = float(f["w"]); var h = float(f["h"])
+	if w <= 0:
+		return
+	n.draw_texture_rect_region(_kihit_tex, Rect2((p - Vector2(w, h) * 0.5).floor(), Vector2(w, h)), Rect2(i * int(fx["cell"]), 0, w, h))
 
 ## a frame of an attack sheet placed as the game places it: the sheet's hot spot on the object's point, 1:1
 func _efx_obj(n: Node2D, name: String, i: int, p: Vector2) -> void:
@@ -2609,6 +3007,15 @@ func _draw_fx(n: Node2D, e: Array) -> void:
 			n.draw_line(q - Vector2(r, 0), q + Vector2(r, 0), Color(col.r, col.g, col.b, 1.0 - k), 1.0)
 			n.draw_line(q - Vector2(0, r), q + Vector2(0, r), Color(col.r, col.g, col.b, 1.0 - k), 1.0)
 
+## the drops' pictures from your game (the importer's kit/items.png: a row an item, 11-13 food, 14-16 ki), read once
+var _items_t = null
+func _items_tex() -> Texture2D:
+	if _items_t == null:
+		var im = Assets.image(Assets.base_dir.path_join("kit/items.png"))
+		_items_t = ImageTexture.create_from_image(im) if im != null else false
+	return _items_t if _items_t is Texture2D else null
+
+const OUTLINE_8 = [Vector2(-1, -1), Vector2(0, -1), Vector2(1, -1), Vector2(-1, 0), Vector2(1, 0), Vector2(-1, 1), Vector2(0, 1), Vector2(1, 1)]
 func _draw_pops(av: AreaView) -> void:
 	var font = ThemeDB.fallback_font
 	var n: Node2D = av.pops_view
@@ -2616,24 +3023,55 @@ func _draw_pops(av: AreaView) -> void:
 	var tt = Engine.get_physics_frames()
 	for d in Game.area_drops.get(key, []):
 		var p = Vector2(float(d[2]), float(d[3]) - 6 + sin((tt + int(d[0]) * 17) * 0.08) * 2.0)
-		var col = [Color(0.3, 1, 0.4), Color(0.4, 0.7, 1), Color(1, 0.85, 0.2)][clampi(int(d[1]), 0, 2)]
+		var col = {"orb_hp": Color(0.3, 1, 0.4), "orb_ep": Color(1, 0.85, 0.2)}.get(str(d[1]), Color(1, 0.85, 0.2))      # (the energy orbs yellow, as the game's)
+		if (str(d[1]) == "food" or str(d[1]) == "orb_hp") and _items_tex() != null:      # food (a breakable's, or a foe's health): the game's own picture (kit/items.png, its shadow in it)
+			var row = 2 if str(d[1]) == "orb_hp" else clampi(int(d[4]) / 10 - 1, 0, 2)      # (a foe's: the big plate - it gives 35%)
+			n.draw_texture_rect_region(_items_tex(), Rect2(float(d[2]) - 8.0, float(d[3]) - 16.0, 16, 16), Rect2(0, row * 16, 16, 16))
+			continue
 		n.draw_circle(Vector2(float(d[2]), float(d[3])), 4, Color(0, 0, 0, 0.3))
+		if str(d[1]) == "food":      # (no picture imported: a drumstick drawn here)
+			n.draw_line(p + Vector2(1, -1), p + Vector2(5, -5), Color(0.96, 0.93, 0.85), 2.0)
+			n.draw_circle(p + Vector2(5.5, -5.5), 1.4, Color(0.96, 0.93, 0.85))
+			n.draw_circle(p + Vector2(6.5, -4.5), 1.4, Color(0.96, 0.93, 0.85))
+			n.draw_circle(p + Vector2(-1, 1), 4.0, Color(0.55, 0.27, 0.08))
+			n.draw_circle(p + Vector2(-1.5, 0.5), 3.2, Color(0.8, 0.45, 0.15))
+			n.draw_circle(p + Vector2(-2.5, -0.5), 1.2, Color(1, 0.8, 0.5))
+			continue
 		n.draw_circle(p, 6, Color(col.r, col.g, col.b, 0.25))
-		if int(d[1]) == 2:
+		if str(d[1]) == "zeni":
 			n.draw_circle(p + Vector2(-1.5, 0), 2.5, col)
 			n.draw_circle(p + Vector2(1.5, 0), 2.5, col)
 		else:
 			n.draw_circle(p, 3.5, col)
 			n.draw_circle(p + Vector2(-1, -1), 1.2, Color(1, 1, 1, 0.9))
 	for sp in av.sparks:
+		if sp[2] is String:      # a breakable going: the game's smoke (4 pictures), or a pebble; a ki blast's hit
+			if sp[2] == "kihit":
+				_kihit_draw(n, sp[0])      # (one picture, as the game shows it)
+			elif sp[2] == "pebble":
+				n.draw_rect(Rect2(sp[0].floor(), Vector2(2, 2)), Color(0.55, 0.55, 0.55))
+			else:
+				_efx_obj(n, sp[2], clampi((int(sp[3]) - int(sp[1])) * 4 / maxi(1, int(sp[3])), 0, 3), sp[0])
+			continue
 		var r = (10 - sp[1]) * 1.6 + 3
 		for i in 6:
 			var dv = Vector2.from_angle(i * TAU / 6 + sp[1] * 0.2)
 			n.draw_line(sp[0] + dv * r * 0.4, sp[0] + dv * r, sp[2], 1.5)
+	_draw_clash(n, av)
+	# the numbers and words over heads (damage, EXP...): WORDS ON SCREEN off - none. In the game's own small font with
+	# a 1-pixel black outline all round, as the game draws its damage
+	if not words_on:
+		return
+	var gf = Assets.gba_font("font_small")
 	for pp in av.pops:
 		var p: Vector2 = pp[1]
-		av.pops_view.draw_string_outline(font, p + Vector2(-20, 0), pp[0], HORIZONTAL_ALIGNMENT_CENTER, 40, 8, 2, Color(0, 0, 0, 0.8))
-		av.pops_view.draw_string(font, p + Vector2(-20, 0), pp[0], HORIZONTAL_ALIGNMENT_CENTER, 40, 8, pp[3])
+		if gf != null:
+			for o in OUTLINE_8:
+				av.pops_view.draw_string(gf, p + Vector2(-40, 4) + o, pp[0], HORIZONTAL_ALIGNMENT_CENTER, 80, 16, Color(0, 0, 0))
+			av.pops_view.draw_string(gf, p + Vector2(-40, 4), pp[0], HORIZONTAL_ALIGNMENT_CENTER, 80, 16, pp[3])
+		else:
+			av.pops_view.draw_string_outline(font, p + Vector2(-20, 0), pp[0], HORIZONTAL_ALIGNMENT_CENTER, 40, 8, 2, Color(0, 0, 0, 0.8))
+			av.pops_view.draw_string(font, p + Vector2(-20, 0), pp[0], HORIZONTAL_ALIGNMENT_CENTER, 40, 8, pp[3])
 
 func _bar(c: Control, x: float, y: float, w: float, v: float, mx: float, col: Color) -> void:
 	c.draw_rect(Rect2(x - 1, y - 1, w + 2, 6), Color(0, 0, 0, 0.7))
@@ -2795,13 +3233,14 @@ func _sword_icon() -> Texture2D:
 	_sword_tex = ImageTexture.create_from_image(out.get_region(u))
 	return _sword_tex
 
-func _icon_fit(c: Control, tex: Texture2D, src: Rect2, r: Rect2, tint: Color) -> void:
+func _icon_fit(c: Control, tex: Texture2D, src: Rect2, r: Rect2, tint: Color, trim: bool = true) -> void:
 	# only the picture's own pixels count (the cell round it is empty): centred, as big as the window allows
-	var img: Image = tex.get_image()
-	if img != null:
-		var u = img.get_region(Rect2i(src)).get_used_rect()
-		if u.size.x > 0:
-			src = Rect2(src.position + Vector2(u.position), Vector2(u.size))
+	if trim:
+		var img: Image = tex.get_image()
+		if img != null:
+			var u = img.get_region(Rect2i(src)).get_used_rect()
+			if u.size.x > 0:
+				src = Rect2(src.position + Vector2(u.position), Vector2(u.size))
 	var k = minf(r.size.x / src.size.x, r.size.y / src.size.y)
 	var d = src.size * k
 	c.draw_texture_rect_region(tex, Rect2(r.get_center() - d * 0.5, d), src, tint)
@@ -3091,6 +3530,8 @@ func _draw_hud() -> void:
 	var c = hud_draw
 	var font = ThemeDB.fallback_font
 	var vs = c.get_viewport_rect().size
+	for i in locals.size():      # a BEAM CLASH: TAP X! over the fight
+		clash_rt.draw(c, locals[i], Vector2(vs.x * (0.5 if locals.size() == 1 or not split_now else (0.25 + 0.5 * i)), vs.y * 0.28))
 	# a MOOD box: darkness (a light round each fighter), weather
 	for i in locals.size():
 		var Lm: Local = locals[i]
@@ -3115,9 +3556,10 @@ func _draw_hud() -> void:
 	_txt_scale = hs
 	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(hs, hs))
 	for i in locals.size():
-		if hud_on:
+		var in_story = str(locals[i].ev.get("id", "")).begins_with("story:")      # (a story scene: the screen is the game's, no HUD)
+		if hud_on and not in_story:
 			_player_hud(c, locals[i], i == 1)
-		if minimap_on:
+		if minimap_on and not in_story:
 			_minimap(c, locals[i], i)
 		# the states on you, under your bars
 		var Ls: Local = locals[i]
@@ -3135,7 +3577,7 @@ func _draw_hud() -> void:
 		_ds(c, font, Vector2(vs.x - 190, 10), Game.planet.title, HORIZONTAL_ALIGNMENT_RIGHT, 184, 8, Color(1, 0.9, 0.5))
 	# partners online
 	var py = 64 if not (minimap_on and locals.size() > 1) else 124
-	for pid in (Game.remote_states if hud_on and words_on else {}):
+	for pid in (Game.remote_states if hud_on and words_on and not _brawl_game() and not _bots_here() else {}):      # (BRAWL, CPUS: no list - the names are over the heads)
 		var st: Dictionary = Game.remote_states[pid]
 		var where = "?"
 		var nd = int(st.get("node", -1))
@@ -3155,7 +3597,7 @@ func _draw_hud() -> void:
 	# each player's place name, on their own part of the screen
 	for i in locals.size():
 		var L: Local = locals[i]
-		if L.banner_t > 0 and words_on:
+		if L.banner_t > 0 and words_on and str(L.banner).replace("*", "").strip_edges() != "" and not str(L.ev.get("id", "")).begins_with("story:"):      # (a place named "***" - the fire picture - or a story scene: no banner)
 			var sc = _side_centre(i)
 			var bx = clampf(sc.x, 112, vs.x - 112)
 			var by = 72.0 if not split_now else clampf(sc.y - 70, 72, vs.y - 60)
@@ -3176,8 +3618,9 @@ func _draw_hud() -> void:
 	var ty = vs.y - 14
 	for i in (range(toasts.size() - 1, -1, -1) if words_on else []):
 		var t = toasts[i]
-		_dso(c, font, Vector2(0, ty), t[0], HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, 3, Color(0, 0, 0, 0.8))
-		_ds(c, font, Vector2(0, ty), t[0], HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, t[1])
+		var tt = Game.keys(t[0])      # (the buttons as named on this machine: a PC's keys)
+		_dso(c, font, Vector2(0, ty), tt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, 3, Color(0, 0, 0, 0.8))
+		_ds(c, font, Vector2(0, ty), tt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, t[1])
 		ty -= 11
 	var cy = vs.y - 60
 	for i in range(chat_log.size() - 1, -1, -1):
@@ -3193,6 +3636,8 @@ func _draw_hud() -> void:
 		_ds(c, font, Vector2(vs.x / 2 - 60, vs.y - 3), tag, HORIZONTAL_ALIGNMENT_CENTER, 120, 6, Color(0.6, 0.9, 1) if Game.reconnect_tries == 0 else Color(1, 0.6, 0.4))
 	if map_open:
 		_draw_map(c)
+	if database_open:
+		_draw_database(c, vs)
 	_draw_timers(c, vs)
 	if debug_on:
 		_draw_debug(c, vs)
@@ -3215,6 +3660,8 @@ func _draw_hud() -> void:
 			lv.append(str(L.fighter.level))
 		_ds(c, font, Vector2(vs.x / 2 - 130, vs.y / 2 + 2), "FOES BEATEN %d   LEVEL %s" % [kills, " / ".join(PackedStringArray(lv))], HORIZONTAL_ALIGNMENT_CENTER, 260, 8, Color(1, 1, 1))
 		_ds(c, font, Vector2(vs.x / 2 - 130, vs.y / 2 + 20), "THE PLANET STAYS OPEN", HORIZONTAL_ALIGNMENT_CENTER, 260, 8, Color(0.6, 1, 0.6))
+	if not match_won_info.is_empty():
+		_draw_match_won(c, vs)
 	for i in locals.size():
 		if not locals[i].menu.is_empty():
 			_draw_menu(c, locals[i], i)
@@ -3222,6 +3669,7 @@ func _draw_hud() -> void:
 		_ds(c, font, Vector2(0, vs.y - 6), "THE WORLD WAITS WHILE YOUR MENU IS OPEN", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 6, Color(0.7, 0.7, 0.8))
 
 func _exit_tree() -> void:
+	_wd_stop()      # TEMPTIME
 	ActorView.labels_outside = false      # (the map editor draws its own)
 	# closing the game keeps your fighter (level, stats, EXP) - on your own PC
 	save_all()
@@ -3258,6 +3706,9 @@ func _pick_music() -> void:
 		song = str(L.mood["music"])       # a MOOD box's own song
 	if L.ev.has("fight"):
 		song = "boss"
+	if str(L.ev.get("music", "")) != "":
+		Music.play(str(L.ev["music"]))     # an event's (a story scene's) own song, while it runs
+		return
 	# the game's own song for this place (what the GBA plays here), unless a song of yours is set for it
 	if not (str(L.mood.get("music", "")) != "" or (L.place != "" and Music.file_for(L.place) != "")):
 		if not ((song == "boss" or song == "lair") and Music.file_for(song) != ""):
@@ -3343,7 +3794,7 @@ func _menu_rows(L: Local) -> Array:
 		"SAY":
 			return PHRASES
 		"OPTIONS":
-			return ["MUSIC", "SOUND", "FULLSCREEN", "VIEW SIZE", "HUD / MINIMAP", "MUSIC TEST", "SOUND TEST", "SHOW CONTROLS", "ON-SCREEN BUTTONS", "A/B BUTTONS", "WORDS ON SCREEN", "QUIT TO TITLE AND SAVE GAME"]
+			return ["MUSIC", "SOUND", "FULLSCREEN", "VIEW SIZE", "HUD / MINIMAP", "MUSIC TEST", "SOUND TEST", "SHOW CONTROLS", "ON-SCREEN BUTTONS", "A/B BUTTONS", "WORDS ON SCREEN", "ENEMY HEALTH BARS", "QUIT TO TITLE AND SAVE GAME"]
 	return []
 
 func _menu_step(L: Local, raw: Dictionary) -> void:
@@ -3530,7 +3981,10 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 				10:
 					words_on = not words_on
 					Game.save_options()
-				11:
+				11:     # the little health bars over the foes' heads (the game has none: off at first)
+					Game.cfg["foe_bars"] = not bool(Game.cfg.get("foe_bars", false))
+					Game.save_options()
+				12:
 					_option_pick_quit()
 
 ## QUIT TO TITLE AND SAVE GAME: everything saved, back to the start menu (the app stays open)
@@ -3585,11 +4039,45 @@ func _node_of_pid(pid: int) -> int:
 func _pos_of_pid(pid: int):
 	if pid / 8 == Game.my_id():
 		var o = _local_of(pid % 8)
-		return null if o == null else {"x": o.fighter.x, "y": o.fighter.y, "down": o.fighter.state == "down"}
+		if o != null:
+			return {"x": o.fighter.x, "y": o.fighter.y, "down": o.fighter.state == "down", "high": o.fighter.on_high()}
+		# (no player of ours with that number: one of the host's BRAWL fighters, kept with the other players)
 	var st = Game.remote_states.get(pid)
 	if st == null:
 		return null
-	return {"x": float(st.get("x", 0)), "y": float(st.get("y", 0)), "down": bool(st.get("down", false))}
+	return {"x": float(st.get("x", 0)), "y": float(st.get("y", 0)), "down": bool(st.get("down", false)), "high": bool(st.get("high", false))}
+
+## a BRAWL or HEROES VS VILLAINS game (this host's, or the host we joined has brawlers out)
+func _brawl_game() -> bool:
+	if bool(Game.cfg.get("brawl", false)) and Game.is_host():
+		return true
+	for pid in Game.remote_states:
+		if Game.remote_states[pid].get("bot", false) and not Game.remote_states[pid].get("ally", false) and not Game.remote_states[pid].get("foe", false):
+			return true
+	return false
+
+## fighters the computer plays here (BRAWL's, or FRIENDLY CPUS)
+func _bots_here() -> bool:
+	for pid in Game.remote_states:
+		if Game.remote_states[pid].get("bot", false) and not Game.remote_states[pid].get("foe", false):
+			return true
+	return false
+
+## HEROES VS VILLAINS going on here (this host's, or the brawlers of the host we joined say so): own side can't be hurt
+func _hvv_on() -> bool:
+	if bool(Game.cfg.get("hvv", false)) and Game.is_host():
+		return true
+	for pid in Game.remote_states:
+		if Game.remote_states[pid].get("hvv", false):
+			return true
+	return false
+
+static func _same_side(ch_a: int, ch_b: int) -> bool:
+	return Rules.is_villain(ch_a) == Rules.is_villain(ch_b)
+
+## a player on high ground is out of reach of anyone below (foes and players): only those up there too hit them
+func _out_of_reach(me_high: bool, them_high: bool) -> bool:
+	return them_high and not me_high
 
 func _pid_exists(pid: int) -> bool:
 	return _node_of_pid(pid) >= 0
@@ -3661,6 +4149,8 @@ func _on_social(k: int, from: int, nm: String, kind: String, data: Dictionary) -
 	if L == null:
 		return
 	match kind:
+		"clash_taps", "clash_end":
+			clash_rt.on_social(L, from, kind, data)
 		"party_ask", "duel_ask", "trade_ask":
 			var kd = kind.split("_")[0]
 			L.invites = L.invites.filter(func(iv): return not (iv[0] == kd and iv[1] == from))
@@ -3682,7 +4172,7 @@ func _on_social(k: int, from: int, nm: String, kind: String, data: Dictionary) -
 		"duel_hit":
 			_duel_hit_in(L, from, data)
 		"pvp_hit":
-			_pvp_hit_in(L, data)
+			_pvp_hit_in(L, from, nm, data)
 		"duel_won":
 			if not L.duel.is_empty() and int(L.duel["with"]) == from:
 				_duel_end(L, "%s WINS THE DUEL AGAINST %s!" % [L.name, nm], true)
@@ -3730,41 +4220,127 @@ func _social_tick(L: Local, elist: Array) -> void:
 			Sfx.play("menu" if L.duel["t"] > 0 else "levelup", 0.8)
 		return
 	var p = _pos_of_pid(pid)
-	if p != null:
+	if p != null and not _out_of_reach(L.fighter.on_high(), bool(p["high"])):
 		elist.append({"id": DUEL_ID, "x": p["x"], "y": p["y"], "alive": not p["down"], "big": false})
 
 # PVP (set on a Capsule Corp save point with R2): players who both have it on can hurt each other for real
 const PVP_ID = -2000          # PVP_ID - pid: another player, as something to hit
 func _pvp_targets(L: Local, elist: Array) -> void:
+	for pid in Game.remote_states:      # HERO FOES (brawl.gd): fought by everyone, PVP or not
+		var fst: Dictionary = Game.remote_states[pid]
+		if fst.get("foe", false) and int(fst.get("node", -1)) == L.node_i and not _out_of_reach(L.fighter.on_high(), bool(fst.get("high", false))):
+			elist.append({"id": PVP_ID - int(pid), "x": float(fst.get("x", 0)), "y": float(fst.get("y", 0)), "alive": not bool(fst.get("down", false)), "big": false})
 	if not L.fighter.pvp:
 		return
 	for o in locals:
-		if o != L and o.node_i == L.node_i and o.fighter.pvp:
+		if o != L and o.node_i == L.node_i and o.fighter.pvp and not o.fighter.flying and not _out_of_reach(L.fighter.on_high(), o.fighter.on_high()) and not (_hvv_on() and _same_side(L.fighter.ch, o.fighter.ch)):
 			elist.append({"id": PVP_ID - _my_pid(o), "x": o.fighter.x, "y": o.fighter.y, "alive": o.fighter.state != "down", "big": false})
 	for pid in Game.remote_states:
 		var st: Dictionary = Game.remote_states[pid]
-		if int(st.get("node", -1)) == L.node_i and bool(st.get("pvp", false)):
+		if not st.get("foe", false) and int(st.get("node", -1)) == L.node_i and bool(st.get("pvp", false)) and not bool(st.get("fly", false)) and not _out_of_reach(L.fighter.on_high(), bool(st.get("high", false))) and not (_hvv_on() and _same_side(L.fighter.ch, int(st.get("ch", -1)))):
 			elist.append({"id": PVP_ID - int(pid), "x": float(st.get("x", 0)), "y": float(st.get("y", 0)), "alive": not bool(st.get("down", false)), "big": false})
 
 func _pvp_hit_out(L: Local, pid: int, ev: Dictionary) -> void:
-	if not L.fighter.pvp:
+	if not L.fighter.pvp and not Game.remote_states.get(pid, {}).get("foe", false):
 		return
-	Game.send_social(pid, _my_pid(L), L.name, "pvp_hit", {"dmg": int(ev["dmg"]), "kx": float(ev["kx"]), "ky": float(ev["ky"]), "crit": bool(ev["crit"])})
+	Game.send_social(pid, _my_pid(L), L.name, "pvp_hit", {"dmg": int(ev["dmg"]), "kx": float(ev["kx"]), "ky": float(ev["ky"]), "crit": bool(ev["crit"]), "ki": bool(ev.get("ki", false)), "ch": L.fighter.ch})
 	var p = _pos_of_pid(pid)
 	if p != null and views.has(L.node_i):
-		views[L.node_i].sparks.append([Vector2(p["x"], p["y"] - 14), 10, Color(1, 0.6, 0.4)])
+		if ev.get("ki", false):
+			ki_spark(L.node_i, Vector2(p["x"], p["y"]), float(ev["kx"]), float(ev["ky"]))
 		Sfx.play("crit" if ev["crit"] else "hit", 0.8)
 
-func _pvp_hit_in(L: Local, data: Dictionary) -> void:
+## a tick of a BEAM CLASH at p (clash.gd, brawl.gd): sparks shooting straight out from where the beams push on each
+## other - each beam's colour sprays out on its own side (`left`: the colour of the beam coming from the left), a few
+## white ones every way - and the white-hot middle
+func clash_burst(node_i: int, p: Vector2, left: Color, right: Color) -> void:
+	var av = views.get(node_i)
+	if av == null:
+		return
+	av.clash_core[p.round()] = [3, left, right]
+	for i in 5:
+		var white = randi() % 5 == 0
+		var from_left = randi() % 2 == 0
+		# out away from its own beam (back the way it came is blocked by the beam): a wide fan, up and down too
+		var a = randf_range(-1.35, 1.35) + (PI if from_left else 0.0)
+		if white:
+			a = randf() * TAU
+		var sp = randf_range(1.6, 4.2)
+		var life = 8 + randi() % 10
+		var col = Color(1, 1, 1) if white else (left if from_left else right)
+		av.shards.append([p + Vector2.from_angle(a) * randf_range(1.0, 4.0), Vector2.from_angle(a) * sp, life, life, col])
+	if av.shards.size() > SHARD_CAP:      # many brawlers clashing at once: a real cost in draw calls on some Macs
+		av.shards = av.shards.slice(av.shards.size() - SHARD_CAP)
+const SHARD_CAP = 80
+
+func _draw_clash(n: Node2D, av) -> void:
+	for sh2 in av.shards:
+		var k = float(sh2[2]) / float(sh2[3])
+		var col: Color = sh2[4]
+		var v: Vector2 = sh2[1]
+		var tail = v * (3.5 + 3.0 * k)      # a streak along its way, shorter as it fades
+		n.draw_line(sh2[0] - tail, sh2[0], Color(col.r, col.g, col.b, 0.6 * k), 2.0)
+		n.draw_line(sh2[0] - tail * 0.6, sh2[0], Color(col.r, col.g, col.b, minf(1.0, 1.3 * k)), 1.0)
+		n.draw_rect(Rect2(sh2[0].floor(), Vector2(1, 1)), Color(1, 1, 1, k))
+	var tt = Engine.get_physics_frames()
+	for cp in av.clash_core:
+		var c = av.clash_core[cp]
+		var p = Vector2(cp)
+		# a star of sharp spikes straight out from the middle (as the game's ki hit, bigger): each beam's colour on its
+		# own side, a white star inside it, white-hot in the middle. New spikes every few frames - it flickers, never turns
+		var rng = RandomNumberGenerator.new()
+		rng.seed = hash(Vector2i(cp)) + tt / 3
+		var n_sp = 14
+		var tips = []
+		for k2 in n_sp:
+			var a2 = (k2 + rng.randf_range(-0.3, 0.3)) * TAU / n_sp
+			tips.append([a2, rng.randf_range(14.0, 34.0) * (1.25 if absf(cos(a2)) > 0.7 else 1.0), rng.randf_range(0.16, 0.26)])
+		for layer in [[1.0, 4.0, false], [0.55, 2.6, true]]:
+			for tp in tips:
+				var a2: float = tp[0]
+				var col: Color = Color(1, 1, 1, 0.95) if layer[2] else (c[1] if cos(a2) < 0.0 else c[2])
+				var tip = p + Vector2.from_angle(a2) * float(tp[1]) * float(layer[0])
+				var w2 = float(tp[2])
+				var base0 = p + Vector2.from_angle(a2 - w2 * 3.0) * float(layer[1])
+				var base1 = p + Vector2.from_angle(a2 + w2 * 3.0) * float(layer[1])
+				n.draw_primitive(PackedVector2Array([base0, tip, base1]), PackedColorArray([col, col, col]), PackedVector2Array())
+		n.draw_circle(p, 4.5, Color(1, 1, 1))
+
+## a ki blast hitting someone (a foe, a player, a brawler): the game's purple spark on the side it came from - a punch
+## or a beam shows none (as the game's)
+func ki_spark(node_i: int, at: Vector2, kx: float, ky: float) -> void:
+	if views.has(node_i):
+		var side = Vector2(-kx, -ky).normalized() * 8.0
+		views[node_i].sparks.append([at + Vector2(0, -14) + side, 14, "kihit", 14])
+
+func _pvp_hit_in(L: Local, from: int, from_name: String, data: Dictionary) -> void:
 	var f: FighterSim = L.fighter
-	if not f.pvp or f.invuln > 0 or f.state == "down":
-		return      # not in PVP mode: no player can hurt you
-	var d = maxi(1, roundi(float(data.get("dmg", 1)) * 0.6))
+	var foe = bool(data.get("foe", false))      # a HERO FOE's blow: as a foe's, PVP or not
+	if (not f.pvp and not foe) or f.invuln > 0 or f.state == "down" or f.flying:
+		return      # not in PVP mode: no player can hurt you (flying: nothing can reach you up there)
+	var p = _pos_of_pid(from)
+	if p != null and _out_of_reach(bool(p["high"]), f.on_high()):
+		return      # you on high ground, they below
+	var fst = Game.remote_states.get(from, {})
+	if not foe and _hvv_on() and not fst.is_empty() and _same_side(f.ch, int(fst.get("ch", -1))):
+		return      # HEROES VS VILLAINS: your own side
+	var d = Rules.pvp_damage(int(data.get("dmg", 1)), f.maxhp)
 	Sfx.play("hurt", 0.9)
 	L.shake = 3.0
+	if data.get("ki", false):
+		ki_spark(L.node_i, Vector2(f.x, f.y), float(data.get("kx", 0)), float(data.get("ky", 0)))
 	if views.has(L.node_i):
 		views[L.node_i].pops.append([str(d), Vector2(f.x, f.y - 30), 40, Color(1, 0.4, 0.3)])
 	f.take_hit(d, float(data.get("kx", 0)), float(data.get("ky", 0)))
+	if not foe:      # BRAWL / HEROES VS VILLAINS: the kill goes to whoever dealt the most damage, not just the finish
+		var row: Dictionary = L.dmg_taken.get(from, {"dmg": 0})
+		row["dmg"] = int(row["dmg"]) + d; row["ch"] = int(data.get("ch", -1)); row["name"] = from_name
+		L.dmg_taken[from] = row
+		if f.state == "down":
+			var top = Rules.top_attacker(L.dmg_taken)
+			L.dmg_taken = {}      # (its next life starts a fresh ledger)
+			if not top.is_empty():
+				Game.report_pvp_kill(int(top[0]), int(top[1]), str(top[2]))
 
 func _duel_start(L: Local, pid: int, nm: String) -> void:
 	L.duel = {"with": pid, "name": nm, "t": 60 * int(Content.social_cfg.get("duel", {}).get("countdown", 3)) + 59}
@@ -3786,7 +4362,8 @@ func _duel_hit_out(L: Local, ev: Dictionary) -> void:
 	Game.send_social(int(L.duel["with"]), _my_pid(L), L.name, "duel_hit", {"dmg": int(ev["dmg"]), "kx": float(ev["kx"]), "ky": float(ev["ky"]), "crit": bool(ev["crit"])})
 	var p = _pos_of_pid(int(L.duel["with"]))
 	if p != null and views.has(L.node_i):
-		views[L.node_i].sparks.append([Vector2(p["x"], p["y"] - 14), 10, Color(1, 0.9, 0.5)])
+		if ev.get("ki", false):
+			ki_spark(L.node_i, Vector2(p["x"], p["y"]), float(ev["kx"]), float(ev["ky"]))
 		Sfx.play("crit" if ev["crit"] else "hit", 0.8)
 
 func _duel_hit_in(L: Local, from: int, data: Dictionary) -> void:
@@ -3795,6 +4372,9 @@ func _duel_hit_in(L: Local, from: int, data: Dictionary) -> void:
 	var f: FighterSim = L.fighter
 	if f.invuln > 0 or f.state == "down":
 		return
+	var p = _pos_of_pid(from)
+	if p != null and _out_of_reach(bool(p["high"]), f.on_high()):
+		return      # you on high ground, they below
 	var cfg: Dictionary = Content.social_cfg.get("duel", {})
 	var d = clampi(roundi(float(data.get("dmg", 1)) * float(cfg.get("damage", 0.4))), 1, maxi(1, roundi(f.maxhp * float(cfg.get("max_hit", 0.2)))))
 	Sfx.play("hurt", 0.9)
@@ -3979,7 +4559,8 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 	menu_hits[i] = {"c": c, "rows": [], "tabs": []}
 	for t2 in TABS.size():
 		menu_hits[i]["tabs"].append(Rect2(r.position.x + t2 * tw, r.position.y, tw, 12))
-	var line = func(t: String, col: Color, sel: bool = false, size: int = 7, ri: int = -1) -> void:
+	var line = func(t0: String, col: Color, sel: bool = false, size: int = 7, ri: int = -1, raw: bool = false) -> void:
+		var t = t0 if raw else Game.keys(t0)      # (raw: the controls list, written for each machine already)
 		if ri >= 0:      # a row you can pick: where it is, for the mouse
 			menu_hits[i]["rows"].append([Rect2(x0 - 3, Y[0] - 8, W + 6, 10), ri])
 		if sel:
@@ -3997,6 +4578,25 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 				bl.append("%s x%.1f (%ds)" % [k.to_upper(), float(f.buffs[k][0]), int(f.buffs[k][1]) / 60])
 			if bl.size() > 0:
 				line.call("POWER-UPS: " + ", ".join(PackedStringArray(bl)), Color(0.7, 1, 0.7))
+			if _brawl_game():
+				Y[0] += 4
+				if _hvv_on():
+					line.call("HEROES VS VILLAINS - FIRST SIDE TO %d KILLS WINS" % brawl.KILLS_TO_WIN_HVV, Color(1, 0.85, 0.3))
+					line.call("HEROES : %d KILLS" % int(match_score_info.get("heroes", 0)), Color(0.55, 0.85, 1))
+					line.call("VILLAINS : %d KILLS" % int(match_score_info.get("villains", 0)), Color(1, 0.5, 0.5))
+				else:
+					line.call("BRAWL - FIRST TO %d KILLS WINS" % brawl.KILLS_TO_WIN_BRAWL, Color(1, 0.85, 0.3))
+					var my_pid = _my_pid(L)
+					var srows: Array = match_score_info.get("rows", [])
+					var have_mine = false
+					for srow in srows:
+						if int(srow.get("pid", -1)) == my_pid:
+							have_mine = true
+					if not have_mine:      # no kills yet: your own line still shows, so you know it is working
+						line.call("%s LVL %d: 0 KILLS  (YOU)" % [f.name.to_upper(), f.level], Color(0.6, 1, 0.7))
+					for srow in srows:
+						var is_me = int(srow.get("pid", -1)) == my_pid
+						line.call("%s LVL %d: %d KILLS%s" % [str(srow.get("name", "?")).to_upper(), int(srow.get("lvl", 1)), int(srow.get("n", 0)), "  (YOU)" if is_me else ""], Color(0.6, 1, 0.7) if is_me else Color(1, 1, 1))
 			Y[0] += 4
 			line.call("TRANSFORMATIONS (TRANSFORM BUTTON: NEXT FORM / BACK TO NORMAL)", Color(1, 0.85, 0.3))
 			if rows.is_empty():
@@ -4113,14 +4713,14 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 				("SAMPLE %d  (A: NEXT)" % sound_test) if sound_test >= 0 else "(A: PLAY THE GAME'S SOUNDS)", "ON" if show_controls else "OFF",
 				{"auto": "AUTO (HIDDEN WITH A PAD)", "on": "ON", "off": "OFF"}.get(str(Game.cfg.get("touch_mode", "auto")), "AUTO"),
 				"NINTENDO / RETROID (A ON THE RIGHT)" if Game.pad_layout() == "nintendo" else "XBOX (A AT THE BOTTOM)",
-				"ON" if words_on else "OFF  (ONLY SPEECH AND CHAT)", ""]
+				"ON" if words_on else "OFF  (ONLY SPEECH AND CHAT)", "ON" if bool(Game.cfg.get("foe_bars", false)) else "OFF", ""]
 			for j in rows.size():
 				line.call("%s   %s" % [rows[j], vals[j]], Color(1, 1, 1), j == row, 7, j)
 			Y[0] += 4
 			if show_controls:
 				for t in _controls_text(L):
-					line.call(t, Color(0.7, 0.75, 0.9))
-	_ds(c, font, Vector2(r.position.x, r.end.y - 4), "LEFT/RIGHT: PAGE   UP/DOWN: CHOOSE   A: OK   B / MENU: BACK", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 6, Color(0.55, 0.6, 0.75))
+					line.call(t, Color(0.7, 0.75, 0.9), false, 7, -1, true)
+	_ds(c, font, Vector2(r.position.x, r.end.y - 4), Game.keys("LEFT/RIGHT: PAGE   UP/DOWN: CHOOSE   A: OK   B / MENU: BACK"), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 6, Color(0.55, 0.6, 0.75))
 
 func _controls_text(L: Local) -> Array:
 	var i = locals.find(L)
@@ -4465,20 +5065,295 @@ func _draw_debug(c: Control, vs: Vector2) -> void:
 	lines.append("states: " + ", ".join(PackedStringArray(f.states.keys())) + "   form: " + str(f.form().get("id", "-")))
 	lines.append("events done: " + ", ".join(PackedStringArray(ot)).left(120))
 	lines.append("map %s  x %d  y %d  level %d" % [Game.planet.nodes[L.node_i]["key"], int(f.x), int(f.y), f.level])
+	var ck = str(Game.planet.nodes[L.node_i].get("key", ""))
+	var cpad = Rect2(COMPUTER_POS + Vector2(-24, -24), Vector2(64, 56)).grow(6.0)
+	lines.append("computer: near=%s  open=%s  db_empty=%s  has_story=%s  key_ok=%s(%s)  pad_ok=%s  dist=%.1f" % \
+		[L.near_computer, database_open, DATABASE.is_empty(), Game.cfg.has("story"), ck.to_lower() == COMPUTER_PLACE.to_lower(), ck, cpad.has_point(Vector2(f.x, f.y)), Vector2(f.x, f.y).distance_to(COMPUTER_POS)])
 	var h = 10 + lines.size() * 10
 	c.draw_rect(Rect2(4, vs.y - h - 70, minf(vs.x - 8, 470), h), Color(0, 0, 0.08, 0.85))
 	for i in lines.size():
 		_ds(c, font, Vector2(8, vs.y - h - 60 + i * 10), lines[i], HORIZONTAL_ALIGNMENT_LEFT, minf(vs.x - 16, 462), 7, Color(0.7, 1, 0.8) if i == 0 else Color(0.9, 0.92, 1))
 
-## THE END: the credits roll, then back to the title
-func show_credits() -> void:
-	var st: Dictionary = Content.story
+## THE END: the credits roll, then back to the title. `custom` (optional): {title, lines, music} instead of the
+## current story's own (the demo's own goodbye screen - it isn't part of any story, so Content.story is empty here)
+func show_credits(custom: Dictionary = {}) -> void:
+	var st: Dictionary = Content.story if custom.is_empty() else custom
 	credits_lines = [str(st.get("title", "THE END")).to_upper(), ""]
-	for l in st.get("credits", ["THANK YOU FOR PLAYING"]):
+	for l in st.get("credits", st.get("lines", ["THANK YOU FOR PLAYING"])):
 		credits_lines.append(str(l))
 	credits_lines += ["", "", "THE END"]
 	credits_t = 0
-	Music.play(str(st.get("credits_music", "victory")))
+	Music.play(str(st.get("credits_music", st.get("music", "victory"))))
+
+## FREE PLAY's villain database: a name, its four GBA stats (HP/STR/POW/END, real numbers only), a description,
+## and the character's own sprite turning in place on a lit floor - styled after the GBA computer screen's own look.
+## There's no real "face portrait" art to import, so the right-hand box is the same live sprite, cropped to its
+## head, rather than something invented
+const DB_BLUE = Color(0.22, 0.22, 0.82)
+const DB_EDGE = Color(0.55, 0.78, 1.0)
+const DB_INSET = Color(0.02, 0.03, 0.09)
+const DB_GREEN = Color("02f705")      # the user's own exact swatch (GIMP color picker, HTML notation)
+
+## the face box: the game's own dialogue-portrait art (Story.face), the same source as Future Gohan/Teen Trunks'
+## faces in the story demo - not a crop of the body sprite
+## the villain database's whole panel art (data/builtin/sprites/db_background.png) - the user's own hand-drawn
+## background, both black boxes, the glyph "blade" wings and the panel border, all baked into one picture, drawn
+## pixel-art scale (130x90) and stretched up 4x. Falls back to the old hand-drawn _circuit_fill if missing
+var _db_motherboard: Texture2D
+var _db_motherboard_tried = false
+func _db_motherboard_tex() -> Texture2D:
+	if not _db_motherboard_tried:
+		_db_motherboard_tried = true
+		var img = Assets.image(Assets.exe_dir().path_join("builtin/sprites/db_background.png"))
+		if img != null:
+			_db_motherboard = ImageTexture.create_from_image(img)
+	return _db_motherboard
+
+var _db_face_img_cache = {}
+func _icon_db_face(c: Control, n: int, img_name: String, sid: int, r: Rect2, tint: Color) -> bool:
+	if img_name != "":      # a few characters (Mayor) have no dialogue-face art - the user's own supplied picture
+		if not _db_face_img_cache.has(img_name):
+			var img = Assets.image(Assets.exe_dir().path_join("builtin/sprites").path_join(img_name))
+			_db_face_img_cache[img_name] = ImageTexture.create_from_image(img) if img != null else null
+		var custom: Texture2D = _db_face_img_cache[img_name]
+		if custom != null:
+			_icon_fit(c, custom, Rect2(Vector2.ZERO, custom.get_size()), r, tint)
+			return true
+	if n >= 0:
+		var tex = Story.face(n)
+		if tex != null:
+			# the game's own face picture is baked 64x64 WITH its own decorative frame already filling the
+			# tile - don't trim it to "used pixels" (the frame reads as one contiguous blob anyway and trimming
+			# it off-center was pushing the portrait toward one corner); just stretch the whole tile to fill the box
+			_icon_fit(c, tex, Rect2(Vector2.ZERO, tex.get_size()), r, tint, false)
+			return true
+	return _icon_sprite_head(c, sid, r, tint)      # no real face art (Cell Junior, say): a crop of its own body sprite
+
+## the top of a character's own idle/down sprite frame, cropped to its real (non-transparent) pixels first so
+## this isn't just the head of a mostly-empty padded cell - a placeholder for characters with no dedicated face art
+func _icon_sprite_head(c: Control, sid: int, r: Rect2, tint: Color) -> bool:
+	if sid < 0:
+		return false
+	var st = Assets.sprite_set(sid)
+	if st.is_empty() or st["tex"] == null:
+		return false
+	var slots: Array = st["slots"]
+	if slots.is_empty() or slots[0].is_empty():
+		return false
+	var f: Dictionary = slots[0][0]
+	var cell: int = st["cell"]
+	var tex: Texture2D = st["tex"]
+	var img: Image = tex.get_image()
+	if img == null:
+		return false
+	var full_src = Rect2(0, 0, f["w"], f["h"])
+	var u = img.get_region(Rect2i(full_src)).get_used_rect()
+	if u.size.x <= 0:
+		return false
+	var tight = Rect2(Vector2(u.position), Vector2(u.size))
+	var head = Rect2(tight.position, Vector2(tight.size.x, tight.size.y * 0.58))
+	var k = minf(r.size.x / head.size.x, r.size.y / head.size.y)
+	var d = head.size * k
+	c.draw_texture_rect_region(tex, Rect2(r.get_center() - d * 0.5, d), head, tint)
+	return true
+
+## a little made-up "alien script" mark (not any real alphabet, no straight plus/minus/X) drawn as solid square
+## pixels on a 7x7 grid - blocky like the rest of the panel's hand-drawn art, not a smooth vector curve.
+## One of sixteen fixed patterns, picked by `n`
+const _GLYPH_GRID = 7
+const _GLYPH_PATTERNS = [
+	[[1,0],[2,0],[0,1],[3,1],[0,2],[3,2],[1,3],[2,3],[1,4],[2,5]],
+	[[0,0],[0,1],[0,2],[0,3],[1,3],[2,3],[2,4],[2,5],[2,6]],
+	[[3,0],[3,1],[2,2],[1,3],[0,4],[4,4],[4,5],[4,6]],
+	[[0,3],[1,2],[2,1],[3,0],[4,1],[5,2],[6,3],[3,5]],
+	[[1,1],[2,1],[3,1],[1,2],[3,2],[1,3],[2,3],[3,3],[2,5]],
+	[[0,0],[1,1],[2,2],[3,3],[4,2],[5,1],[6,0],[3,5],[3,6]],
+	[[0,2],[0,3],[0,4],[1,1],[1,5],[2,0],[2,6],[4,3]],
+	[[3,0],[3,1],[3,2],[1,3],[2,3],[3,3],[4,3],[5,3],[1,5],[1,6]],
+	[[0,1],[1,0],[2,1],[1,2],[4,2],[5,1],[6,2],[5,3]],
+	[[2,0],[1,1],[1,2],[2,3],[3,3],[4,2],[4,1],[3,0],[3,5],[3,6]],
+	[[3,0],[1,1],[5,1],[0,3],[6,3],[1,5],[5,5],[3,6]],
+	[[1,1],[2,2],[3,1],[1,4],[2,5],[3,4]],
+	[[0,5],[0,4],[0,3],[0,2],[1,2],[2,2],[3,3],[4,4],[5,5]],
+	[[3,2],[2,3],[3,3],[4,3],[3,4],[1,3],[5,3]],
+	[[0,1],[1,2],[0,3],[3,1],[4,2],[3,3]],
+	[[2,0],[3,0],[1,1],[4,1],[1,2],[1,4],[2,5],[3,5],[4,5]],
+]
+
+func _alien_glyph(c: Control, p: Vector2, sz: Vector2, n: int, col: Color) -> void:
+	var pat: Array = _GLYPH_PATTERNS[posmod(n, _GLYPH_PATTERNS.size())]
+	# each pattern only fills part of the 7x7 grid (some reach every edge, most don't) - centre on the pattern's
+	# OWN bounding box rather than the grid's, so every glyph sits centred in its blade regardless of its shape
+	var minx = 99; var maxx = -99; var miny = 99; var maxy = -99
+	for px in pat:
+		minx = mini(minx, px[0]); maxx = maxi(maxx, px[0])
+		miny = mini(miny, px[1]); maxy = maxi(maxy, px[1])
+	var bcx = (minx + maxx) / 2.0
+	var bcy = (miny + maxy) / 2.0
+	var mid = (_GLYPH_GRID - 1) / 2.0
+	var cell = sz / float(_GLYPH_GRID)
+	for px in pat:
+		c.draw_rect(Rect2(p + Vector2(px[0] - bcx + mid, px[1] - bcy + mid) * cell, cell), col)
+
+## fills a whole rect with a dense PCB-trace pattern: many thin horizontal lanes, each with a few small right-angle
+## jogs of its own - every jog stays inside that lane's own half-height, so lanes can never cross each other.
+## Fixed (seeded, not random/per-character) so the pattern is the same every time, like real traces would be
+func _circuit_fill(c: Control, rect: Rect2, col: Color) -> void:
+	var rng = RandomNumberGenerator.new()
+	rng.seed = 1337
+	var band_h = 7.0
+	var bands = int(rect.size.y / band_h)
+	for bi in bands:
+		var y = rect.position.y + bi * band_h + band_h * 0.5
+		var x = rect.position.x + rng.randf_range(1.0, 10.0)
+		var pts = PackedVector2Array([Vector2(x, y)])
+		while x < rect.end.x - 8.0:
+			x = minf(x + rng.randf_range(10.0, 24.0), rect.end.x)
+			pts.append(Vector2(x, y))
+			if rng.randf() < 0.55 and x < rect.end.x - 10.0:
+				var jy = y + (1.0 if rng.randf() < 0.5 else -1.0) * band_h * 0.45
+				var jx = x + rng.randf_range(5.0, 11.0)
+				pts.append(Vector2(x, jy))
+				pts.append(Vector2(jx, jy))
+				pts.append(Vector2(jx, y))
+				x = jx
+		c.draw_polyline(pts, col, 1.0)
+		for i in range(1, pts.size() - 1):
+			c.draw_arc(pts[i], 1.0, 0.0, TAU, 6, col, 1.0)
+
+func _draw_database(c: Control, vs: Vector2) -> void:
+	var font = ThemeDB.fallback_font
+	c.draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.85))
+	var e: Dictionary = DATABASE[clampi(database_idx, 0, DATABASE.size() - 1)]
+	var pw = minf(vs.x - 40, 520)
+	var ph = minf(vs.y - 40, 360)
+	var panel = Rect2((vs.x - pw) / 2, (vs.y - ph) / 2, pw, ph)
+	var mobo = _db_motherboard_tex()      # the user's own hand-drawn panel art: background, both boxes, wings, border
+	if mobo != null:
+		c.draw_texture_rect(mobo, panel, false)
+	else:
+		c.draw_rect(panel, DB_BLUE)
+		_circuit_fill(c, panel, Color(DB_EDGE.r, DB_EDGE.g, DB_EDGE.b, 0.35))
+		c.draw_rect(panel, DB_EDGE, false, 2.0)
+	# the title sits in the margin strip between the panel's own top edge and the two boxes' top border (template
+	# y=0 to y=9) - centred in that strip, not just dropped a fixed distance from the top
+	_ds(c, font, Vector2(panel.position.x, panel.position.y + panel.size.y * (7.0 / 90.0)), str(e.get("name", "?")), HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 18, Color(1, 0.25, 0.2))
+
+	# exact box positions, measured directly off the user's own 130x90 template art (not a guessed formula) - keeps
+	# the code-drawn content (grid floor, sprite, text) pixel-aligned with the hand-drawn art's own black boxes
+	var tpl = func(x0: float, y0: float, x1: float, y1: float) -> Rect2:
+		return Rect2(panel.position + panel.size * Vector2(x0 / 130.0, y0 / 90.0), panel.size * Vector2((x1 - x0) / 130.0, (y1 - y0) / 90.0))
+	var spr = tpl.call(5.0, 10.0, 38.0, 43.0)
+	var face = tpl.call(91.0, 10.0, 124.0, 43.0)
+	var dbox = tpl.call(17.0, 51.0, 112.0, 87.0)      # the description box - measured here too, so the arrow buttons below can centre in the gap above it
+	# the sprite box: a dark sky over a glowing green floor grid, the character standing on it (drawn over the
+	# background art's own black box - the box fill/border themselves come from that art now, not code)
+	c.draw_rect(spr, Color(0.02, 0.04, 0.16))
+	var gtop = spr.position.y + spr.size.y * 0.4
+	c.draw_rect(Rect2(spr.position.x, gtop, spr.size.x, spr.end.y - gtop), Color(0.02, 0.1, 0.03))
+	var gcol = Color(DB_GREEN.r, DB_GREEN.g, DB_GREEN.b, 0.55)
+	# a real floor: every horizontal line runs the box's full width, edge to edge, as if it keeps going past the
+	# frame rather than tapering to a point; the verticals only taper a little, just enough to read as depth
+	var cx = spr.get_center().x
+	var full_w = spr.size.x
+	var far_w = full_w * 0.82
+	var gh = spr.end.y - gtop
+	var nverts = 16
+	for i in range(nverts + 1):
+		var frac = float(i) / nverts - 0.5
+		c.draw_line(Vector2(cx + frac * far_w, gtop), Vector2(cx + frac * full_w, spr.end.y), gcol, 1.0)
+	var nrows = 16
+	for i in range(1, nrows + 1):
+		var t = pow(float(i) / nrows, 1.7)      # weighted toward 0: many rows bunched near the horizon
+		var gy = gtop + gh * t
+		c.draw_line(Vector2(spr.position.x, gy), Vector2(spr.end.x, gy), gcol, 1.0)
+	var sid = int(e.get("set", -1))
+	var spr_sprite = Rect2(spr.get_center() - spr.size * 0.25, spr.size * 0.5)      # about half the box, not filling it
+	if sid < 0 or not _icon_sprite(c, sid, 0, 0, spr_sprite, Color(1, 1, 1)):
+		_ds(c, font, spr.position + Vector2(0, spr.size.y * 0.5 - 4), "?", HORIZONTAL_ALIGNMENT_CENTER, spr.size.x, 16, Color(0.5, 0.5, 0.6))
+	# two small arrow buttons under the sprite box (decorative - matches the GBA screen's own look), centred in the
+	# gap between the sprite box and the description box rather than hugging the sprite box's own bottom edge
+	var abtnW = spr.size.x * 0.46
+	var abtnH = 16.0
+	var abtnY = spr.end.y + (dbox.position.y - spr.end.y - abtnH) / 2.0
+	for side in [0, 1]:
+		var ab = Rect2(spr.position.x if side == 0 else spr.end.x - abtnW, abtnY, abtnW, abtnH)
+		c.draw_rect(ab, Color(0, 0, 0))
+		c.draw_rect(ab, DB_EDGE, false, 1.0)
+		var mid = ab.get_center()
+		var tri = PackedVector2Array([Vector2(mid.x + 4, ab.position.y + 3), Vector2(mid.x + 4, ab.end.y - 3), Vector2(mid.x - 4, mid.y)]) if side == 0 else \
+			PackedVector2Array([Vector2(mid.x - 4, ab.position.y + 3), Vector2(mid.x - 4, ab.end.y - 3), Vector2(mid.x + 4, mid.y)])
+		c.draw_colored_polygon(tri, Color(0.4, 0.85, 0.95))
+
+	if not _icon_db_face(c, int(e.get("face", -1)), str(e.get("face_img", "")), sid, face, Color(1, 1, 1)):
+		_ds(c, font, face.position + Vector2(0, face.size.y * 0.5 - 4), "?", HORIZONTAL_ALIGNMENT_CENTER, face.size.x, 16, Color(0.5, 0.5, 0.6))
+
+	# the stats: fixed numbers, except for a character this port actually lets you play - there, the real current
+	# balance (today's level-1 baseline from Assets.hero_stats, not any one player's own save) replaces them
+	var stat_hp = int(e.get("hp", 0))
+	var stat_str = int(e.get("str", 0))
+	var stat_pow = int(e.get("pow", 0))
+	var stat_end = int(e.get("end", 0))
+	var live_name = str(e.get("live", ""))
+	if live_name != "":
+		var ch = Assets.CHARACTERS.find(live_name)
+		if ch >= 0:
+			var hs = Assets.hero_stats(ch)
+			stat_hp = int(round(float(hs.get("maxhp", stat_hp))))
+			stat_str = int(round(float(hs.get("str", stat_str))))
+			stat_pow = int(round(float(hs.get("pwr", stat_pow))))
+			stat_end = int(round(float(hs.get("end", stat_end))))
+
+	# the stat rows, centred in the background art's own bracket "window" between the two boxes - measured directly
+	# off the pixels of db_background.png: the bracket's open gap is x=[53,77] (symmetric about the panel's own
+	# centre), and its own horizontal bar sits at y=17, so the window for text starts at y=18, not higher
+	var sx = panel.position.x + panel.size.x * (52.0 / 130.0)
+	var ex = panel.position.x + panel.size.x * (77.0 / 130.0)
+	var statsWinY0 = panel.position.y + panel.size.y * (18.0 / 90.0)
+	var statsWinY1 = panel.position.y + panel.size.y * (44.0 / 90.0)
+	var sy = statsWinY0 + (statsWinY1 - statsWinY0 - 3.0 * 18.0) / 2.0
+	var unknown_stats = bool(e.get("unknown_stats", false))      # the GBA screen's own party members: no fixed numbers
+	for row in [["HP", stat_hp], ["STR", stat_str], ["POW", stat_pow], ["END", stat_end]]:
+		_ds(c, font, Vector2(sx, sy), "%s: %s" % [row[0], "???" if unknown_stats else str(row[1])], HORIZONTAL_ALIGNMENT_CENTER, ex - sx, 16, Color(1, 1, 1))
+		sy += 18
+
+	# the description: also measured straight off the template art's own black box
+	var desc = str(e.get("desc", ""))
+	# the glyph columns sit inside the background art's own narrow "blade" interiors flanking the text box -
+	# measured directly off db_background.png's pixels: left interior x=[5,12] y=[55,78], right x=[117,124]
+	# y=[55,78] (template units). Wider than tall so each one fills the blade's width without touching its
+	# border, and short enough that all 5 fit the blade's stable (non-tapering) height with room to spread out
+	var gw = panel.size.x * (6.4 / 130.0)
+	var glyph_h = panel.size.y * (3.6 / 90.0)
+	var n = 5
+	var gy0 = panel.position.y + panel.size.y * (56.0 / 90.0)
+	var gy1 = panel.position.y + panel.size.y * (77.0 / 90.0)
+	var tphase = int(Engine.get_physics_frames() / 6)      # a GBA computer's own screen: always running, never still
+	var glyph_cx = [8.5, 120.5]      # left/right blade interior centres, in 130-unit template space
+	for side in [0, 1]:
+		var gx = panel.position.x + panel.size.x * (glyph_cx[side] / 130.0) - gw * 0.5
+		for i in n:
+			var ty2 = gy0 + (gy1 - gy0 - glyph_h) * i / float(n - 1)
+			_alien_glyph(c, Vector2(gx, ty2), Vector2(gw, glyph_h), tphase + i * 7 + side * 13, DB_GREEN)
+	if desc == "":
+		_ds(c, font, dbox.position + Vector2(14, 24), "(no description yet)", HORIZONTAL_ALIGNMENT_LEFT, dbox.size.x - 28, 14, Color(0.6, 0.6, 0.7))
+	else:
+		var line_h = 19.0
+		var all_lines = _wrap_line(desc, dbox.size.x - 28, 14)
+		var visible = maxi(1, int((dbox.size.y - 16) / line_h))
+		var max_scroll = maxi(0, all_lines.size() - visible)
+		database_scroll = clampi(database_scroll, 0, max_scroll)
+		var ty = dbox.position.y + 22
+		for i in range(database_scroll, mini(all_lines.size(), database_scroll + visible)):
+			_ds(c, font, Vector2(dbox.position.x + 14, ty), all_lines[i], HORIZONTAL_ALIGNMENT_LEFT, dbox.size.x - 28, 14, Color(0.85, 0.87, 0.95))
+			ty += line_h
+		if max_scroll > 0:
+			var ax = dbox.end.x - 14
+			var up_col = DB_GREEN if database_scroll > 0 else Color(DB_GREEN.r, DB_GREEN.g, DB_GREEN.b, 0.3)
+			var down_col = DB_GREEN if database_scroll < max_scroll else Color(DB_GREEN.r, DB_GREEN.g, DB_GREEN.b, 0.3)
+			c.draw_colored_polygon(PackedVector2Array([Vector2(ax - 5, dbox.position.y + 14), Vector2(ax + 5, dbox.position.y + 14), Vector2(ax, dbox.position.y + 7)]), up_col)
+			c.draw_colored_polygon(PackedVector2Array([Vector2(ax - 5, dbox.end.y - 14), Vector2(ax + 5, dbox.end.y - 14), Vector2(ax, dbox.end.y - 7)]), down_col)
+	_ds(c, font, Vector2(panel.position.x, panel.end.y + 10), "< / > SWITCH    ^ / v SCROLL    Z / B CLOSE    %d / %d" % [database_idx + 1, DATABASE.size()], HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 8, DB_GREEN)
 
 func _draw_credits(c: Control, vs: Vector2) -> void:
 	credits_t += 1

@@ -41,10 +41,10 @@ static func arrival_for(a: Dictionary, rect: Array) -> Vector2:
 	var step = Vector2([1, -1, 0, 0][side], [0, 0, 1, -1][side])
 	p += step * (abs(rect[2] - rect[0]) / 2.0 + 14.0 if side < 2 else abs(rect[3] - rect[1]) / 2.0 + 18.0)
 	for i in 40:
-		if Assets.walkable(a, p.x, p.y) and Assets.walkable(a, p.x - 5, p.y) and Assets.walkable(a, p.x + 4, p.y):
-			return p
+		if Assets.feet_fit(a, p.x - 8.0, p.y - 4.0):
+			return p - Vector2(8, 4)      # (the hero's point: its feet box's top left, the box round p)
 		p += step * 4.0
-	return Vector2(cx, cy)
+	return Vector2(cx - 8.0, cy - 4.0)
 
 func build_adventure(name: String, s: int) -> bool:
 	seed = s
@@ -111,7 +111,7 @@ func arrival(t: int, role: int) -> Vector2:
 		for r in range(0, 400, 8):
 			for k in 16:
 				var q = p0 + Vector2(cos(k * PI / 8.0), sin(k * PI / 8.0)) * r
-				if Assets.walkable(a, q.x, q.y) and Assets.walkable(a, q.x - 5, q.y) and Assets.walkable(a, q.x + 4, q.y):
+				if Assets.feet_fit(a, q.x, q.y):
 					return q
 		return p0
 	for ex in nodes[t]["exits"]:
@@ -126,11 +126,11 @@ func start_point() -> Vector2:
 	var a = Assets.area(nodes[start]["key"])
 	var arr = a["meta"].get("arrival", [a["w"] / 2, a["h"] / 2])
 	var p = Vector2(arr[0], arr[1])
-	if not Assets.walkable(a, p.x, p.y):
+	if not Assets.feet_fit(a, p.x, p.y):
 		for r in range(0, 300, 8):
 			for k in 16:
 				var q = p + Vector2(cos(k * PI / 8.0), sin(k * PI / 8.0)) * r
-				if Assets.walkable(a, q.x, q.y) and Assets.walkable(a, q.x - 5, q.y) and Assets.walkable(a, q.x + 4, q.y):
+				if Assets.feet_fit(a, q.x, q.y):
 					return q
 	return p
 
@@ -265,7 +265,7 @@ func safe_point(t: int, p: Vector2) -> Vector2:
 	if a.is_empty():
 		return p
 	var ok = func(q: Vector2) -> bool:
-		return Assets.walkable(a, q.x, q.y) and Assets.walkable(a, q.x - 5, q.y) and Assets.walkable(a, q.x + 4, q.y) and Assets.walkable(a, q.x, q.y - 4)
+		return Assets.feet_fit(a, q.x, q.y)
 	var cl = Vector2(clampf(p.x, 8, a["w"] - 8), clampf(p.y, 12, a["h"] - 8))
 	if ok.call(cl) and cl.distance_to(p) < 1.0:
 		return p

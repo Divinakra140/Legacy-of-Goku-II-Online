@@ -48,11 +48,14 @@ func patch(key: String) -> Dictionary:
 	_patches[key] = p
 	return p
 
-const PATCH_KEYS = ["cells", "enemies_add", "enemies_del", "people_add", "people_del", "doors_add", "doors_del", "items", "items_del", "zones", "triggers", "moods"]
+## places: {"1_3": [x, y]} - a place of the game moved on the map (DEV TOOLS - MOVE): its name, song, own people
+## and story warps go with it; [] = the place deleted (SELECT - Delete). size: [tw, th] - the map resized (MOVE - RESIZE)
+## rocks_add / rocks_del: breakables placed (ROCK) / the game's own taken away ([place, n]) - breakables.rock_list
+const PATCH_KEYS = ["cells", "enemies_add", "enemies_del", "people_add", "people_del", "doors_add", "doors_del", "items", "items_del", "zones", "triggers", "moods", "places", "size", "rocks_add", "rocks_del"]
 static func _fill_patch(p: Dictionary) -> void:
 	for k in PATCH_KEYS:
 		if not p.has(k):
-			p[k] = {} if k == "cells" else []
+			p[k] = {} if k == "cells" or k == "places" else []
 
 # ------------------------------------------------------------------ MOD PACKAGES (modpacks/<folder>/: mod.json, maps/, content/)
 ## The mods people share: each one a folder in "modpacks" next to LoG2Coop.exe (a .zip dropped there is
@@ -156,7 +159,12 @@ func merged(key: String, with_cells: bool = true) -> Dictionary:      # with_cel
 			for c in p["cells"]:
 				m["cells"][c] = p["cells"][c]
 		for k in PATCH_KEYS:
-			if k != "cells":
+			if k == "places":
+				m[k].merge(p[k], true)
+			elif k == "size":
+				if not p[k].is_empty():
+					m[k] = p[k].duplicate()      # (the last one says)
+			elif k != "cells":
 				m[k] = m[k] + p[k]
 	return m
 
@@ -318,17 +326,19 @@ func export_pack(meta: Dictionary) -> String:
 	zp.close()
 	return path
 
-func _zip_dir(zp: ZIPPacker, dir: String, as_dir: String) -> int:
+func _zip_dir(zp: ZIPPacker, dir: String, as_dir: String, swap: Dictionary = {}) -> int:
 	var n = 0
 	var d = DirAccess.open(dir)
 	if d == null:
 		return 0
 	for f in d.get_files():
-		var b = FileAccess.get_file_as_bytes(dir.path_join(f))
+		if f.ends_with(".before_save"):
+			continue      # (DEV TOOLS' copy of a map while it is saved: it goes in as the map itself - swap)
+		var b = FileAccess.get_file_as_bytes(str(swap.get(dir.path_join(f), dir.path_join(f))))      # (swap: a file's earlier copy instead)
 		zp.start_file(as_dir + "/" + f); zp.write_file(b); zp.close_file()
 		n += 1
 	for sub in d.get_directories():
-		n += _zip_dir(zp, dir.path_join(sub), as_dir + "/" + sub)
+		n += _zip_dir(zp, dir.path_join(sub), as_dir + "/" + sub, swap)
 	return n
 
 func save_patch(key: String) -> bool:
@@ -366,7 +376,8 @@ func apply_cells(key: String, a: Dictionary) -> void:
 			L[idx[j]] = int(vals[j][l])
 		cells[l] = L
 	for j in idx.size():
-		walk[idx[j]] = int(vals[j][5]) & 1
+		var wv = int(vals[j][5]) & 7      # (walkable 1, upper level 2, HIGH GROUND 4 - land on it, stand on top)
+		walk[idx[j]] = wv | 1 if (wv & 6) == 6 else wv      # (6 / 7 painted earlier: meant to be walked behind)
 	a["walk"] = walk
 	if not idx.is_empty():
 		a["saves"] = Assets.save_points(cells, tw)      # save pads you put down (THINGS - SAVE POINT) save too
@@ -649,7 +660,8 @@ func backups_dir() -> String:
 	return Assets.exe_dir().path_join("backups")
 
 var _last_backup_ms = -1000000
-func backup(force: bool = false) -> String:
+## (swap: {a file's path: the copy of it to put in the backup instead} - DEV TOOLS: the map as it was before a save)
+func backup(force: bool = false, swap: Dictionary = {}) -> String:
 	var now = Time.get_ticks_msec()
 	if not force and now - _last_backup_ms < 120000:
 		return ""        # (one every two minutes is plenty)
@@ -665,7 +677,7 @@ func backup(force: bool = false) -> String:
 	var zp = ZIPPacker.new()
 	if zp.open(path) != OK:
 		return ""
-	_zip_dir(zp, dir(), "mods")
+	_zip_dir(zp, dir(), "mods", swap)
 	_zip_dir(zp, Assets.exe_dir().path_join("content"), "content")
 	zp.close()
 	var all = list_backups()

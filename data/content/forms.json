@@ -67,7 +67,8 @@
    "end": 1.25,
    "speed": 1.2,
    "drain_ticks": 80,
-   "aura": "ffe050"
+   "aura": "ffe050",
+   "tf_from_form": true
   },
   {
    "id": "ssj2_gohan",

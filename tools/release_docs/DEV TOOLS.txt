@@ -38,11 +38,11 @@ Layers: 0 ground, 1 and 2 things on the ground (under the heroes), 3 and 4 drawn
 
 Tools
   PAN      drag to move round
-  TILE     paint the tile chosen on the right on the chosen layer. The list above the tiles
-           switches between this game's tiles and Buu's Fury's.
-  STAMP    paint a whole cell (all 5 layers and its wall) - choose it with PICK
   ERASE    take the tile off the chosen layer
-  PICK     click a cell on the map: it becomes the brush (STAMP), its tile the TILE brush
+  PICK     click a cell on the map to see what it is. STAMP (on the right) on: the cell you click
+           is then stamped wherever you click or drag (all 5 layers and its wall). Or choose a tile
+           in the list on the right (this game's, Buu's Fury's...) and the LAYER under it: that tile
+           is stamped onto that layer only.
   WALL     paint walls (where nobody can walk)
   GROUND   paint walkable ground
   SELECT   click a foe (red), person (blue), treasure (gold) or door (yellow); drag to move it,
@@ -50,7 +50,6 @@ Tools
   COPY     drag a box: everything in it (all layers and walls) goes to the clipboard
   PASTE    click: the clipboard is laid down with its top-left corner there. The clipboard stays
            when you switch maps: copy from one map, paste on another (whole buildings, whole places)
-  FILL     drag a box: filled with the brush
   FOE      click: a foe of that kind (the game's own enemy numbers 0-127), at its own level or the
            level set on the right
   PERSON   click: a person with a name, a sprite set and lines (they talk when you stand next to
@@ -60,8 +59,14 @@ Tools
            arrive. Doors open at once, no loading. Make one back the same way.
   SMART    paint ground that fits: it looks at what is round each cell (grass next to a path,
            sand next to water...) and picks the game's own edge pieces. Brush size on the right.
-  LINE     drag: a straight line of the chosen brush (TILE, CELL, WALL or GROUND - on the right)
-  RECT     drag: a box of the brush, filled or just its edge
+  ROCK     rocks to smash (and the game's other breakables - crates, fences): choose one on the
+           right, the hits it takes (1-3) and what it drops (the game's own drop tables), then click.
+           SELECT a rock (the game's own too) to change it, drag it or delete it; MOVE takes rocks
+           along. Rocks in front of a cave door are left out in the game for now.
+  BIOME    paint natural ground - grass, autumn grass, dirt, snow, desert and beach sand, crops, sea,
+           lake water, waterfalls and their foam, Namek grass and water... with a brush size: each patch is a piece of the real ground picked at random,
+           never one tile again and again (water stays water: walls too). MAKE A BIOME FROM A BOX:
+           drag a box round any good patch of the map to add your own (kept in content\biomes.json).
   THINGS   whole objects to stamp: trees, houses, rocks, fences... The list has the ones saved by
            your team; FIND THINGS IN VIEW adds everything on screen that stands on its own.
            Click to put it down (with its walls). To keep one: COPY it, then SAVE THE COPY AS A THING.
@@ -99,7 +104,8 @@ What the files look like (in case you want to script things):
                             arrive: [x, y]}], "doors_del", "items": [{x, y, id, count}],
                             "items_del": [[x, y]], "zones": [{rect, kinds, count, level,
                             respawn}], "triggers": [{rect, event, attack}], "moods": [{rect,
-                            dark, light, weather, music}]}  (doors_add may have need_item,
+                            dark, light, weather, music}], "rocks_add": [{x, y, like: "place:n",
+                            hits, drops}], "rocks_del": [[place, n]]}  (doors_add may have need_item,
                             need_flag, need_level, locked_msg, take_item)
                             x, y in pixels for things, in tiles for cells
   mods\maps\custom\NAME.bin "LKR2", width, height (16 bit), 5 layers of 32-bit cells, a walk byte each

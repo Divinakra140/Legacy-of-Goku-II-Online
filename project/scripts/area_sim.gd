@@ -211,6 +211,8 @@ func step(fighters: Array) -> Array:
 			if e["t"] >= 45:
 				e["state"] = "idle"; e["t"] = 0
 			continue
+		if e.get("fighter", false):
+			continue      # a hero foe fought as a fighter now (brawl.gd): it stands here, the fighter does the rest
 		_shooter_type = int(e["type"])
 		if int(e.get("hold", 0)) > 0:          # held still by a story scene (a boss while you talk)
 			e["hold"] = int(e["hold"]) - 1
@@ -696,7 +698,7 @@ func hit(id: int, dmg: int, kx: float, ky: float, stun: int = 12, kind: int = 1,
 				e["sts"][str(st["id"])] = maxi(60, roundi(secs * 60))
 				events_out.append({"type": "foe_state", "x": e["x"], "y": e["y"], "text": str(st.get("name", "")), "color": str(st.get("color", "ffffff"))})
 		if dmg > 0:
-			e["flash"] = 8
+			e["flash"] = 12      # (a held beam hits every 10 ticks: the foe stays red while it is on them)
 		if e["state"] == "return":
 			e["state"] = "idle"
 		if uses_ai(e):
@@ -717,13 +719,14 @@ func hit(id: int, dmg: int, kx: float, ky: float, stun: int = 12, kind: int = 1,
 				boss_beaten = true
 			var wb = e.get("wboss", false)
 			var luck = 12.0 if wb else (6.0 if e["boss"] else (3.0 if e["elite"] else 1.0))
+			zeni_won = 0
 			_maybe_drop(Vector2(e["x"], e["y"]), luck, int(e["lvl"]), int(e["type"]))
 			if wb:
 				for i in 6:
 					_maybe_drop(Vector2(e["x"], e["y"]) + Vector2.from_angle(i * TAU / 6) * 20.0, 4.0, int(e["lvl"]))
 				events_out.append({"type": "wboss_down", "name": e["name"]})
 			return {"killed": true, "lvl": e["lvl"], "mult": 25.0 if wb else (20.0 if e["boss"] else (5.0 if e["elite"] else 1.0)),
-				"info": {"type": int(e["type"]), "elite": bool(e["elite"]), "boss": bool(e["boss"]), "wboss": wb, "group": Rules.group_of(int(e["type"]))}}
+				"info": {"type": int(e["type"]), "elite": bool(e["elite"]), "boss": bool(e["boss"]), "wboss": wb, "group": Rules.group_of(int(e["type"])), "zeni": zeni_won}}
 		return {"killed": false}
 	return {"killed": false}
 
@@ -763,7 +766,9 @@ func _clear_of(c: Vector2, fighters: Array, r: float) -> bool:
 			return false
 	return true
 
-## what a beaten foe leaves: orbs (taken at once), zeni, items from content/items.json ("drop" chance)
+## what a beaten foe leaves: orbs (taken at once), items from content/items.json ("drop" chance); its zeni goes
+## straight to the players there (zeni_won, sent with the EXP - nothing of the game's lies on the ground for it)
+var zeni_won = 0
 func _maybe_drop(p: Vector2, luck: float, lvl: int = 1, t: int = -1) -> void:
 	# this kind's own loot (DEV TOOLS - LOOT)
 	var own = {}
@@ -775,7 +780,7 @@ func _maybe_drop(p: Vector2, luck: float, lvl: int = 1, t: int = -1) -> void:
 			if rng.randf() < float(dr.get("chance", 0.1)) * minf(luck, 3.0):
 				_drop(p + Vector2(rng.randf_range(-10, 10), rng.randf_range(-6, 6)), str(dr.get("item", "senzu")), int(dr.get("count", 1)))
 		if int(own.get("zeni", 0)) > 0:
-			_drop(p + Vector2(rng.randf_range(-8, 8), rng.randf_range(-4, 6)), "zeni", int(own["zeni"]))
+			zeni_won += int(own["zeni"])
 		if bool(own.get("replace", false)):
 			return
 	var r = rng.randf()
@@ -786,7 +791,7 @@ func _maybe_drop(p: Vector2, luck: float, lvl: int = 1, t: int = -1) -> void:
 	var z: Dictionary = Content.zeni
 	if rng.randf() < float(z.get("drop", 0.5)) * minf(luck, 1.5):
 		var n = rng.randi_range(int(z.get("min", 4)), int(z.get("max", 18))) + int(z.get("per_level", 2)) * lvl
-		_drop(p + Vector2(rng.randf_range(-8, 8), rng.randf_range(-4, 6)), "zeni", roundi(n * luck))
+		zeni_won += roundi(n * luck)
 	for it in Content.items:
 		if rng.randf() < float(it.get("drop", 0.0)) * luck:
 			_drop(p + Vector2(rng.randf_range(-10, 10), rng.randf_range(-6, 6)), str(it["id"]), 1)
@@ -851,7 +856,7 @@ func _refresh_awake(fighters: Array) -> void:
 func snapshot() -> Array:
 	var out = []
 	for e in awake:
-		if not e["alive"]:
+		if not e["alive"] or e.get("fighter", false):      # (a hero foe fought as a fighter: the fighter is what is seen)
 			continue
 		out.append([e["id"], snappedf(e["x"], 0.1), snappedf(e["y"], 0.1), e["anim"], e["dir"], e["frame"], e["set"], e["hp"], e["maxhp"],
 			(1 if e["elite"] else 0) | (2 if e["boss"] or e.get("wboss", false) else 0) | (4 if e["state"] == "dying" else 0) | (8 if e["flash"] > 0 else 0) | (16 if e["big"] else 0) | (32 if e["state"] == "spawning" else 0) | (64 if e["state"] == "windup" else 0), e["name"],

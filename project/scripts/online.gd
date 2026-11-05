@@ -25,6 +25,7 @@ var salt = ""
 var _proof = ""                   # sha256(salt|password): what a joining player must send
 var _key = ""                     # only this host knows it; the list shows a hash of it
 var _next_announce = 0
+var _announced_bots = 0
 var _announced_players = -1
 var _announce_id = 0
 var _announce_since = 0
@@ -203,14 +204,19 @@ func is_online() -> bool:
 	return str(status()["state"]) == "ready"
 
 # ------------------------------------------------------------------ the lobby list
-## [address, password] from the private res://lobby_server.txt (not in the public source)
+## [address, password] from the private res://lobby_server.txt (not in the public source) - read once and kept: read
+## at every announcement (each 30 seconds), a sleeping disk woke up each time - the game stood still for seconds
+var _access = []
 func lobby_access() -> Array:
+	if not _access.is_empty():
+		return _access
 	var f = FileAccess.open("res://lobby_server.txt", FileAccess.READ)
 	if f == null:
 		return ["", ""]
 	var url = f.get_line().strip_edges().trim_suffix("/")
 	var key = f.get_line().strip_edges()
-	return [url, key]
+	_access = [url, key]
+	return _access
 
 func _endpoint() -> String:
 	var u = str(lobby_access()[0])
@@ -287,20 +293,22 @@ func _announce(now: int) -> void:
 	if _announce_id != 0:
 		return
 	var players = Game.remote_players_count() + (0 if Game.cfg.get("mode") == "server" else 1)
-	if now < _next_announce and players == _announced_players:
+	var bots = Game.bot_count()
+	if now < _next_announce and players == _announced_players and bots == _announced_bots:
 		return
 	var s = status()
 	if str(s["state"]) != "ready":
 		return
 	var server = str(Game.cfg.get("mode", "")) == "server"
 	var record = {"key": _key, "address": str(s["address"]),
-		"name": world_name if world_name != "" else (Game.planet.title if Game.planet != null else ""),
+		"name": ("HEROES VS VILLAINS: " if bool(Game.cfg.get("hvv", false)) else ("BRAWL: " if bool(Game.cfg.get("brawl", false)) else "")) + (world_name if world_name != "" else (Game.planet.title if Game.planet != null else "")),
 		"mods": Game.planet.title if Game.planet != null else "",
 		"host": "SERVER (NO PLAYER)" if server else str(Assets.CHARACTERS[clampi(int(Game.cfg.get("character", 0)), 0, Assets.CHARACTERS.size() - 1)]),
-		"private": is_private, "salt": salt, "players": maxi(1, players), "max": Game.MAX_CLIENTS + (0 if server else 1),
+		"private": is_private, "salt": salt, "players": maxi(1, players), "max": Game.MAX_CLIENTS + (0 if server else 1), "bots": bots,
 		"protocol": PROTOCOL}
 	_next_announce = now + ANNOUNCE_MS
 	_announced_players = players
+	_announced_bots = bots
 	_announce_id = _http_start(JSON.stringify(record))
 	_announce_since = now
 
@@ -344,7 +352,7 @@ func _listed(code: int, body: String) -> void:
 			continue
 		out.append({"id": str(e.get("id", addr)), "address": addr, "world": str(e.get("name", "")).left(24), "planet": str(e.get("mods", e.get("name", ""))).left(32),
 			"character": str(e.get("host", "")).left(24), "private": bool(e.get("private", false)),
-			"players": int(e.get("players", 1)), "max": int(e.get("max", 16)), "salt": str(e.get("salt", "")).left(64)})
+			"players": int(e.get("players", 1)), "max": int(e.get("max", 16)), "bots": int(e.get("bots", 0)), "salt": str(e.get("salt", "")).left(64)})
 	out.sort_custom(func(x, y): return str(x["character"]) + str(x["planet"]) < str(y["character"]) + str(y["planet"]))
 	lobbies = out
 

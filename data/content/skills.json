@@ -846,6 +846,7 @@
    "width": 4,
    "color": "ffd640",
    "sfx": "beam",
+   "from": "chest",
    "info": "A thin golden beam from the fingertip."
   },
   {

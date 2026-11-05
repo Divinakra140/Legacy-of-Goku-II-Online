@@ -1,5 +1,15 @@
 {
-  "_help": "Playing together (MENU - FRIENDS). party.share: how much of a party member's exp you get when you are somewhere else (0.5 = half; in the same place everyone gets the kill anyway). duel.damage: blows in a duel hurt this much of their normal strength; duel.max_hit: one blow takes at most this part of your health (0.2 = a fifth); duel.countdown: seconds before it starts. A duel never knocks anyone out - the loser is back to full health.",
-  "party": {"share": 0.5},
-  "duel": {"damage": 0.4, "max_hit": 0.2, "countdown": 3}
+ "_help": "Playing together (MENU - FRIENDS). party.share: how much of a party member's exp you get when you are somewhere else (0.5 = half; in the same place everyone gets the kill anyway). duel.damage: blows in a duel hurt this much of their normal strength; duel.max_hit: one blow takes at most this part of your health (0.2 = a fifth); duel.countdown: seconds before it starts. pvp.damage / pvp.max_hit: the same for PVP mode (and BRAWL's fighters): 0.06 = one blow takes at most 6 in 100 of your health, a long fight. A duel never knocks anyone out - the loser is back to full health.",
+ "party": {
+  "share": 0.5
+ },
+ "duel": {
+  "damage": 0.25,
+  "max_hit": 0.06,
+  "countdown": 3
+ },
+ "pvp": {
+  "damage": 0.25,
+  "max_hit": 0.06
+ }
 }

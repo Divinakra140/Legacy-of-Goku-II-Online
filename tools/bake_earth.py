@@ -12,7 +12,9 @@ earth_enemies.json (the roaming foes, the same for everybody) and version.txt.
 The tile changes are then taken out of the edits file (a copy is kept in data/backups); doors, foes,
 people and treasure stay in it.
 
-usage: python3 -I tools/bake_earth.py   (from the project folder; the editor must be closed)
+usage: python3 -I tools/bake_earth.py [FULL]   (from the project folder; the editor must be closed)
+  FULL: the whole Earth as the game built it (LKR2 header + 5 layers + walls) - for an Earth RESIZED in the editor
+  (its edits file's "size"): written as it is, bigger or smaller than the import; the walls with every bit kept
 """
 import gzip
 import json
@@ -52,6 +54,30 @@ def main() -> int:
             if os.path.exists(oc):
                 changed.update(np.frombuffer(gzip.decompress(open(oc, "rb").read()), dtype="<i4").tolist())
     edits = json.load(open(EDITS))
+    if len(sys.argv) > 1:      # the whole Earth, as the game built it (a resized one too)
+        full = open(sys.argv[1], "rb").read()
+        if full[:4] != b"LKR2":
+            print("not an LKR2 Earth:", sys.argv[1])
+            return 1
+        w2 = full[4] | full[5] << 8
+        h2 = full[6] | full[7] << 8
+        n2 = w2 * h2
+        nl = [np.frombuffer(full, dtype="<u4", count=n2, offset=8 + k * n2 * 4).copy() for k in range(5)]
+        nw = np.frombuffer(full, dtype="u1", count=n2, offset=8 + 5 * n2 * 4).copy()
+        # changed: every cell not as the import has it (outside the import: all)
+        ch = np.ones(n2, dtype=bool)
+        ys, xs = np.divmod(np.arange(n2), w2)
+        inside = (xs < w) & (ys < h)
+        oi = ys[inside] * w + xs[inside]
+        same = np.ones(inside.sum(), dtype=bool)
+        for k in range(5):
+            same &= nl[k][inside] == layers[k][oi]
+        same &= nw[inside] == walk[oi]
+        ch[np.nonzero(inside)[0][same]] = False
+        changed = set(np.nonzero(ch)[0].tolist())
+        raw = full[:8]
+        layers, walk = nl, nw
+        edits["cells"] = {}      # (all in the base now)
     for key, v in edits.get("cells", {}).items():
         x, y = (int(t) for t in key.split(","))
         if 0 <= x < w and 0 <= y < h:

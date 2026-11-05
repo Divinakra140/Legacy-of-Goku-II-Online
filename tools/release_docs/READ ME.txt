@@ -16,8 +16,7 @@ New in v44 - LoG2 ONLINE: ANDROID, WINDOWS AND MAC, PLAYING TOGETHER
 - Improved by hand: the area around GOKU'S HOUSE, TRICERATOPS JUNGLE and WEST CITY.
 - Every room behind a door has plain black round it (no more mirrored copies of the room). City Hall, the
   Antiquities shop and the West City apartments have their floors back. The minimap shows the changes.
-- GOKU'S HOUSE (SELECT MAP): Earth, starting in Gohan's bedroom - and back there when you are beaten.
-  (EAST DISTRICT 439 is gone from the list: GOKU'S HOUSE is the same place, made better.)
+- EARTH (SELECT MAP): starting in Gohan's bedroom at Goku's house - and back there when you are beaten.
 - People are named after who they are (Krillin is KRILLIN, Chi-Chi is CHI-CHI) and only say their own lines.
 
   FIRST START

@@ -14,13 +14,19 @@ signal chat(from: String, text: String, pid: int)
 signal item_got(k: int, kind: String, n: int)
 signal gift(k: int, kind: String, n: int, from: String)
 signal social(k: int, from_pid: int, from_name: String, kind: String, data: Dictionary)
+signal bot_hurt(pid: int, atk: float, kx: float, ky: float)      # a foe's blow on a friendly CPU (brawl.gd)
+signal bot_social(pid: int, from_pid: int, from_name: String, kind: String, data: Dictionary)      # (to a BRAWL fighter, on the host - brawl.gd)
+signal pvp_kill(pid: int, ch: int, nm: String)      # a PVP blow brought someone down - told to the host, who alone
+## keeps a BRAWL / HEROES VS VILLAINS match's score (brawl.gd)
+signal match_won(info: Dictionary)      # the host decided a BRAWL / HEROES VS VILLAINS winner - everyone shows it (world.gd)
+signal match_score(info: Dictionary)      # the host's running score, sent again whenever it changes - the STAT screen's standings (world.gd)
 
 const PORT = 7777
 var cfg = {"mode": "solo", "ip": "127.0.0.1", "character": 4, "adventure": "gatorra", "seed": 12345, "difficulty": 1, "name": "PLAYER",
 	"local_players": 1, "character2": 0, "name2": "PLAYER 2"}
 ## (this device's own settings - a joined game's settings never replace them: your outfits, view size, buttons, ...)
 const LOCAL_KEYS = ["character", "mode", "name", "local_players", "character2", "name2", "ip",
-	"outfit", "view_zoom", "touch_mode", "fullscreen", "pad_layout", "hud_on", "minimap_on", "words_on"]
+	"outfit", "view_zoom", "touch_mode", "fullscreen", "pad_layout", "hud_on", "minimap_on", "words_on", "foe_bars"]
 ## every fighter has a player id: (network peer id) * 8 + (which player on that PC, 0 or 1)
 static func pid_of(peer: int, k: int) -> int:
 	return peer * 8 + k
@@ -357,6 +363,14 @@ func join_game_online(port: int) -> bool:
 	return true
 
 ## the players connected to this host (for the lobby list)
+## the fighters the computer plays in this game (BRAWL's, FRIENDLY CPUS): for the lobby list
+func bot_count() -> int:
+	var n = 0
+	for pid in remote_states:
+		if remote_states[pid].get("bot", false) and not remote_states[pid].get("foe", false):
+			n += 1
+	return n
+
 func remote_players_count() -> int:
 	return multiplayer.get_peers().size() if multiplayer.has_multiplayer_peer() else 0
 
@@ -415,7 +429,7 @@ func _on_peer_disconnected(id: int) -> void:
 		peer_addr.erase(id)
 		_send_succession()
 	for pid in remote_states.keys():
-		if pid / 8 == id:
+		if pid / 8 == id or (id == 1 and remote_states[pid].get("bot", false)):      # (the host gone: its BRAWL fighters too)
 			remote_states.erase(pid)
 	lobby_changed.emit()
 	if in_game:
@@ -525,7 +539,8 @@ func host_step(locs: Array) -> Array:
 		d["node"] = l["node"]
 		all[pid_of(1, int(l["k"]))] = d
 	for id in remote_states:
-		all[id] = remote_states[id]
+		if not remote_states[id].get("bot", false) or remote_states[id].get("ally", false):      # (BRAWL fighters: the foes leave them be - friendly CPUs they fight)
+			all[id] = remote_states[id]
 	var lv_sum = 0
 	var lv_n = 0
 	for id in all:
@@ -538,7 +553,7 @@ func host_step(locs: Array) -> Array:
 		if not by_node.has(nd):
 			by_node[nd] = []
 		by_node[nd].append({"peer": id, "x": float(st["x"]), "y": float(st["y"]), "down": st.get("down", false), "inv": st.get("inv", false),
-			"set": int(st.get("set", 54)), "dir": int(st.get("dir", 0))})
+			"set": int(st.get("set", 54)), "dir": int(st.get("dir", 0)), "bot": st.get("bot", false)})
 		lv_sum += int(st.get("lvl", 1)); lv_n += 1
 	var lv = lv_sum / maxi(1, lv_n)
 	for nd in by_node:
@@ -550,7 +565,9 @@ func host_step(locs: Array) -> Array:
 			if e["type"] == "hurt":
 				var pid = int(e["peer"])
 				var stt = _roll_inflict(int(e.get("et", -1)))
-				if pid / 8 == 1:
+				if remote_states.get(pid, {}).get("ally", false):
+					bot_hurt.emit(pid, e["atk"], e["kx"], e["ky"])
+				elif pid / 8 == 1:
 					my_events.append({"k": pid % 8, "atk": e["atk"], "kx": e["kx"], "ky": e["ky"], "st": stt})
 				else:
 					rpc_id(pid / 8, "hurt_me", pid % 8, e["atk"], e["kx"], e["ky"], stt)
@@ -574,7 +591,7 @@ func host_step(locs: Array) -> Array:
 					add_area_pop(s.key, pop)
 					for f in fs:
 						var pr2 = int(f["peer"]) / 8
-						if pr2 != 1:
+						if pr2 != 1 and not f.get("bot", false):
 							rpc_id(pr2, "area_pop_msg", s.key, pop)
 					if oe["type"] == "foe_dot" and oe.get("r", {}).get("killed", false):
 						_give_kill(s.key, oe["r"])
@@ -583,7 +600,7 @@ func host_step(locs: Array) -> Array:
 					add_area_fx(s.key, fx)
 					for f in fs:
 						var pr = int(f["peer"]) / 8
-						if pr != 1:
+						if pr != 1 and not f.get("bot", false):
 							rpc_id(pr, "area_fx_msg", s.key, fx)
 		s.events_out.clear()
 		var sent = {}
@@ -592,7 +609,7 @@ func host_step(locs: Array) -> Array:
 		var big = s.area["w"] > 1200 or s.area["h"] > 900
 		for f in fs:
 			var peer = int(f["peer"]) / 8
-			if peer != 1 and not sent.has(peer):
+			if peer != 1 and not sent.has(peer) and not f.get("bot", false):      # (a FRIENDLY CPU: played here)
 				sent[peer] = true
 				if big:
 					# a big land: each PC only hears about what is near its own players
@@ -668,12 +685,68 @@ func announce(text: String) -> void:
 func announce_msg(text: String) -> void:
 	toast.emit(text, Color(1, 0.6, 0.3))
 
+## a PVP kill, wherever it happened: told to the host (brawl.gd alone decides whether it won the match). The
+## attacker pid is already a whole one (pid_of(network id, k)), good on every machine as it is - sent as-is, not
+## rebuilt from who sent the message (the reporter is the one who was KILLED, not the attacker)
+func report_pvp_kill(attacker_pid: int, attacker_ch: int, attacker_name: String) -> void:
+	if is_host():
+		pvp_kill.emit(attacker_pid, attacker_ch, attacker_name)
+	elif multiplayer.has_multiplayer_peer():
+		rpc_id(1, "pvp_kill_msg", attacker_pid, attacker_ch, attacker_name)
+
+@rpc("any_peer", "reliable")
+func pvp_kill_msg(attacker_pid: int, attacker_ch: int, attacker_name: String) -> void:
+	if is_host():
+		pvp_kill.emit(attacker_pid, attacker_ch, attacker_name)
+
+## the host decided a BRAWL / HEROES VS VILLAINS winner: everyone shows the screen
+func announce_match_won(info: Dictionary) -> void:
+	match_won.emit(info)
+	if multiplayer.has_multiplayer_peer() and not multiplayer.get_peers().is_empty():
+		rpc("match_won_msg", info)
+
+@rpc("authority", "reliable")
+func match_won_msg(info: Dictionary) -> void:
+	match_won.emit(info)
+
+## the host's running BRAWL / HEROES VS VILLAINS score, so everyone's STAT screen can show it
+func announce_match_score(info: Dictionary) -> void:
+	match_score.emit(info)
+	if multiplayer.has_multiplayer_peer() and not multiplayer.get_peers().is_empty():
+		rpc("match_score_msg", info)
+
+@rpc("authority", "reliable")
+func match_score_msg(info: Dictionary) -> void:
+	match_score.emit(info)
+
 # ------------------------------------------------------------------ orbs on the ground
 func try_pickup(node: int, id: int, k: int) -> void:
 	if is_host():
 		_pickup(node, id, pid_of(1, k))
 	else:
 		rpc_id(1, "pickup_from_client", node, id, k)
+
+## a breakable's drop (breakables.gd): the host lays it down with the foes' drops (everyone sees it, the first to walk
+## over it gets it). kind "food" (HP) / "ki" (EP), n: the percent of the maximum it gives back
+func rock_drop(node: int, x: float, y: float, kind: String, n: int) -> void:
+	if is_host():
+		_rock_drop(node, x, y, kind, n)
+	else:
+		rpc_id(1, "rock_drop_from_client", node, x, y, kind, n)
+
+@rpc("any_peer", "reliable")
+func rock_drop_from_client(node: int, x: float, y: float, kind: String, n: int) -> void:
+	if is_host() and kind in ["food", "ki"]:
+		_rock_drop(node, x, y, kind, clampi(n, 0, 30))
+
+func _rock_drop(node: int, x: float, y: float, kind: String, n: int) -> void:
+	if node < 0 or node >= planet.nodes.size():
+		return
+	var key: String = planet.nodes[node]["key"]
+	if not sims.has(key):
+		return
+	sims[key]._drop(Vector2(x, y), kind, n)
+	area_drops[key] = sims[key].drops_snapshot()
 
 @rpc("any_peer", "reliable")
 func pickup_from_client(node: int, id: int, k: int) -> void:
@@ -709,14 +782,31 @@ func give(target: int, kind: String, n: int, from: String) -> void:
 
 ## party, duel and trade messages between two players (target = player id, peer*8 + k)
 func send_social(target: int, from_pid: int, from_name: String, kind: String, data: Dictionary) -> void:
+	if remote_states.get(target, {}).get("bot", false):      # a BRAWL fighter: the host plays it
+		if is_host():
+			bot_social.emit(target, from_pid, from_name, kind, data)
+		elif multiplayer.has_multiplayer_peer():
+			rpc_id(1, "bot_social_msg", target, from_pid % 8, from_name, kind, data)
+		return
 	if target / 8 == my_id():
 		social.emit(target % 8, from_pid, from_name, kind, data)
 	elif multiplayer.has_multiplayer_peer():
+		if from_pid - my_id() * 8 >= 8:      # (a BRAWL fighter numbered past 8: its whole number with it - older games ignore it)
+			data = data.duplicate()
+			data["_from"] = from_pid
 		rpc_id(target / 8, "social_msg", target % 8, from_pid % 8, from_name, kind, data)
 
 @rpc("any_peer", "reliable")
+func bot_social_msg(target: int, from_k: int, from_name: String, kind: String, data: Dictionary) -> void:
+	if is_host():
+		bot_social.emit(target, pid_of(multiplayer.get_remote_sender_id(), from_k), from_name, kind, data)
+
+@rpc("any_peer", "reliable")
 func social_msg(k: int, from_k: int, from_name: String, kind: String, data: Dictionary) -> void:
-	social.emit(k, pid_of(multiplayer.get_remote_sender_id(), from_k), from_name, kind, data)
+	var from = pid_of(multiplayer.get_remote_sender_id(), from_k)
+	if data.has("_from") and multiplayer.get_remote_sender_id() == 1 and int(data["_from"]) / 8 == 1:
+		from = int(data["_from"])      # (one of the host's BRAWL fighters)
+	social.emit(k, from, from_name, kind, data)
 
 @rpc("any_peer", "reliable")
 func gift_msg(k: int, kind: String, n: int, from: String) -> void:
@@ -801,7 +891,7 @@ func _give_kill(key: String, r: Dictionary) -> void:
 			if int(local_nodes[k]) == node:
 				exp_gained.emit(int(k), lv, mult, info)
 		for pid in remote_states:
-			if int(remote_states[pid].get("node", -1)) == node:
+			if int(remote_states[pid].get("node", -1)) == node and not remote_states[pid].get("bot", false):      # (not the BRAWL fighters)
 				rpc_id(pid / 8, "give_exp", pid % 8, lv, mult, info)
 
 @rpc("authority", "reliable")
@@ -882,6 +972,33 @@ func view_sizes() -> Array:
 func pad_layout() -> String:
 	return str(cfg.get("pad_layout", "nintendo" if OS.has_feature("android") else "xbox"))
 
+## a prompt's buttons as this player presses them: on a PC or Mac with no controller plugged in, the keyboard's keys
+## (A is Z, B is X, R2 is R...: the one-player keys, world.KEYS_SOLO_EXTRA); a handheld or a controller keeps the names
+const PC_KEYS = {"A": "Z", "B": "X", "X": "C", "Y": "V", "L1": "F", "R1": "E", "L2": "G", "R2": "R", "R3": "T", "START": "ESC", "SELECT": "TAB"}
+var _keys_rx: RegEx = null
+var _keys_done = {}
+func keys(t: String) -> String:
+	if OS.has_feature("mobile") or not Input.get_connected_joypads().is_empty():
+		return t
+	if _keys_done.has(t):
+		return _keys_done[t]
+	if _keys_rx == null:
+		# the shoulder and middle buttons anywhere; A B X Y only where they are buttons ("A: SAVE", "L2/B TO LAND", "OR B")
+		_keys_rx = RegEx.create_from_string("\\b(L1|R1|L2|R2|R3|START|SELECT)\\b|\\b([ABXY])\\b(?=\\s*[:/]|\\s+(?:TO|OR|AGAIN)\\b)|(?<=/)([ABXY])\\b|(?<=OR )([ABXY])\\b")
+	var out = ""
+	var at = 0
+	for m in _keys_rx.search_all(t):
+		for g in range(1, 5):
+			if m.get_string(g) != "":
+				out += t.substr(at, m.get_start(g) - at) + PC_KEYS[m.get_string(g)]
+				at = m.get_end(g)
+				break
+	out += t.substr(at)
+	if _keys_done.size() > 500:
+		_keys_done.clear()
+	_keys_done[t] = out
+	return out
+
 ## the pad button for a face button's label ("a", "b", "x", "y")
 func pad_btn(label: String) -> int:
 	if pad_layout() == "nintendo":
@@ -921,7 +1038,7 @@ func toggle_fullscreen() -> void:
 func save_options() -> void:
 	var fa = FileAccess.open("user://options.json", FileAccess.WRITE)
 	if fa:
-		fa.store_string(JSON.stringify({"music": Music.volume, "sound": Sfx.volume, "view_zoom": int(cfg.get("view_zoom", 0)), "touch_mode": str(cfg.get("touch_mode", "auto")), "pad_layout": pad_layout(), "name": str(cfg.get("name", "PLAYER")), "outfit": cfg.get("outfit", {}), "fullscreen": bool(cfg.get("fullscreen", true)), "hud_on": bool(cfg.get("hud_on", true)), "words_on": bool(cfg.get("words_on", true)), "minimap_on": bool(cfg.get("minimap_on", true))}))
+		fa.store_string(JSON.stringify({"music": Music.volume, "sound": Sfx.volume, "view_zoom": int(cfg.get("view_zoom", 0)), "touch_mode": str(cfg.get("touch_mode", "auto")), "pad_layout": pad_layout(), "name": str(cfg.get("name", "PLAYER")), "outfit": cfg.get("outfit", {}), "fullscreen": bool(cfg.get("fullscreen", true)), "hud_on": bool(cfg.get("hud_on", true)), "words_on": bool(cfg.get("words_on", true)), "foe_bars": bool(cfg.get("foe_bars", false)), "minimap_on": bool(cfg.get("minimap_on", true))}))
 		fa.close()
 
 func load_options() -> void:
@@ -940,6 +1057,7 @@ func load_options() -> void:
 			cfg["fullscreen"] = bool(t.get("fullscreen", true))
 			cfg["hud_on"] = bool(t.get("hud_on", true))
 			cfg["words_on"] = bool(t.get("words_on", true))
+			cfg["foe_bars"] = bool(t.get("foe_bars", false))
 			cfg["minimap_on"] = bool(t.get("minimap_on", true))
 			if t.has("pad_layout"):
 				cfg["pad_layout"] = str(t["pad_layout"])

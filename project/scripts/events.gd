@@ -13,6 +13,7 @@ extends RefCounted
 ##          camera_back  shake {amount}  show_person {name, set, x, y, dir}  hide_person {who}  emote {who, kind}
 ##          say {face: sprite set}  boss_fight {kind, level, x, y, name, win, lose, phases "0.5:label"}  fight_on
 ##  logic:  var {name, op, value, max}  if_var {name, cmp, value, goto}  timer {name, seconds, show}  if_timer {name, goto}
+##  cartridge: story {table, from} (one of LoG2's own scenes - story.gd)
 ##  story:  companion {who, name, level, leave}  switch_hero {hero}  open_area / close_area {x0, y0, x1, y1, id}  save  the_end
 
 var world
@@ -21,6 +22,8 @@ func _init(w) -> void:
 	world = w
 
 func find(id: String) -> Dictionary:
+	if id.begins_with("story:"):
+		return Story.event(id)
 	for e in Content.events:
 		if str(e.get("id", "")) == id:
 			return e
@@ -119,6 +122,7 @@ func check_area(L) -> void:
 ## one tick: true while the event has the buttons
 func tick(L, raw: Dictionary) -> bool:
 	if L.ev.is_empty():
+		_step_moves(L)      # (people a scene sent walking keep going after it: Gohan off to the boulders)
 		return false
 	var ev: Dictionary = L.ev
 	var a = bool(raw.get("a", false))
@@ -137,7 +141,7 @@ func tick(L, raw: Dictionary) -> bool:
 		_hold_boss(L)
 	var u = str(ev.get("until", ""))
 	if u == "moves":
-		if ev.get("moves", []).is_empty():
+		if L.get_meta("moves", []).is_empty():
 			ev["until"] = ""
 			_run(L)
 		return true
@@ -166,6 +170,14 @@ func tick(L, raw: Dictionary) -> bool:
 			_run(L)
 		return true
 	if not ev["say"].is_empty():
+		if a_new and ev["say"].has("t0") and _typed(ev["say"]) < str(ev["say"]["text"]).length():
+			ev["say"]["t0"] = -100000      # A while the letters come: all of them at once (as in the game)
+			return true
+		if a_new and not ev.get("pages", []).is_empty():
+			ev["say"]["text"] = ev["pages"].pop_front()
+			ev["say"]["t0"] = Engine.get_physics_frames()
+			Sfx.play("move", 0.7)
+			return true
 		if a_new:
 			ev["say"] = {}
 			Sfx.play("move", 0.7)
@@ -199,7 +211,19 @@ func _run(L) -> void:
 		var f = L.fighter
 		match str(st.get("do", "")):
 			"say":
-				L.ev["say"] = {"who": str(st.get("who", "")), "text": _text(L, str(st.get("text", ""))), "face": int(st.get("face", -1))}
+				L.ev["say"] = {"who": str(st.get("who", "")), "text": _text(L, str(st.get("text", ""))), "face": int(st.get("face", -1)), "narrate": bool(st.get("narrate", false)), "black": bool(st.get("black", false)), "t0": Engine.get_physics_frames(), "mine": bool(st.get("mine", Story.box_style(int(st.get("speaker", 0)), f.ch) == 1)), "gface": Story.face_for(int(st.get("speaker", 0)), f.set_id), "speaker": int(st.get("speaker", 0)), "hero_ch": f.ch, "at": str(st.get("at", ""))}      # (the game's own face and box for the line's speaker)
+				var gba_box = str(L.ev.get("id", "")).begins_with("story:") and Assets.gba_font("font_talk") != null
+				L.ev["say"]["gba"] = gba_box and not L.ev["say"]["narrate"]
+				if L.ev["say"]["gba"] and str(L.ev["say"]["who"]) != "":
+					L.ev["say"]["text"] = str(L.ev["say"]["who"]) + ": " + str(L.ev["say"]["text"])      # (the game writes the name in the line)
+				if (L.ev["say"]["narrate"] or L.ev["say"]["gba"]) and gba_box:
+					# the game's boxes hold 4 lines: a longer text goes on in the next box (A)
+					var ls = _narration_lines(str(L.ev["say"]["text"]))
+					var pages = []
+					for k in range(0, ls.size(), 4):
+						pages.append(" ".join(ls.slice(k, k + 4)))
+					L.ev["say"]["text"] = pages[0] if not pages.is_empty() else ""
+					L.ev["pages"] = pages.slice(1)
 				return
 			"choice":
 				L.ev["say"] = {"who": str(st.get("who", "")), "text": _text(L, str(st.get("text", ""))), "face": int(st.get("face", -1))}
@@ -267,7 +291,9 @@ func _run(L) -> void:
 				return
 			"fade":
 				L.fade = 1.0; L.fade_dir = -1
+				L.ev.erase("dim")
 			"warp":
+				L.ev.erase("dim")      # (a story fade to black ends with the next place)
 				var key = str(st.get("map", ""))
 				for ni in Game.planet.nodes.size():
 					if str(Game.planet.nodes[ni]["key"]) == key:
@@ -287,25 +313,69 @@ func _run(L) -> void:
 			"shop":
 				world._open_shop(L, str(st.get("id", "")))
 			"sound":
-				Sfx.play(str(st.get("name", "menu")))
+				if st.has("id"):      # one of the game's own sounds by number (story scenes)
+					var smp = Sfx.sample(int(st["id"]))
+					if smp:
+						Sfx.play_stream(smp)
+				else:
+					Sfx.play(str(st.get("name", "menu")))
 			"music":
-				Music.play(str(st.get("name", "field")))
+				L.ev["music"] = str(st.get("name", "field"))      # (it stays while the event runs: world.gd _pick_music)
+				Music.play(L.ev["music"])
 			"toast":
 				world.toasts.append([_text(L, str(st.get("text", ""))), Color(1, 0.95, 0.7), 200])
+			"shake":      # a nearby blast (story scenes) - the same camera shake a crit uses, it decays on its own
+				L.shake = maxf(L.shake, float(st.get("amount", 3.0)))
+			"blast_hit":      # an unseen attacker's blast lands on someone (Gohan's death at Outside Pepper Town) -
+				# the same ki-hit spark and shake a PVP blast uses; whoever it's on plays their own flinch pose next
+				var bw = str(st.get("who", "PLAYER"))
+				var bx = f.x; var by = f.y
+				if bw.to_upper() != "PLAYER":
+					var bp = _person(L, bw)
+					if not bp.is_empty():
+						bx = float(bp["x"]); by = float(bp["y"])
+				world.ki_spark(L.node_i, Vector2(bx, by), 0.0, -1.0)
+				Sfx.play("hit", 0.9)
+				L.shake = maxf(L.shake, 2.5)
 			"end":
 				L.ev = {}
 				break
+			"story":
+				# one of LoG2's own scenes (story.gd): it plays instead of the rest of this event
+				var tb = str(st.get("table", "083b725c")).to_lower().strip_edges()
+				var sid = "story:intro" if tb == "intro" else "story:%s:%d" % [tb, int(st.get("from", 0))]
+				if not Story.event(sid).is_empty():
+					L.ev["id"] = sid
+					L.ev["pc"] = 0
 			# ---------------------------------------------------- scenes
 			"move":
 				var who = str(st.get("who", "PLAYER"))
-				if not L.ev.has("moves"):
-					L.ev["moves"] = []
-				L.ev["moves"].append({"who": who, "x": float(st.get("x", f.x)), "y": float(st.get("y", f.y)), "speed": maxf(0.2, float(st.get("speed", 1.0)))})
+				if not L.has_meta("moves"):
+					L.set_meta("moves", [])      # (kept on the player, not the event: a walk may outlast its scene)
+				L.get_meta("moves").append({"who": who, "x": float(st.get("x", f.x)), "y": float(st.get("y", f.y)), "speed": maxf(0.2, float(st.get("speed", 1.0))), "fly": bool(st.get("fly", false))})
 				if bool(st.get("wait", true)):
 					L.ev["until"] = "moves"
 					return
 			"face":
 				_face(L, str(st.get("who", "PLAYER")), _dir_of(st.get("dir", "down")))
+			"npc_set":      # a map person's own look changes for a scene (Future Gohan: flying/fallen frames, look 3208)
+				var pw3 = _person(L, str(st.get("who", "")))
+				if not pw3.is_empty():
+					pw3["set"] = int(st.get("set", pw3.get("set", 0)))
+			"place":      # someone is put at x, y at once (story scenes)
+				var pw2 = str(st.get("who", "PLAYER"))
+				if pw2.to_upper() == "PLAYER":
+					f.place_at(float(st.get("x", f.x)), float(st.get("y", f.y)))
+				else:
+					var pp2 = _person(L, pw2)
+					if not pp2.is_empty():
+						pp2["x"] = float(st.get("x", pp2["x"])); pp2["y"] = float(st.get("y", pp2["y"]))
+			"fade_out":      # the screen slowly goes black over `frames` (story scenes: the fire picture fades away)
+				L.ev["dim"] = [Engine.get_physics_frames(), maxi(1, int(st.get("frames", 60)))]
+				L.ev["wait"] = int(st.get("frames", 60))
+				return
+			"hide_player":      # the player not shown (a story picture)
+				L.ev["hide_player"] = bool(st.get("on", true))
 			"pose":
 				var pw = str(st.get("who", "PLAYER"))
 				var pz = int(st.get("pose", 0))
@@ -406,6 +476,11 @@ func _run(L) -> void:
 			"switch_hero":
 				world.switch_hero(L, str(st.get("hero", "GOKU")))
 				f = L.fighter
+				var lk = int(st.get("look", -1))
+				if lk == 3207 and Assets.sprite_set(lk).is_empty():
+					lk = 135      # (TEEN TRUNKS without the port's look: the game's own teen Trunks)
+				if lk > 0 and not Assets.sprite_set(lk).is_empty():
+					f.set_id = lk      # how they look in this scene (the intro's younger Trunks); a form or BACK TO NORMAL ends it
 			"open_area", "close_area":
 				var r = [float(st.get("x0", 0)), float(st.get("y0", 0)), float(st.get("x1", 0)), float(st.get("y1", 0))]
 				var oid = str(st.get("id", "area%d" % hash(str(r))))
@@ -422,6 +497,11 @@ func _run(L) -> void:
 				Game.save_fighter(f, L.k)
 				world.show_credits()
 				break
+			"demo_end":      # the demo's own goodbye screen (not the real story's credits - it has none yet)
+				L.ev = {}
+				Game.save_fighter(f, L.k)
+				world.show_credits({"title": str(st.get("title", "THE END")), "lines": st.get("lines", []), "music": str(st.get("music", "victory"))})
+				break
 	if guard >= 200:
 		L.ev = {}
 	if L.ev.is_empty():
@@ -436,7 +516,20 @@ static func _quest_name(id: String) -> String:
 
 ## the box at the bottom: who speaks, the line, the choices
 func draw(c: Control, L, i: int) -> void:
+	if not L.ev.is_empty() and L.ev.has("dim"):      # a story fade to black (stays black until the next fade in)
+		var dm: Array = L.ev["dim"]
+		var da = clampf(float(Engine.get_physics_frames() - int(dm[0])) / float(dm[1]), 0.0, 1.0)
+		c.draw_rect(Rect2(-4000, -4000, 12000, 12000), Color(0, 0, 0, da))
 	if L.ev.is_empty() or L.ev["say"].is_empty():
+		return
+	if bool(L.ev["say"].get("gba", false)):
+		var sy = L.ev["say"]
+		_draw_story_talk(c, str(sy.get("text", "")), _typed(sy), bool(sy.get("mine", false)), int(sy.get("gface", -1)), Story.box_style(int(sy.get("speaker", 0)), int(sy.get("hero_ch", -1))), str(sy.get("at", "")))
+		return
+	if bool(L.ev["say"].get("narrate", false)) and Assets.gba_font("font_talk") != null:
+		if bool(L.ev["say"].get("black", false)):
+			c.draw_rect(Rect2(-4000, -4000, 12000, 12000), Color.BLACK)      # (the HUD is drawn scaled: cover it all)
+		_draw_narration(c, str(L.ev["say"].get("text", "")), _typed(L.ev["say"]))
 		return
 	var vs = c.get_viewport_rect().size
 	var font = ThemeDB.fallback_font
@@ -474,7 +567,124 @@ func draw(c: Control, L, i: int) -> void:
 		var sel = j == int(L.ev["sel"])
 		c.draw_string(font, Vector2(x + 14, y + ty + 4 + j * 10), ("> " if sel else "  ") + str(ch[j][0]), HORIZONTAL_ALIGNMENT_LEFT, w - 20, 8, Color(1, 1, 0.5) if sel else Color(0.85, 0.85, 0.9))
 	if ch.is_empty():
-		c.draw_string(font, Vector2(x + w - 40, y + h - 4), "A: NEXT", HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color(0.7, 0.8, 1))
+		c.draw_string(font, Vector2(x + w - 40, y + h - 4), Game.keys("A: NEXT"), HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color(0.7, 0.8, 1))
+
+## the story's narrator, drawn like LoG2 draws it: a 160 x 64 box in the middle of the screen with a raised grey
+## frame and dark lines, the words in the game's own story font (font_talk), centred both ways, 14 pixels apart
+## and at most 128 pixels wide
+func _narration_lines(txt: String) -> Array:
+	var font = Assets.gba_font("font_talk")
+	var lines = []
+	var cur = ""
+	for word in txt.split(" ", false):
+		var t = word if cur == "" else cur + " " + word
+		if cur != "" and font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x - 1 > 128:
+			lines.append(cur)
+			cur = word
+		else:
+			cur = t
+	if cur != "":
+		lines.append(cur)
+	return lines
+
+## the game's raised grey frame (3 pixels: light on the top and left, darker on the bottom and right)
+func _gba_frame(c: Control, r: Rect2) -> void:
+	for k in 3:
+		var lt = Color8([255, 198, 115][k], [255, 198, 115][k], [255, 198, 115][k])
+		var dk = Color8([115, 198, 255][k], [115, 198, 255][k], [115, 198, 255][k])
+		c.draw_rect(Rect2(r.position.x + k, r.position.y + k, r.size.x - 2 * k, 1), lt)
+		c.draw_rect(Rect2(r.position.x + k, r.position.y + k, 1, r.size.y - 2 * k), lt)
+		c.draw_rect(Rect2(r.end.x - 1 - k, r.position.y + k, 1, r.size.y - 2 * k), dk)
+		c.draw_rect(Rect2(r.position.x + k, r.end.y - 1 - k, r.size.x - 2 * k, 1), dk)
+
+## a story scene's line, as the game shows it: a face box (64 x 64, light blue) and the words box (160 x 64,
+## green lines) side by side at the bottom, "NAME: words" from the top left in the story font
+## (the hero's own lines: face on the left and green, as Trunks in the game's opening; everyone else: face on the
+## right and blue, as Gohan)
+func _draw_story_talk(c: Control, txt: String, shown: int, mine: bool, gface: int = -1, style: int = -1, at: String = "") -> void:
+	var font = Assets.gba_font("font_talk")
+	var vs = c.get_viewport_rect().size
+	var x = floorf(vs.x / 2.0) - 112.0
+	var y = floorf(vs.y) - 71.0
+	if at == "top":      # (the game's '!' lines: near the top; '@' in the middle - on the GBA box centres 40 / 80 / 120)
+		y = floorf(vs.y / 2.0) - 72.0
+	elif at == "middle":
+		y = floorf((vs.y - 64.0) / 2.0)
+	var fx = x if mine else x + 160.0
+	var bx = x + 64.0 if mine else x
+	var ft = Story.face(gface) if gface >= 0 else null
+	if ft != null:
+		c.draw_texture(ft, Vector2(fx, y))      # (the game's own face picture: its frame and sky in it)
+	else:
+		c.draw_rect(Rect2(fx + 3, y + 3, 58, 58), Color8(120, 206, 248))
+		_gba_frame(c, Rect2(fx, y, 64, 64))
+	var bt = Story.box(style) if style >= 0 else null
+	if bt != null:
+		c.draw_texture(bt, Vector2(bx, y))      # (the game's own box: frame, lines and the dark Z)
+	else:
+		var lc = Color8(44, 130, 94) if mine else Color8(41, 74, 140)
+		for k in 58:
+			c.draw_rect(Rect2(bx + 3, y + 3 + k, 154, 1), lc if k % 2 == 0 else Color.BLACK)
+		_gba_frame(c, Rect2(bx, y, 160, 64))
+	var lines = _narration_lines(txt)
+	for j in mini(4, lines.size()):
+		var t = lines[j].left(maxi(0, shown))
+		shown -= lines[j].length() + 1
+		c.draw_string(font, Vector2(bx + 8, y + 3 + 14 * j + 13), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
+
+## how many letters of a line are out yet (the game writes them one by one: about one every 2 frames)
+func _typed(say: Dictionary) -> int:
+	if not say.has("t0"):
+		return 100000
+	return int((Engine.get_physics_frames() - int(say["t0"])) / 2)
+
+func _draw_narration(c: Control, txt: String, shown: int = 100000) -> void:
+	var font = Assets.gba_font("font_talk")
+	var lines = _narration_lines(txt)
+	var vs = c.get_viewport_rect().size
+	var h = maxf(64.0, 8.0 + 14.0 * lines.size())
+	var x = floorf(vs.x / 2.0) - 80.0
+	var y = floorf((vs.y - h) / 2.0)
+	var nb = Story.box(0)
+	if nb != null and h <= 64.0:
+		c.draw_texture(nb, Vector2(x, y))      # (the game's own narrator box: frame, lines and the dark Z)
+	else:
+		var g = func(v: int) -> Color: return Color8(v, v, v)
+		for k in int(h) - 6:      # the dark lines: grey, black, grey...
+			c.draw_rect(Rect2(x + 3, y + 3 + k, 154, 1), g.call(90) if k % 2 == 0 else Color.BLACK)
+		_gba_frame(c, Rect2(x, y, 160, h))
+	var top = 3.0 + floorf((h - 6.0 - (14.0 * lines.size() + 2.0)) / 2.0)      # the lines in the middle of the box, as the game has them
+	for j in lines.size():
+		var lw = font.get_string_size(lines[j], HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x - 1      # (centred on the whole line, as the game)
+		c.draw_string(font, Vector2(x + 80 - floorf(lw / 2.0), y + top + 14 * j + 13), lines[j].left(maxi(0, shown)), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
+		shown -= lines[j].length() + 1
+
+## a Free Play / BRAWL / HEROES VS VILLAINS NPC's own talk box - the same look as the story's: the game's own box
+## picture (its frame, lines and dark "press on" Z baked right in - no extra "A: MORE" needed, the game never drew
+## one either), font_talk, "WHO: words" centred line by line. No face (not every NPC has the story's own face
+## picture - a sprite-set thumbnail instead is possible later, but keeping to one plain box for now, as asked)
+## near the bottom, above any toasts, blue ("anyone else" - the game's own box-colour rule)
+func draw_npc_talk(c: Control, who: String, txt: String, toast_n: int = 0) -> void:
+	var font = Assets.gba_font("font_talk")
+	if font == null:
+		return
+	var lines = _narration_lines("%s: %s" % [who, txt] if who != "" else txt)
+	var vs = c.get_viewport_rect().size
+	var h = maxf(64.0, 8.0 + 14.0 * lines.size())
+	var x = floorf(vs.x / 2.0) - 80.0
+	var y = floorf(vs.y) - h - 8.0 - 11.0 * toast_n
+	var nb = Story.box(2)
+	if nb != null and h <= 64.0:
+		c.draw_texture(nb, Vector2(x, y))      # (the game's own box: frame, lines and the dark Z)
+	else:
+		var lc = Color8(41, 74, 140)
+		for k in int(h) - 6:
+			c.draw_rect(Rect2(x + 3, y + 3 + k, 154, 1), lc if k % 2 == 0 else Color.BLACK)
+		_gba_frame(c, Rect2(x, y, 160, h))
+	var top = 3.0 + floorf((h - 6.0 - (14.0 * lines.size() + 2.0)) / 2.0)
+	for j in lines.size():
+		var lw = font.get_string_size(lines[j], HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x - 1
+		c.draw_string(font, Vector2(x + 80 - floorf(lw / 2.0), y + top + 14 * j + 13), lines[j], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
 
 # ------------------------------------------------------------------ scenes, fights, words
 func _key(L) -> String:
@@ -505,8 +715,9 @@ func _person(L, name: String) -> Dictionary:
 	var best = {}
 	var bd = INF
 	var me = Vector2(L.fighter.x, L.fighter.y)
+	var by_set = int(name.substr(1)) if name.begins_with("#") else -1      # "#54": the person with sprite set 54 (story scenes)
 	for p in L.area.get("people", []):
-		if str(p.get("name", "")).to_upper() == name.to_upper():
+		if (by_set >= 0 and int(p.get("set", -1)) == by_set) or str(p.get("name", "")).to_upper() == name.to_upper():
 			var d = me.distance_squared_to(Vector2(float(p["x"]), float(p["y"])))
 			if d < bd:
 				bd = d; best = p
@@ -529,7 +740,7 @@ func _face(L, who: String, d: int) -> void:
 
 ## people (and the player) walking where a MOVE step sends them
 func _step_moves(L) -> void:
-	var mv: Array = L.ev.get("moves", [])
+	var mv: Array = L.get_meta("moves", [])
 	if mv.is_empty():
 		return
 	var f = L.fighter
@@ -564,8 +775,11 @@ func _step_moves(L) -> void:
 		else:
 			p["x"] = nxt.x; p["y"] = nxt.y
 			p["cut_dir"] = d
-			p["cut_walk"] = not done
-			var sk = "shown:%s:%s" % [_key(L), str(p.get("name", ""))]
+			if bool(m.get("fly", false)):
+				p["cut_fly"] = not done; p["cut_walk"] = false
+			else:
+				p["cut_walk"] = not done; p["cut_fly"] = false
+			var sk = "shown:%s:%s" % [_key(L), str(p.get("name", ""))] if done else ""
 			if done and f.flags.get(sk) is Dictionary:
 				f.flags[sk]["x"] = nxt.x; f.flags[sk]["y"] = nxt.y; f.flags[sk]["cut_dir"] = d    # (a save finds them where they walked to)
 		if done:
@@ -657,9 +871,14 @@ func _cleanup(L) -> void:
 	f.scene_pose = -1
 	f.scene_dir = -1
 	L.cut_cam = {}
+	var mv: Array = L.get_meta("moves", [])
+	for m in mv.duplicate():
+		if str(m["who"]).to_upper() == "PLAYER":
+			mv.erase(m)      # (only people walk on after a scene - you have the buttons back)
 	for p in L.area.get("people", []):
-		p.erase("cut_walk")
 		p.erase("cut_pose")
+		if not mv.any(func(m): return _person(L, str(m["who"])) == p):
+			p.erase("cut_walk")
 
 static func _attack_in(f, r: Array) -> bool:
 	var rr = Rect2(float(r[0]), float(r[1]), float(r[2]) - float(r[0]), float(r[3]) - float(r[1]))
@@ -667,7 +886,12 @@ static func _attack_in(f, r: Array) -> bool:
 		if rr.grow(4).has_point(Vector2(float(sh.get("x", -9999)), float(sh.get("y", -9999)))):
 			return true
 	if f.state in ["attack", "rush", "skill"]:
+		# the game tests a blow's box against the thing's box (0x0800F2B6): here the hero's body (round its feet box -
+		# fighter_sim._under) reaching REACH px the way it faces (the game's own blow box not read yet)
+		const REACH = 24.0
+		var body = Rect2(f.x, f.y - 16.0, 16.0, 24.0)
 		var fwd = [Vector2(0, 1), Vector2(0, -1), Vector2(-1, 0), Vector2(1, 0)][clampi(f.dir, 0, 3)]
-		if rr.grow(2).has_point(Vector2(f.x, f.y - 8) + fwd * 16.0):
+		var blow = body.merge(Rect2(body.position + fwd * REACH, body.size))
+		if blow.intersects(rr):
 			return true
 	return false

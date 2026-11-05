@@ -473,6 +473,8 @@ func _dev_tools() -> void:
 		dev.queue_free()
 		dev = null
 		_fit_view()
+		Game.cfg.erase("story")      # a playtest is FREE PLAY, not a story - an earlier story test's flag lingering
+		# here silently disabled the villain database's computer (it only shows outside a story, same as flying)
 		Game.cfg["dev_return"] = at
 		Game.cfg["start_at"] = at
 		Game.cfg["mode"] = "solo"
@@ -709,7 +711,7 @@ func _tick(f: Callable) -> void:
 ## hosting and joining need the internet network up; until then the button says so
 func _online_action(f: Callable) -> void:
 	if not Online.available():
-		lobby_label.text = "GLOBAL MULTIPLAYER needs the Android app."
+		lobby_label.text = "GLOBAL MULTIPLAYER needs the Android app." if OS.has_feature("android") else "GLOBAL MULTIPLAYER needs log2_ztbridge next to the game."
 		return
 	if not Online.is_online():
 		lobby_label.text = Online.status_text() + " - try again in a moment."
@@ -862,8 +864,18 @@ func _start_server() -> void:
 
 # ------------------------------------------------------------------ test aid (headless runs)
 func _start_test() -> void:
+	if test.has("brawl"):      # test aid: a BRAWL game (--hvv: HEROES VS VILLAINS)
+		Game.cfg["brawl"] = true
+		if test.has("hvv"):
+			Game.cfg["hvv"] = true
+		Game.cfg["brawl_places"] = int(test.get("places", "16"))
+	if test.has("allies"):      # test aid: FREE PLAY with FRIENDLY CPUS
+		Game.cfg["allies"] = int(test["allies"])
 	Game.cfg["character"] = int(test.get("ch", "4"))
 	Game.cfg["adventure"] = test.get("adv", "gatorra")
+	if str(Game.cfg["adventure"]) == "land:0":      # EARTH: the menu's own choice starts you at Goku's house, not the land's raw default arrival (open ocean)
+		Game.cfg["start_at"] = {"key": "land/0/0", "x": 13230, "y": 22972}
+		Game.cfg["home_at"] = Game.cfg["start_at"]
 	Game.cfg["seed"] = int(test.get("seed", "777"))
 	Game.cfg["mode"] = test.get("mode", "solo")
 	Game.cfg["name"] = test.get("name", "TEST")
@@ -1035,6 +1047,10 @@ func _physics_process(_dt: float) -> void:
 		for i in u.size():
 			if str(u[i]["id"]) == str(test["skill"]):
 				tf.skill_i = i
+	if test.has("at") and test_t == 3:      # test aid: the players put at x,y (--at=x,y)
+		var ap = str(test["at"]).split(",")
+		for L in world.locals:
+			L.fighter.place_at(float(ap[0]), float(ap[1]))
 	if test.has("ko") and test_t == int(test["ko"]):      # test aid: the player is beaten at this frame
 		var kf = world.locals[0].fighter
 		kf.hp = 1; kf.invuln = 0; kf.flying = false
@@ -1049,6 +1065,23 @@ func _physics_process(_dt: float) -> void:
 			k = _bot_keys(world.locals[i], i)
 		tk.append(k if not k.is_empty() else {"none": true})
 	world.test_keys = tk
+	if test.has("nearwin") and test_t > 90:      # kept safe from the brawlers' own now-lethal hits, the whole time
+		world.locals[0].fighter.invuln = maxi(world.locals[0].fighter.invuln, 30)
+	if test.has("nearwin") and test_t == 90:      # test aid: one PVP hit away from the win screen - play_near_win.command
+		Content.social_cfg["pvp"] = Content.social_cfg.get("pvp", {}).duplicate()
+		Content.social_cfg["pvp"]["max_hit"] = 1.0; Content.social_cfg["pvp"]["damage"] = 1000.0      # (one hit, any hit, finishes anyone this run)
+		var L0 = world.locals[0]
+		L0.fighter.pvp = true
+		if bool(Game.cfg.get("hvv", false)):
+			if Rules.is_villain(L0.fighter.ch):
+				world.brawl.kills_villains = world.brawl.KILLS_TO_WIN_HVV - 1
+			else:
+				world.brawl.kills_heroes = world.brawl.KILLS_TO_WIN_HVV - 1
+		else:
+			world.brawl.pvp_kills[Game.pid_of(Game.my_id(), 0)] = world.brawl.KILLS_TO_WIN_BRAWL - 1
+		print("[test] one hit from the win screen - punch any brawler")
+	if test.has("flyaway") and test_t >= 400 and test_t < 1000:      # test aid: player 1 flies off to the right, boosting
+		world.test_keys[0] = {"fly": test_t <= 401, "right": test_t > 402, "tr": test_t > 402}
 	if test.has("watch") and test_t % 60 == 0:
 		for pid in Game.remote_states:
 			var st = Game.remote_states[pid]
@@ -2055,15 +2088,81 @@ func _single_screen() -> void:
 	_gheading("Single Player")
 	_mp_flow = false
 	_mp_story_slot = 0
+	Game.cfg.erase("brawl")
+	Game.cfg.erase("hvv")
+	Game.cfg.erase("allies")
 	Game.cfg["mode"] = "solo"
 	if Mods.story_pack != "":       # (back from a story: its mod is put away before FREE PLAY)
 		Mods.story_pack = ""
 		Mods.reload()
-	_glist([["FREE PLAY", func(): _map_screen(_single_screen, func(): _char_screen(func(): _map_screen(_single_screen, Callable()), func(): _gload(_solo)))],
-		["STORY MODE", _story_screen]], 70, 22, true)
+	var free_play = func(): _map_screen(_single_screen, func(): _char_screen(func(): _map_screen(_single_screen, Callable()), func(): _gload(_solo)))
+	# BRAWL / HEROES VS VILLAINS alone: FREE PLAY with the computer's fighters in every other place (brawl.gd)
+	_glist([["FREE PLAY", func(): _free_choice(_single_screen, free_play)],
+		["STORY MODE", _story_screen],
+		["BRAWL", func(): Game.cfg["brawl"] = true; _brawl_count(_single_screen, free_play)],
+		["HEROES VS VILLAINS", func(): Game.cfg["brawl"] = true; Game.cfg["hvv"] = true; _brawl_count(_single_screen, free_play)]], 50, 22, true)
+
+## FREE PLAY: on your own, or with FRIENDLY CPUS (brawl.gd: fighters the computer plays, following you and fighting
+## the foes with you)
+func _free_choice(back: Callable, then: Callable) -> void:
+	_gba_screen()
+	_global_back = back
+	_gheading("Free Play")
+	Game.cfg.erase("allies")
+	_glist([["START ON YOUR OWN", then],
+		["ADD FRIENDLY CPUS", func(): _ally_count(func(): _free_choice(back, then), then)]], 60, 26, true)
+
+## how many FRIENDLY CPUS: one at first (START picked), up to 15 - the game full with you
+func _ally_count(back: Callable, then: Callable) -> void:
+	_gba_screen()
+	_global_back = back
+	_gheading("Friendly CPUs")
+	Game.cfg["allies"] = 1
+	var n_l = _gtext(gba, "", Vector2(0, 34), true, G_CYAN)
+	n_l.size = Vector2(GW, 18); n_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var w_l = _gtext(gba, "THEY FOLLOW YOU AND FIGHT THE FOES WITH YOU", Vector2(0, 54), false, Color(0.75, 0.9, 1))
+	w_l.size = Vector2(GW, 12); w_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var show = func():
+		var n = int(Game.cfg["allies"])
+		n_l.text = "%d FRIENDLY CPU%s" % [n, "" if n == 1 else "S"]
+	show.call()
+	if _mp_flow:      # (a game others can join: how the places work)
+		for i in 2:
+			var h = _gtext(gba, ["PLAYERS WHO JOIN TAKE A CPU'S PLACE", "CPUS COME BACK WHEN THEY LEAVE"][i], Vector2(0, GH - 30 + i * 11), false, Color(0.75, 0.9, 1))
+			h.size = Vector2(GW, 12); h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_glist([["START", then],
+		["FEWER", func(): Game.cfg["allies"] = maxi(1, int(Game.cfg["allies"]) - 1); show.call()],
+		["MORE", func(): Game.cfg["allies"] = mini(15, int(Game.cfg["allies"]) + 1); show.call()]], 80, 22, true)
+
+## BRAWL / HEROES VS VILLAINS: how many fighters in the game (you, the players who join and the brawlers together) -
+## a full game of 16 at first, START picked: A straight through starts it full. Fewer for a smaller fight (the sides
+## of HEROES VS VILLAINS kept even: by 2)
+func _brawl_count(back: Callable, then: Callable) -> void:
+	_gba_screen()
+	_global_back = back
+	var hv = bool(Game.cfg.get("hvv", false))
+	_gheading("Heroes vs Villains" if hv else "Brawl")
+	Game.cfg["brawl_places"] = 16
+	var step = 2 if hv else 1
+	var n_l = _gtext(gba, "", Vector2(0, 34), true, G_CYAN)
+	n_l.size = Vector2(GW, 18); n_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var w_l = _gtext(gba, "", Vector2(0, 54), false, Color(0.75, 0.9, 1))
+	w_l.size = Vector2(GW, 12); w_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var show = func():
+		var n = int(Game.cfg["brawl_places"])
+		n_l.text = "%d FIGHTERS" % n
+		w_l.text = ("%d HEROES AGAINST %d VILLAINS" % [n / 2, n / 2]) if hv else "YOU AND %d BRAWLERS" % (n - 1)
+	show.call()
+	if _mp_flow:      # (a game others can join: how the places work)
+		for i in 2:
+			var h = _gtext(gba, ["PLAYERS WHO JOIN TAKE A CPU'S PLACE", "CPUS COME BACK WHEN THEY LEAVE"][i], Vector2(0, GH - 30 + i * 11), false, Color(0.75, 0.9, 1))
+			h.size = Vector2(GW, 12); h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_glist([["START", then],
+		["FEWER", func(): Game.cfg["brawl_places"] = maxi(2, int(Game.cfg["brawl_places"]) - step); show.call()],
+		["MORE", func(): Game.cfg["brawl_places"] = mini(16, int(Game.cfg["brawl_places"]) + step); show.call()]], 80, 22, true)
 
 # ---- SELECT MAP: the planets and the game's own lands; difficulty on the last line
-const G_MAPS = [["EARTH", "land:0"], ["GOKU'S HOUSE", "land:0", {"key": "land/0/0", "x": 13230, "y": 22972}], ["PLANET GATORRA", "gatorra"], ["PLANET DUNARA", "dunara"], ["WEST CITY & TRICERATOPS JUNGLE", "land:4"], ["NORTHERN MOUNTAINS", "land:8"],
+const G_MAPS = [["EARTH", "land:0", {"key": "land/0/0", "x": 13230, "y": 22972}], ["PLANET GATORRA", "gatorra"], ["PLANET DUNARA", "dunara"], ["WEST CITY & TRICERATOPS JUNGLE", "land:4"], ["NORTHERN MOUNTAINS", "land:8"],
 	["SOUTHERN CONTINENT", "land:7"], ["GINGERTOWN", "land:10"], ["NORTHERN WASTELANDS", "land:3"], ["TROPICAL ISLANDS", "land:12"],
 	["SNOWY HIGHLANDS", "land:13"], ["CAPSULE CORP & NEW NAMEK", "land:6"], ["RANDOM PLANET", "random"]]
 var _map_then: Callable
@@ -2090,7 +2189,7 @@ func _map_screen(back: Callable, then: Callable) -> void:
 
 func _map_chosen(adv: String, start: Dictionary = {}) -> void:
 	Game.cfg["adventure"] = adv
-	if start.is_empty():      # GOKU'S HOUSE: EARTH, starting in Gohan's bedroom (Goku's Home) - and beaten, back there
+	if start.is_empty():      # EARTH: starting in Gohan's bedroom (Goku's Home) - and beaten, back there
 		Game.cfg.erase("start_at")
 		Game.cfg.erase("home_at")
 	else:
@@ -2122,6 +2221,9 @@ func _char_screen(back: Callable, then: Callable, who: int = 1) -> void:
 	sc.add_child(grid)
 	var first: Button = null
 	for i in Assets.CHARACTERS.size():
+		if Rules.not_ready(i):      # not finished yet: not on the screen at all
+			continue
+		var at = grid.get_child_count()
 		var cell = VBoxContainer.new(); cell.add_theme_constant_override("separation", 0)
 		cell.custom_minimum_size = Vector2(58, 0)
 		grid.add_child(cell)
@@ -2147,7 +2249,7 @@ func _char_screen(back: Callable, then: Callable, who: int = 1) -> void:
 		_fit_picture(tr, _hero_picture(i))
 		b.add_child(tr)
 		cells[i] = [name_l, b, tr]
-		b.focus_entered.connect(func(): _char_focus = i; _char_page.call_deferred(i))
+		b.focus_entered.connect(func(): _char_focus = i; _char_page.call_deferred(at))
 		var lv = "NEW"
 		if levels.has(str(i)) and levels[str(i)] is Dictionary:
 			lv = "LV %d" % int(levels[str(i)].get("level", 1))
@@ -2194,9 +2296,8 @@ func _char_screen(back: Callable, then: Callable, who: int = 1) -> void:
 
 ## the GBA's grey shoulder buttons in the top corners, "< OUTFIT >" under each (a tap works too)
 ## heroes to earn: the level any of your other heroes must reach first (-1: not playable yet at all). Locked: "LOCKED", A beeps
-const LOCKED_HEROES = {"KING COLD": -1}
 func _hero_locked(i: int, levels: Dictionary) -> bool:
-	var need = int(LOCKED_HEROES.get(Assets.CHARACTERS[i], 0))
+	var need = int(Rules.LOCKED_HEROES.get(Assets.CHARACTERS[i], 0))
 	if need == 0:
 		return false
 	if need < 0:
@@ -2204,21 +2305,21 @@ func _hero_locked(i: int, levels: Dictionary) -> bool:
 	var best = 0
 	for k in levels:      # the best of the heroes you can always play (a villain does not unlock himself)
 		var ki = int(k)
-		if ki >= 0 and ki < Assets.CHARACTERS.size() and not LOCKED_HEROES.has(Assets.CHARACTERS[ki]) and levels[k] is Dictionary:
+		if ki >= 0 and ki < Assets.CHARACTERS.size() and not Rules.LOCKED_HEROES.has(Assets.CHARACTERS[ki]) and levels[k] is Dictionary:
 			best = maxi(best, int(levels[k].get("level", 1)))
 	return best < need
 var _char_focus = 0
 ## two whole rows at a time (names and levels with them): the list moves a row when the cursor leaves the two shown
 var _char_sc: ScrollContainer
 var _char_top = 0
-func _char_page(i: int) -> void:
+func _char_page(at: int) -> void:
 	if _char_sc == null or not is_instance_valid(_char_sc) or _char_sc.get_child_count() == 0:
 		return
 	var grid: GridContainer = _char_sc.get_child(0)
 	if grid.get_child_count() == 0:
 		return
 	var rh = grid.get_child(0).size.y + grid.get_theme_constant("v_separation")
-	var r = i / grid.columns
+	var r = at / grid.columns
 	if r < _char_top:
 		_char_top = r
 	elif r > _char_top + 1:
@@ -2289,9 +2390,10 @@ func _gload(f: Callable) -> void:
 	_gpanel(Rect2(60, 84, 200, 12))
 	var fill = ColorRect.new(); fill.color = G_CYAN; fill.position = Vector2(62, 86); fill.size = Vector2(0, 8); gba.add_child(fill)
 	Music.preload_game_songs()        # every song of the game read now: no song is read while you play
+	Assets.prewarm_fx()        # every explosion/beam/spark picture read now too: none is read for the first time mid-fight
 	var t0 = Time.get_ticks_msec()
 	var k = 0
-	while Music.preloading() and Time.get_ticks_msec() - t0 < 8000:
+	while (Music.preloading() or Assets.prewarming()) and Time.get_ticks_msec() - t0 < 8000:
 		k += 1
 		fill.size.x = 196.0 * minf(0.8, k / 120.0)
 		await get_tree().process_frame
@@ -2321,7 +2423,7 @@ func _original_story() -> void:
 	_global_back = _story_screen
 	_gheading("Original Story")
 	Music.play("rom:7")      # Era of Darkness: the story's own song
-	var l = _gtext(gba, "THE ORIGINAL STORY IS STILL BEING REBUILT IN GODOT.\n\nCOME BACK IN A LATER UPDATE!\n\n\nB: BACK", Vector2(10, 50))
+	var l = _gtext(gba, Game.keys("THE ORIGINAL STORY IS STILL BEING REBUILT IN GODOT.\n\nCOME BACK IN A LATER UPDATE!\n\n\nB: BACK"), Vector2(10, 50))
 	l.size = Vector2(GW - 20, 100)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
@@ -2367,11 +2469,18 @@ func _mp_kind() -> void:
 	_mp_flow = true
 	_mp_story_slot = 0
 	Game.cfg.erase("story")
+	Game.cfg.erase("brawl")
+	Game.cfg.erase("hvv")
+	Game.cfg.erase("allies")
 	if Mods.story_pack != "":
 		Mods.story_pack = ""
 		Mods.reload()
-	_glist([["FREE PLAY", func(): _mp_story_slot = 0; Game.cfg.erase("story"); _mp_choice()],
-		["STORY MODE", _story_screen]], 70, 22, true)
+	# BRAWL: FREE PLAY with every free place of the game filled by a fighter the computer plays; HEROES VS VILLAINS:
+	# the same in two sides of 8 (brawl.gd)
+	_glist([["FREE PLAY", func(): _mp_story_slot = 0; Game.cfg.erase("story"); _free_choice(_mp_kind, _mp_choice)],
+		["STORY MODE", _story_screen],
+		["BRAWL", func(): _mp_story_slot = 0; Game.cfg.erase("story"); Game.cfg["brawl"] = true; _brawl_count(_mp_kind, _mp_choice)],
+		["HEROES VS VILLAINS", func(): _mp_story_slot = 0; Game.cfg.erase("story"); Game.cfg["brawl"] = true; Game.cfg["hvv"] = true; _brawl_count(_mp_kind, _mp_choice)]], 50, 22, true)
 
 func _mp_choice() -> void:
 	_gba_screen()
@@ -2620,10 +2729,11 @@ func _game_options_screen() -> void:
 		["A/B BUTTONS  " + ("NINTENDO" if Game.pad_layout() == "nintendo" else "XBOX"), func(): _opt_set(4)],
 		["HUD  " + ("ON" if bool(Game.cfg.get("hud_on", true)) else "OFF"), func(): _opt_set(5)],
 		["MINIMAP  " + ("ON" if bool(Game.cfg.get("minimap_on", true)) else "OFF"), func(): _opt_set(6)],
-		["WORDS ON SCREEN  " + ("ON" if bool(Game.cfg.get("words_on", true)) else "OFF"), func(): _opt_set(7)]]
+		["WORDS ON SCREEN  " + ("ON" if bool(Game.cfg.get("words_on", true)) else "OFF"), func(): _opt_set(7)],
+		["ENEMY HEALTH BARS  " + ("ON" if bool(Game.cfg.get("foe_bars", false)) else "OFF"), func(): _opt_set(9)]]
 	if not OS.has_feature("mobile"):
 		rows.append(["FULLSCREEN  " + ("ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF"), func(): _opt_set(8)])
-	var gap = 14 if rows.size() <= 8 else 13      # (more rows than before: the words under them ran into the hint)
+	var gap = 14 if rows.size() <= 8 else (13 if rows.size() == 9 else 12)      # (more rows than before: the words under them ran into the hint)
 	var out = _glist(rows, 28, gap, true)
 	out[clampi(_opt_row, 0, out.size() - 1)].grab_focus.call_deferred()
 	# what VIEW SIZE means, in plain numbers: your screen, and how much of the world fits on it
@@ -2633,7 +2743,7 @@ func _game_options_screen() -> void:
 	var info = "SCREEN %d X %d - YOU SEE %d X %d OF THE WORLD" % [ws.x, ws.y, maxi(240, ws.x / k), maxi(160, ws.y / k)]
 	var l = _gtext(gba, info, Vector2(0, mini(28 + rows.size() * gap + 2, GH - 26)), false, Color(0.75, 0.85, 1))
 	l.size = Vector2(GW, 10); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var hint = _gtext(gba, "A: CHANGE   B: BACK", Vector2(0, GH - 14), false, Color(0.7, 0.75, 0.9))
+	var hint = _gtext(gba, Game.keys("A: CHANGE   B: BACK"), Vector2(0, GH - 14), false, Color(0.7, 0.75, 0.9))
 	hint.size = Vector2(GW, 10); hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 func _opt_set(row: int) -> void:
@@ -2662,6 +2772,8 @@ func _opt_set(row: int) -> void:
 			Game.cfg["words_on"] = not bool(Game.cfg.get("words_on", true))
 		8:
 			Game.toggle_fullscreen()
+		9:
+			Game.cfg["foe_bars"] = not bool(Game.cfg.get("foe_bars", false))
 	Game.save_options()
 	_game_options_screen()
 
@@ -3069,8 +3181,10 @@ func _refresh_online_games() -> void:
 	var sig = Online.list_error
 	var rows = []
 	for g in Online.lobbies:
-		sig += "%s|%s|%s|%d|%s;" % [g["id"], g["character"], g["planet"], g["players"], g["private"]]
-		rows.append(["%s - %s  (%d/%d)%s" % [str(g["character"]), str(g["planet"]), int(g["players"]), int(g["max"]), "  PRIVATE" if g["private"] else ""], _pick_online_game.bind(g)])
+		sig += "%s|%s|%s|%d|%d|%s;" % [g["id"], g["character"], g["planet"], g["players"], int(g.get("bots", 0)), g["private"]]
+		var kind = "HEROES VS VILLAINS - " if str(g["world"]).begins_with("HEROES VS VILLAINS") else ("BRAWL - " if str(g["world"]).begins_with("BRAWL") else "")
+		var shown = mini(int(g["max"]), int(g["players"]) + int(g.get("bots", 0)))      # the lobby's own fighters count too, same as real players
+		rows.append(["%s%s - %s  (%d/%d)%s" % [kind, str(g["character"]), str(g["planet"]), shown, int(g["max"]), "  PRIVATE" if g["private"] else ""], _pick_online_game.bind(g)])
 	_fill_games(sig, rows, Online.list_error.to_upper() if Online.list_error != "" else "LOOKING FOR GAMES... NOBODY IS HOSTING ONE ONLINE RIGHT NOW")
 
 var finding = false

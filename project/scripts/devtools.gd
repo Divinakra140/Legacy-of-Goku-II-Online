@@ -14,26 +14,28 @@ const TABS = ["MAP", "HEROES", "ENEMIES", "MOVES", "FORMS", "BLASTS", "MISSIONS"
 const PANELS = {"COLORS": "res://scripts/dev_colors.gd", "SHARE": "res://scripts/dev_mods.gd", "EVENTS": "res://scripts/dev_events.gd",
 	"SPRITES": "res://scripts/dev_sprites.gd", "CHECK": "res://scripts/dev_check.gd"}
 var panels = {}
-const TOOLS = ["PAN", "TILE", "SMART", "STAMP", "ERASE", "PICK", "WALL", "GROUND", "LINE", "RECT", "FILL", "SELECT", "COPY", "PASTE", "THINGS", "FOE", "ZONE", "PERSON", "ITEM", "DOOR", "EVENT", "MOOD"]
+const TOOLS = ["PAN", "ERASE", "PICK", "WALL", "GROUND", "UNDER", "OVER", "SELECT", "COPY", "PASTE", "MOVE", "GUIDE", "THINGS", "ROCK", "BIOME", "SMART", "FOE", "ZONE", "PERSON", "ITEM", "DOOR", "EVENT", "MOOD"]
 const TOOL_HELP = {
 	"PAN": "Drag to move around (or right / middle mouse anywhere, WASD, arrows). Wheel: zoom.",
-	"TILE": "Paint the tile chosen on the right onto the chosen LAYER. Ground layer 0, over the heroes 3-4.",
-	"STAMP": "Paint a whole cell (all 5 layers and its wall) - pick one with PICK first.",
+	"STAMP": "Stamping the cell you PICKed (all 5 layers and its wall). Click PICK to pick another.",
 	"ERASE": "Take the tile away from the chosen LAYER.",
-	"PICK": "Click a cell: it becomes the brush (all layers) - then STAMP paints it. Also picks the tile for TILE.",
+	"PICK": "Click a cell to see what it is (its tiles on each layer, walkable or not). STAMP on (on the right): the cell you click is stamped wherever you click or drag next - all its layers and its wall.",
 	"WALL": "Paint where you cannot walk (red when WALLS is on).",
 	"GROUND": "Paint where you can walk.",
-	"SELECT": "Click a foe, person, treasure or door: change or delete it on the right. Drag to move it.",
-	"COPY": "Drag a box: those cells (all layers and walls) go to the clipboard - then PASTE.",
+	"UNDER": "UNDER HERO: tiles painted with this tool are drawn under the hero - the hero is drawn over them, so whatever he walks onto is hidden behind him. (Tick OVER HERO in the top bar to see which tiles are drawn over him.) Ctrl+Z undoes.",
+	"OVER": "OVER HERO: tiles painted with this tool are drawn over the hero - he walks behind them and they hide him, like leaves or a roof edge. The ground itself (layer 0) is never moved. Ctrl+Z undoes.",
+	"SELECT": "Click a foe, person, treasure or door: change or delete it on the right. Drag to move it. PLACES: every place of the game shows as a box with its name, its number in the game (one name can be several of the game's maps: a farm, a maze, a lair) and its song (\u266A). The box is where that name shows, that music plays and its own people stand: click a name to choose it, drag to move the place, Delete to take it away (a place whose land is gone). Ctrl+Z undoes.",
+	"COPY": "Drag a box: those cells (all layers and walls) go to the clipboard - then PASTE. LASSO (on the right): draw any shape instead.",
 	"PASTE": "Click: the clipboard is laid down there (its top-left corner at the mouse). Move whole places this way.",
-	"FILL": "Drag a box: filled with the brush (the tile on the layer, or the picked cell if STAMP was last).",
+	"MOVE": "Everything comes along - all layers and walls, foes, people, treasure, doors (and doors leading in), zones, moods, event boxes, the places' names and music.",
+	"GUIDE": "A picture of your own laid faintly over the map (the game's world map, say) to line places up with: CHOOSE A PICTURE on the right, then drag it into place; BIGGER / SMALLER, FIT TO THE MAP. Only you see it, only here.",
 	"FOE": "Click: a foe of the kind chosen on the right.",
 	"PERSON": "Click: a person who says the lines written on the right.",
 	"ITEM": "Click: treasure (an item lying there until someone takes it).",
 	"DOOR": "Drag the door's box, then click where it takes you (switch maps first with GO TO MAP to arrive elsewhere).",
 	"SMART": "PICK the ground first (water, sand, a path...), then paint: when you let go its edges are joined up the way the game's own maps join them.",
-	"LINE": "Drag: a straight line of the brush (tile, picked cell, wall or ground - see the right).",
-	"RECT": "Drag: a box of the brush, filled or just its outline.",
+	"BIOME": "Paint the land with natural ground - grass, snow, sand, water... (chosen on the right, with the brush size): each patch is a piece of the real thing picked at random, so it never looks like one tile again and again. MAKE A BIOME FROM A BOX: drag a box round any good patch of the map to add your own.",
+	"ROCK": "Rocks to smash (and the game's other breakables): choose one on the right, its hits and what it drops, then click to set it down. SELECT a rock to change, drag or delete it (the game's own too). MOVE takes them along.",
 	"THINGS": "Whole things - houses, trees, fences - to set down with one click. FIND THINGS IN VIEW cuts them from the map you see (any game's), or save a COPY as one.",
 	"ZONE": "Drag a box: foes come and go there by themselves (which kinds, how many, their level, how soon they come back - on the right).",
 	"MOOD": "Drag a box: the place feels different in it - dark (a light round you), rain, snow, ash or dust, its own music. SELECT (click inside) to delete it.",
@@ -46,13 +48,29 @@ var tiles = []
 var chunks = {}
 var cam: Camera2D
 var overlay: Node2D
+var rock_layer: Node2D      # the rocks' pictures: over the ground, under the trees' tops (z 70) as in the game
 var ui: Control
 var tool = "PAN"
 var layer = 0
 var brush_tile = 1              # TILE tool: a tile id
 var brush_cell = [0, 0, 0, 0, 0, 1]   # STAMP: a whole cell + walk
 var last_brush = "TILE"
+var rock_b = preload("res://scripts/breakables.gd").new(null)      # the breakables (the game's own and yours)
+var rock_cache = null           # rock_b.rock_list of this map, made again after a change
+var rock_like = ""              # ROCK: the picture chosen ("place:n" of a game rock)
+var rock_hits = 1               # ROCK: hits it takes
+var rock_drops = 1              # ROCK: its drop table (breakables.DROP_TABLES)
+var biomes = null               # BIOME: [{name, w, h, cells: [[l0..l4, walk]...]}] (content/biomes.json)
+var biome_i = 0
+var biome_size = 6              # BIOME: the brush (cells across)
+var biome_grab = false          # BIOME: the next box dragged on the map becomes a new biome
+var biome_icons = {}            # name -> its little picture
+var biome_newname = "MY GROUND"
+var pick_stamp = false       # PICK: STAMP on - a picked cell is then stamped where you click / drag
 var show_walls = true
+var show_over = false     # OVER HERO: walkable cells with tiles drawn over the hero, tinted blue
+var high_ground = false   # GROUND - HIGH GROUND: blue cells become platform tops (purple): a wall from the ground, ground once landed on
+var under_full = 0
 var show_changes = false
 var _last_look = []              # what the overlay was last drawn for
 var _redraw_t = 0.0
@@ -62,6 +80,16 @@ var show_objects = true
 var sel_from = Vector2.ZERO        # SELECT: where the click began
 var keep_ground = false          # PASTE / THINGS: the ground already there stays (the copy's background is left out)
 var clipboard = {}              # {w, h, cells: [[6 values]...]}
+var move_box = Rect2i()         # MOVE: the part picked up (cells); empty: drag a box first
+var move_swap = false           # MOVE: what is where it lands goes to where it came from (else it is covered)
+var move_lasso = false          # MOVE: LASSO - draw any shape round what to pick up (not just a box)
+var copy_lasso = false          # COPY: its own LASSO (off unless ticked there)
+var lasso_pts = []              # MOVE: LASSO - the cells the line went through while drawing it
+var move_mask = {}              # MOVE: LASSO - the cells picked up (Vector2i -> true); empty: the whole move_box
+var move_place = {}             # MOVE: a whole place being dragged by its name {key, box (cells), grab}
+var guide = {}                  # GUIDE: {"path", "x", "y", "w", "h", "alpha", "on"} (user://map_guide.json)
+var guide_tex: Texture2D = null
+var guide_grab = Vector2.ZERO
 var drag_from = Vector2i(-1, -1)
 var dragging = false
 var pan_drag = false
@@ -100,17 +128,22 @@ var preview: ActorView
 var MT = preload("res://scripts/dev_maptools.gd").new()
 var smart_mask = {}
 var smart_size = 1
+var edges = null                # SMART - EDGE: content/edges.json's edges (beach, lake, waterfall)
+var edge_i = -1                 # SMART - EDGE chosen (-1: SMART's own painting)
+var edge_size = 4               # SMART - EDGE: the brush (cells across)
 var paint_size = 1               # TILE / STAMP / ERASE / WALL / GROUND: the brush is this many cells across
 var paint_last = Vector2i(-1, -1)   # the cell painted last in this drag (the stroke is joined up from it)
-var shape_brush = "TILE"     # LINE / RECT paint with: TILE, CELL, WALL, GROUND
-var rect_filled = true
 var stamps = []              # THINGS: the list shown (saved ones + found in view)
 var stamp_i = -1
 var minimap: Control
+var mini_dirty = false           # cells were painted: the picture is sent again (at most once a frame)
+var mini_img: Image          # the minimap's picture (a MOVE repaints only the cells it touched)
 var mini_tex: Texture2D
 var layer_shown = [true, true, true, true, true]
+const PAINT_FAR = ["BIOME", "SMART", "ERASE", "WALL", "GROUND", "STAMP"]      # tools that paint zoomed right out too (else a click there zooms in)
 const FAR_ZOOM = 0.3          # zoomed out further: the map as one picture (THE WHOLE WORLD), names of the places on it
 var world_sprite: Sprite2D
+var backdrop: ColorRect          # under the map: the game's backdrop colour (black on EARTH), not the window's grey
 var mini_step = 1
 var zone_cfg = {"kinds": "8", "count": 4, "level": 0, "respawn": 30}
 var event_id = ""
@@ -136,6 +169,9 @@ func _ready() -> void:
 	overlay.z_index = 200
 	add_child(overlay)
 	overlay.draw.connect(_draw_overlay)
+	rock_layer = Node2D.new()
+	add_child(rock_layer)
+	rock_layer.draw.connect(_draw_rocks)
 	_build_ui()
 	load_map("land/0/0")
 	if Game.cfg.has("dev_return"):
@@ -152,6 +188,9 @@ func _ready() -> void:
 		_tip()
 
 func _exit_tree() -> void:
+	if _save_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_save_task)      # (closing or going to play: a save being written finishes first)
+		_save_task = -1
 	if get_window().size_changed.is_connected(_fit):
 		get_window().size_changed.disconnect(_fit)
 
@@ -182,6 +221,14 @@ func load_map(k: String) -> void:
 	if area.is_empty():
 		_say("That map could not be read.")
 		return
+	if backdrop == null:
+		backdrop = ColorRect.new()
+		backdrop.z_index = -100
+		backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(backdrop)
+	var bd: Array = area.get("meta", {}).get("backdrop", [0, 0, 0])
+	backdrop.color = Color8(int(bd[0]), int(bd[1]), int(bd[2]))
+	backdrop.size = Vector2(float(area["w"]), float(area["h"]))
 	for i in 5:
 		var tl = TileMapLayer.new()
 		tl.navigation_enabled = false      # (no navigation: the game does not use it)
@@ -261,6 +308,7 @@ func _fill_chunk(q: Vector2i, on: bool) -> void:
 				if not r.is_empty():
 					tl.set_cell(Vector2i(x, y), r[2], r[0], r[1])
 
+
 func cell_at(x: int, y: int) -> Array:
 	var i = y * int(area["tw"]) + x
 	var out = []
@@ -281,6 +329,9 @@ func put(x: int, y: int, v: Array) -> void:
 	if stroke.has(i) and stroke[i][1] == v:
 		return
 	stroke[i] = [old, v.duplicate()]
+	if mini_img != null and key == "land/0/0" and x < mini_img.get_width() and y < mini_img.get_height():      # (the whole-world picture too: seen zoomed out)
+		mini_img.set_pixel(x, y, MT.mini_color(v, int(v[5])))
+		mini_dirty = true
 	for k in 5:
 		var tl: TileMapLayer = tiles[k]
 		var c = int(v[k])
@@ -317,13 +368,16 @@ func _write(changes: Dictionary, which: int) -> void:
 	var w: PackedByteArray = area["walk"]
 	area["walk"] = PackedByteArray()
 	for i in changes:
-		w[i] = int(changes[i][which][5]) & 1
+		w[i] = _walk_bits(int(changes[i][which][5]))      # (&1 alone turned a painted platform top red)
 	area["walk"] = w
 	var p = Mods.patch(key)
 	for i in changes:
 		var v = changes[i][which]
 		p["cells"]["%d,%d" % [i % tw, i / tw]] = v.duplicate()
 		var x = i % tw; var y = i / tw
+		if mini_img != null and key == "land/0/0" and x < mini_img.get_width() and y < mini_img.get_height():      # (undo / redo: the whole-world picture too)
+			mini_img.set_pixel(x, y, MT.mini_color(v, int(v[5])))
+			mini_dirty = true
 		for k in 5:
 			var tl: TileMapLayer = tiles[k]
 			var c = int(v[k])
@@ -332,6 +386,13 @@ func _write(changes: Dictionary, which: int) -> void:
 				tl.erase_cell(Vector2i(x, y))
 			else:
 				tl.set_cell(Vector2i(x, y), r[2], r[0], r[1])
+
+## the guide as it is, as an undo step (before a drag, BIGGER / SMALLER, FIT, see-through, show)
+func _guide_undo_point() -> void:
+	if guide.is_empty():
+		return
+	undo.append({"guide": guide.duplicate()})
+	redo.clear()
 
 func do_undo() -> void:
 	if undo.is_empty():
@@ -352,33 +413,77 @@ func do_redo() -> void:
 
 ## undo (side 0) or redo (side 1) one step; gives back the step that turns it round again
 func _flip(u: Dictionary, side: int) -> Dictionary:
+	if u.has("thing_gone"):      # a saved THING deleted: put back / deleted again
+		return _thing_gone(str(u["thing_gone"]))
+	if u.has("thing_back"):
+		var f = MT.save_stamp(str(u["thing_back"].get("name", "THING")), u["thing_back"])
+		stamps = MT.list_stamps(); stamp_i = -1
+		_refresh_side()
+		return {"thing_gone": f}
+	if u.has("resize"):      # the map's size (saved at once, as RESIZE WHOLE MAP is)
+		return _set_size(u["resize"], u["cut"])
+	if u.has("guide"):      # the guide picture's place and look (kept on this computer, not in the map)
+		var now_g = guide.duplicate()
+		guide = u["guide"]
+		_guide_save()
+		overlay.queue_redraw()
+		return {"guide": now_g}
+	if u.has("biomes"):      # the biomes list (made or deleted)
+		var now_b = biomes.duplicate()
+		biomes = u["biomes"]
+		biome_i = clampi(biome_i, 0, maxi(0, biomes.size() - 1))
+		_biomes_save()
+		_refresh_side()
+		return {"biomes": now_b}
 	if u.has("cells"):
 		_write(u["cells"], side)
-		return u
+		if not u.has("patch"):
+			return u
 	var p = Mods.patch(key)
 	var now = {}
 	for k in u["patch"]:
 		now[k] = p[k].duplicate(true)
 		p[k] = u["patch"][k]
+	if u["patch"].has("places") and key.begins_with("land/"):
+		Assets.reset_land(int(key.split("/")[1]))
 	_rebuild_world()
+	if u.has("cells"):
+		_refresh_minimap()
+		return {"cells": u["cells"], "patch": now}
 	return {"patch": now}
+
+## a saved THING's file deleted; gives back the undo step that saves it again
+func _thing_gone(f: String) -> Dictionary:
+	var st = Assets.json(f)
+	DirAccess.remove_absolute(f)
+	stamps = MT.list_stamps(); stamp_i = -1
+	_refresh_side()
+	if st is Dictionary:
+		st.erase("file")
+		return {"thing_back": st}
+	return {}
 
 func _remember_patch() -> void:
 	var p = Mods.patch(key)
 	var snap = {}
-	for k in ["enemies_add", "enemies_del", "people_add", "people_del", "doors_add", "doors_del", "items"]:
+	for k in ["enemies_add", "enemies_del", "people_add", "people_del", "doors_add", "doors_del", "items", "places", "rocks_add", "rocks_del"]:
 		snap[k] = p[k].duplicate(true)
 	undo.append({"patch": snap})
 	redo.clear()
 
 ## foes, people and doors changed: the world is put together again (the planet's lists, the map's people)
 func _rebuild_world() -> void:
+	rock_cache = null
+	for k in ["rocks", "rock_places", "blocks", "opened"]:      # (the game's state of them: built again from the edits)
+		area.erase(k)
 	Game.planet.build_land(0, 1)
 	if key.begins_with("land/"):
 		# people: the game's own again, then the changes
 		var parts = key.split("/")
-		var fresh = Assets._land_area(key)
-		area["people"] = fresh.get("people", [])
+		var fresh = Assets.land_parts(key)
+		area["people"] = fresh["people"]
+		if area.has("land"):
+			area["land"]["parts"] = fresh["parts"]      # (places' names and songs: MOVE moves them)
 	else:
 		area["people"] = []
 	var p = Mods.merged(key, false)
@@ -393,17 +498,33 @@ func _rebuild_world() -> void:
 	if coedit:
 		coedit.sent_objects(key)
 
+var _save_task = -1
 func save() -> void:
 	end_stroke()
 	if area.has("library"):
 		dirty = false
 		return
-	Mods.backup()
-	var ok = Mods.save_patch(key)
 	if area.has("custom"):
-		ok = ok and Mods.save_custom(str(area["custom"]), area)
+		Mods.backup()
+		var ok = Mods.save_patch(key) and Mods.save_custom(str(area["custom"]), area)
+		dirty = false
+		_say("Saved to mods/maps (your team's changes stay when the game is imported again)." if ok else "Could not save - is the game folder read-only?")
+		return
+	# the map's file as it was copied aside (quick), the new one written, then "Saved" - the backup (a zip of all your
+	# edits, the copy standing for this map) is made in the background afterwards and needs nothing more of you
+	if _save_task >= 0 and not WorkerThreadPool.is_task_completed(_save_task):
+		WorkerThreadPool.wait_for_task_completion(_save_task)      # (one backup at a time)
+	var path = Mods.maps_dir().path_join(Mods.file_key(key) + ".json")
+	var before = path + ".before_save"
+	if FileAccess.file_exists(path):
+		DirAccess.copy_absolute(path, before)
+	var ok = Mods.save_patch(key)
 	dirty = false
 	_say("Saved to mods/maps (your team's changes stay when the game is imported again)." if ok else "Could not save - is the game folder read-only?")
+	_save_task = WorkerThreadPool.add_task(func():
+		Mods.backup(false, {path: before} if FileAccess.file_exists(before) else {})
+		if FileAccess.file_exists(before):
+			DirAccess.remove_absolute(before))
 
 # ------------------------------------------------------------------ input
 ## undo / redo for the map first (a number box on the side - the brush size - kept Control+Z for itself, and the
@@ -452,7 +573,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_RIGHT or mb.button_index == MOUSE_BUTTON_MIDDLE or (mb.button_index == MOUSE_BUTTON_LEFT and tool == "PAN"):
 			pan_drag = mb.pressed
 			pan_last = mb.position
-		elif mb.button_index == MOUSE_BUTTON_LEFT and cam.zoom.x < FAR_ZOOM:
+		elif mb.button_index == MOUSE_BUTTON_LEFT and cam.zoom.x < FAR_ZOOM and not tool in ["MOVE", "GUIDE", "SELECT"] and not tool in PAINT_FAR:
 			if mb.pressed:
 				cam.position = _world_of(mb.position)
 				cam.zoom = Vector2(1, 1)
@@ -501,6 +622,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 		elif kk.keycode >= KEY_0 and kk.keycode <= KEY_4 and not kk.ctrl_pressed:
 			layer = kk.keycode - KEY_0
 			layer_pick.select(layer)
+			_refresh_side()
 
 func _world_of(p: Vector2) -> Vector2:
 	return get_canvas_transform().affine_inverse() * p
@@ -514,8 +636,13 @@ func _press(c: Vector2i, w: Vector2) -> void:
 		_say("This is another game's map: look, PICK and COPY here, then PASTE on your map - or MAKE IT MY MAP to change it.")
 		return
 	match tool:
-		"TILE", "STAMP", "ERASE", "WALL", "GROUND":
+		"TILE", "STAMP", "ERASE", "WALL", "GROUND", "UNDER", "OVER":
+			if tool == "UNDER" or tool == "OVER":
+				under_full = 0
 			_paint_brush(c)
+			paint_last = c
+		"SMART" when edge_i >= 0:
+			_edge_brush(c)
 			paint_last = c
 		"SMART":
 			if int(brush_cell[0]) == 0:
@@ -524,6 +651,12 @@ func _press(c: Vector2i, w: Vector2) -> void:
 			smart_mask = {}
 			_smart_add(c)
 			paint_last = c
+		"ROCK":
+			_place_rock(w)
+		"BIOME":
+			if not biome_grab:
+				_biome_brush(c)
+				paint_last = c
 		"THINGS":
 			if stamp_i >= 0 and stamp_i < stamps.size():
 				MT.place_stamp(self, stamps[stamp_i], c)
@@ -539,10 +672,29 @@ func _press(c: Vector2i, w: Vector2) -> void:
 					brush_tile = t
 				dragging = false      # the same click must not paint with the STAMP it switches to
 				paint_last = Vector2i(-1, -1)
-				_set_tool("STAMP")
-				_say("Picked: layers %s, %s. STAMP paints it; TILE paints tile %d." % [str(brush_cell.slice(0, 5)), "walkable" if int(brush_cell[5]) & 1 else "wall", brush_tile])
+				last_brush = "STAMP"
+				if pick_stamp:
+					_set_tool("STAMP")
+				_say("Picked: layers %s, %s.%s" % [str(brush_cell.slice(0, 5)), "walkable" if int(brush_cell[5]) & 1 else "wall", " Click or drag to stamp it (PICK again for another)." if pick_stamp else " (STAMP on the right: stamp it.)"])
 		"PASTE":
 			_paste(c)
+		"MOVE":
+			if move_box.size.x > 0:
+				_move_area(move_box, c, "", move_mask)
+				move_box = Rect2i()
+				move_mask = {}
+				_refresh_side()
+				drag_from = Vector2i(-1, -1)      # (letting go of this click must not start a new box)
+			else:
+				var pl = _place_label_at(w)
+				if not pl.is_empty():
+					var pr: Rect2 = pl[0]
+					var pb = Rect2i(int(roundf(pr.position.x / 8.0)), int(roundf(pr.position.y / 8.0)), int(roundf(pr.size.x / 8.0)), int(roundf(pr.size.y / 8.0)))
+					move_place = {"key": str(pl[3]), "name": str(pl[1]), "box": pb, "grab": c - pb.position}
+					drag_from = Vector2i(-1, -1)
+		"GUIDE":
+			guide_grab = w
+			_guide_undo_point()
 		"FOE":
 			_remember_patch()
 			var ts = Rules.kind_to_type_set(foe_type)
@@ -592,24 +744,56 @@ func _press(c: Vector2i, w: Vector2) -> void:
 				_say("Door made. (Make one back the same way if you want to return.)")
 
 func _drag(c: Vector2i, _w: Vector2) -> void:
+	if tool == "BIOME" and not biome_grab:
+		for q in _cells_between(paint_last, c):
+			_biome_brush(q)
+		paint_last = c
+		return
+	if drag_from.x >= 0 and ((tool == "COPY" and copy_lasso) or (tool == "MOVE" and move_lasso and move_box.size.x == 0 and move_place.is_empty())):
+		if lasso_pts.is_empty():
+			lasso_pts = [drag_from]
+		for q in _cells_between(lasso_pts.back(), c):
+			if q != lasso_pts.back():
+				lasso_pts.append(q)
+		return
 	match tool:
-		"TILE", "STAMP", "ERASE", "WALL", "GROUND":
+		"TILE", "STAMP", "ERASE", "WALL", "GROUND", "UNDER", "OVER":
 			for q in _cells_between(paint_last, c):      # a quick mouse skips cells: the line between is painted too
 				_paint_brush(q)
 			paint_last = c
 		"SMART":
 			for q in _cells_between(paint_last, c):
-				_smart_add(q)
+				if edge_i >= 0:
+					_edge_brush(q)
+				else:
+					_smart_add(q)
 			paint_last = c
 		"SELECT":
 			if not selected.is_empty():
 				selected["drag_to"] = _w
+		"GUIDE":
+			if not guide.is_empty():
+				guide["x"] = float(guide["x"]) + _w.x - guide_grab.x
+				guide["y"] = float(guide["y"]) + _w.y - guide_grab.y
+				guide_grab = _w
 	overlay.queue_redraw()
 
 func _release(c: Vector2i, w: Vector2) -> void:
 	paint_last = Vector2i(-1, -1)
 	match tool:
-		"TILE", "STAMP", "ERASE", "WALL", "GROUND":
+		"BIOME":
+			if biome_grab and drag_from.x >= 0:
+				_biome_new(_box(drag_from, c))
+			else:
+				end_stroke()
+		"TILE", "STAMP", "ERASE", "WALL", "GROUND", "UNDER", "OVER":
+			end_stroke()
+			if tool == "UNDER" and under_full > 0:
+				_say("%d cells could not go under the hero: both lower layers are used and the tile has see-through parts (something under it would show). ERASE a lower layer there first if you want." % under_full)
+			elif tool == "OVER" and under_full > 0:
+				_say("%d cells could not go over the hero: nothing there could be lifted (both top layers used, or only a see-through floor tile)." % under_full)
+		"SMART" when edge_i >= 0:
+			edge_extra = {}
 			end_stroke()
 		"SMART":
 			if not smart_mask.is_empty():
@@ -618,12 +802,6 @@ func _release(c: Vector2i, w: Vector2) -> void:
 				end_stroke()
 				smart_mask = {}
 				_say("Painted, %d edge cells joined up. Ctrl+Z undoes." % n)
-		"LINE", "RECT":
-			if drag_from.x >= 0:
-				var cs = MT.line_cells(drag_from, c) if tool == "LINE" else MT.rect_cells(drag_from, c, rect_filled)
-				for q in cs:
-					_shape_put(q)
-				end_stroke()
 		"ZONE":
 			if drag_from.x >= 0:
 				_remember_patch()
@@ -667,9 +845,26 @@ func _release(c: Vector2i, w: Vector2) -> void:
 				_rebuild_world()
 				_say("Mood box made. SAVE to keep it. PLAY HERE to feel it.")
 		"COPY":
-			_copy(drag_from, c)
-		"FILL":
-			_fill(drag_from, c)
+			if copy_lasso:
+				_copy_lasso()
+			else:
+				_copy(drag_from, c)
+		"MOVE":
+			if not move_place.is_empty():
+				var mb2: Rect2i = move_place["box"]
+				var to2: Vector2i = c - move_place["grab"]
+				var mk = str(move_place["key"])
+				move_place = {}
+				if to2 != mb2.position:
+					_move_area(mb2, to2, mk)
+			elif drag_from.x >= 0 and move_box.size.x == 0 and move_lasso:
+				_lasso_pick()
+			elif drag_from.x >= 0 and move_box.size.x == 0:
+				move_box = _box(drag_from, c)
+				_say("Picked up %d x %d cells and everything on them. Click where its top-left corner goes (Esc or another tool: never mind)." % [move_box.size.x, move_box.size.y])
+				_refresh_side()      # (the panel shows what is picked up and NEVER MIND)
+		"GUIDE":
+			_guide_save()
 		"DOOR":
 			if door_rect.is_empty() and drag_from.x >= 0:
 				var a = Vector2(mini(drag_from.x, c.x) * 8, mini(drag_from.y, c.y) * 8)
@@ -696,15 +891,78 @@ func _paint(c: Vector2i) -> void:
 		"TILE":
 			v[layer] = brush_tile
 			last_brush = "TILE"
-		"STAMP":
-			v = brush_cell.duplicate()
-			last_brush = "STAMP"
+		"STAMP":      # (PICK's STAMP: the picked cell, or a tile chosen on the right onto its layer)
+			if last_brush == "TILE":
+				v[layer] = brush_tile
+			else:
+				v = brush_cell.duplicate()
 		"ERASE":
 			v[layer] = 0
 		"WALL":
-			v[5] = 0
+			# a wall from the ground; HIGH GROUND stays (a roof's front: no walking in, but you can land on top)
+			v[5] = 4 if _hg(int(v[5])) else 0
 		"GROUND":
-			v[5] = 1
+			if high_ground:
+				# HIGH GROUND keeps what is underneath: walkable stays walkable (walk behind it), a wall stays a wall
+				v[5] = (1 if int(v[5]) & 1 else 0) | 4
+			else:
+				v[5] = 1
+		"UNDER":
+			# the top layers (drawn over the hero) go down into the free lower layers, in the same order - what was on
+			# top stays on top (ground on 3 and a pillar on 4 had the pillar put under the ground)
+			var tops = []
+			for l in [3, 4]:
+				if int(v[l]) != 0:
+					tops.append(int(v[l]))
+			# free lower layers above everything already there (a tile put under one already there would be hidden)
+			var hi = 2 if int(v[2]) != 0 else (1 if int(v[1]) != 0 else 0)
+			var free = []
+			for l in [1, 2]:
+				if l > hi:
+					free.append(l)
+			# no room, and the tile going down is solid (not one see-through pixel): what is under it can't be seen anyway,
+			# so a hidden lower tile (sand under a rock) makes room - layer 0 is never touched
+			while not tops.is_empty() and free.size() < tops.size() and hi > 0 and Assets.tile_solid(tops[0]):
+				v[hi] = 0
+				hi = 2 if int(v[2]) != 0 else (1 if int(v[1]) != 0 else 0)
+				free = []
+				for l in [1, 2]:
+					if l > hi:
+						free.append(l)
+			if not tops.is_empty():
+				if free.size() < tops.size():
+					under_full += 1
+				else:
+					var slots = free.slice(free.size() - tops.size())      # the highest free ones, in order
+					for k in tops.size():
+						v[slots[k]] = tops[k]
+					v[3] = 0
+					v[4] = 0
+		"OVER":
+			# the lower layers 1-2 go up into a free top layer (drawn over the hero); layer 0, the ground, stays -
+			# unless it is all there is and its tile is solid (a room's table top drawn into the floor layer): then it
+			# goes up whole (it covers its square, so nothing changes to the eye; the hero now walks behind it).
+			if int(v[1]) == 0 and int(v[2]) == 0 and int(v[0]) != 0 and Assets.tile_solid(int(v[0])):
+				if int(v[3]) == 0:      # (into 3 only: put on 4 it would come out above what is on 3)
+					v[3] = v[0]
+					v[0] = 0
+				else:
+					under_full += 1
+			elif int(v[1]) == 0 and int(v[2]) == 0:
+				under_full += 1
+			# No room on top for what's coming up from 1/2 (copied-in tiles already using both 3 and 4)? Overwrite
+			# rather than refuse - once a building covers a cell for good, nobody ever sees what used to be on top.
+			# Two incoming tiles with nowhere free go to different layers so the second doesn't erase the first.
+			var used_fallback = false
+			for l in [2, 1]:
+				if int(v[l]) == 0:
+					continue
+				var to = 3 if int(v[3]) == 0 else (4 if int(v[4]) == 0 else -1)
+				if to < 0:
+					to = 4 if not used_fallback else 3
+					used_fallback = true
+				v[to] = v[l]
+				v[l] = 0
 	put(c.x, c.y, v)
 
 ## the brush: paint_size x paint_size cells round c
@@ -732,18 +990,6 @@ func _smart_add(c: Vector2i) -> void:
 				smart_mask[q] = true
 				put(q.x, q.y, brush_cell)
 
-func _shape_put(q: Vector2i) -> void:
-	if not _inside(q.x, q.y):
-		return
-	var i = q.y * int(area["tw"]) + q.x
-	var v = stroke[i][1].duplicate() if stroke.has(i) else cell_at(q.x, q.y)
-	match shape_brush:
-		"TILE": v[layer] = brush_tile
-		"CELL": v = brush_cell.duplicate()
-		"WALL": v[5] = 0
-		"GROUND": v[5] = 1
-	put(q.x, q.y, v)
-
 func _box(a: Vector2i, b: Vector2i) -> Rect2i:
 	var x0 = clampi(mini(a.x, b.x), 0, int(area["tw"]) - 1); var y0 = clampi(mini(a.y, b.y), 0, int(area["th"]) - 1)
 	var x1 = clampi(maxi(a.x, b.x), 0, int(area["tw"]) - 1); var y1 = clampi(maxi(a.y, b.y), 0, int(area["th"]) - 1)
@@ -758,6 +1004,22 @@ func _copy(a: Vector2i, b: Vector2i) -> void:
 	clipboard = {"w": r.size.x, "h": r.size.y, "cells": cs}
 	_set_tool("PASTE")
 	_say("Copied %d x %d cells. Click to lay them down (PASTE)." % [r.size.x, r.size.y])
+
+## COPY with the LASSO: the cells inside the shape (the rest of its box is left out when it is pasted)
+func _copy_lasso() -> void:
+	var sh = _lasso_shape()
+	if sh.is_empty():
+		return
+	var r: Rect2i = sh["box"]
+	var cs = []
+	var mk = []
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			cs.append(cell_at(x, y))
+			mk.append(1 if sh["mask"].has(Vector2i(x, y)) else 0)
+	clipboard = {"w": r.size.x, "h": r.size.y, "cells": cs, "mask": mk}
+	_set_tool("PASTE")
+	_say("Copied %d cells (LASSO). Click to lay them down (PASTE)." % sh["mask"].size())
 
 ## the clipboard turned over: across = left-right (the X key), else upside down (the Y key)
 func mirror_clipboard(across: bool) -> void:
@@ -776,6 +1038,13 @@ func mirror_clipboard(across: bool) -> void:
 				if int(v[k]) != 0:
 					v[k] = int(v[k]) ^ bit
 			out.append(v)
+	if clipboard.has("mask"):
+		var mk: Array = clipboard["mask"]
+		var om = []
+		for y in h:
+			for x in w:
+				om.append(mk[y * w + (w - 1 - x)] if across else mk[(h - 1 - y) * w + x])
+		clipboard["mask"] = om
 	clipboard["cells"] = out
 	_say("Clipboard mirrored %s. Click to PASTE it." % ("left-right" if across else "upside down"))
 
@@ -817,26 +1086,574 @@ func _lay(c: Vector2i, w: int, cells: Array, mask: Array = [], own_ground: bool 
 		out[5] = v[5]
 		put(q.x, q.y, out)
 
+## LASSO let go: the line closed back to where it began; every cell inside it (and on it) picked up
+func _lasso_pick() -> void:
+	var sh = _lasso_shape()
+	if sh.is_empty():
+		return
+	move_mask = sh["mask"]
+	move_box = sh["box"]
+	_say("Picked up %d cells and everything on them. Click where it goes (Esc or another tool: never mind)." % move_mask.size())
+	_refresh_side()
+
+## the LASSO's line closed back to where it began: {box (cells), mask (Vector2i -> true): the cells inside and on it}
+func _lasso_shape() -> Dictionary:
+	var pts = lasso_pts
+	lasso_pts = []
+	if pts.size() < 3:
+		_say("Draw round what you want (a bigger shape).")
+		return {}
+	var poly = PackedVector2Array()
+	var lo = pts[0]; var hi = pts[0]
+	for q in pts:
+		poly.append(Vector2(q) + Vector2(0.5, 0.5))
+		lo = Vector2i(mini(lo.x, q.x), mini(lo.y, q.y)); hi = Vector2i(maxi(hi.x, q.x), maxi(hi.y, q.y))
+	var m = {}
+	for q in pts:
+		m[q] = true
+	for q in _cells_between(pts.back(), pts[0]):      # (the closing line)
+		m[q] = true
+	for y in range(lo.y, hi.y + 1):
+		for x in range(lo.x, hi.x + 1):
+			if Geometry2D.is_point_in_polygon(Vector2(x + 0.5, y + 0.5), poly):
+				m[Vector2i(x, y)] = true
+	return {"box": Rect2i(lo, hi - lo + Vector2i.ONE), "mask": m}
+
+# ------------------------------------------------------------------ MOVE: a whole part of the map, everything on it
+## the box r (cells) laid down with its top-left at `to`, and everything on it with it: the cells (all layers and
+## walls), foes, people, treasure, zones, moods, event boxes, doors (theirs moved; doors elsewhere that lead into it
+## arrive at the new spot), and the game's places whose corner is in it (their names, songs, own people, story
+## warps). The game's own things are taken away and put back moved (as SELECT's drag does); your own are moved.
+## SWAP (move_swap): what was where it lands goes to where it came from, everything on it too (nothing is lost);
+## COVER: it is covered, and what is left behind becomes the ground round it (_natural_fill). One undo for all.
+## (only_place: a place dragged by its name - only it moves as a place; a neighbour overlapping it stays where it is,
+## and whatever lies in the overlap goes with the one dragged, like everything else in its box)
+## (mask: LASSO - only these cells of the box (Vector2i -> true) and what is on them move; empty: the whole box)
+func _move_area(r: Rect2i, to: Vector2i, only_place: String = "", mask: Dictionary = {}) -> void:
+	var tw: int = area["tw"]; var th: int = area["th"]
+	var d = to - r.position
+	if d == Vector2i.ZERO:
+		return
+	if to.x < 0 or to.y < 0 or to.x + r.size.x > tw or to.y + r.size.y > th:
+		_say("It does not fit there: part of it would be off the map. Drop it a little further in.")
+		return
+	var dest = Rect2i(to, r.size)
+	var swap = move_swap and not dest.intersects(r)      # (a box moved onto part of itself can only cover)
+	_say("Moving %d x %d cells..." % [r.size.x, r.size.y])
+	end_stroke()
+	var dp = Vector2(d) * 8.0
+	var box = Rect2(Vector2(r.position) * 8.0, Vector2(r.size) * 8.0)
+	var box2 = Rect2(Vector2(dest.position) * 8.0, Vector2(dest.size) * 8.0)
+	# where a spot goes: in the box picked up +dp; (SWAP) in the box it lands on -dp; else nowhere (null)
+	var in_mask = func(v: Vector2, off: Vector2i) -> bool:
+		return mask.is_empty() or mask.has(Vector2i(int(floor(v.x / 8.0)), int(floor(v.y / 8.0))) - off)
+	var shift = func(x, y):
+		var v = Vector2(float(x), float(y))
+		if box.has_point(v) and in_mask.call(v, Vector2i.ZERO):
+			return dp
+		if swap and box2.has_point(v) and in_mask.call(v, d):
+			return -dp
+		return null
+	# 1. the cells: all read first (the old and the new box can overlap)
+	var src = []
+	var dst = []
+	var at_src = []
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			if not mask.is_empty() and not mask.has(Vector2i(x, y)):
+				continue
+			at_src.append(Vector2i(x, y))
+			src.append(cell_at(x, y))
+			if swap:
+				dst.append(cell_at(x + d.x, y + d.y))
+	if swap:
+		for j in dst.size():
+			put(at_src[j].x, at_src[j].y, dst[j])
+	else:
+		var covered = {}
+		for q in mask:
+			covered[q + d] = true
+		var fill = _natural_fill(r, dest, mask, covered)
+		for at in fill:
+			put(at.x, at.y, fill[at])
+	for j in src.size():
+		put(at_src[j].x + d.x, at_src[j].y + d.y, src[j])
+	end_stroke()
+	var cell_step: Dictionary = undo.pop_back() if not undo.is_empty() and undo.back().has("cells") else {}
+	# 2. everything on it
+	var p = Mods.patch(key)
+	var snap = {}
+	for k in ["enemies_add", "enemies_del", "people_add", "people_del", "doors_add", "doors_del", "items", "items_del", "zones", "triggers", "moods", "places", "rocks_add", "rocks_del"]:
+		snap[k] = p[k].duplicate(true)
+	var ob = _objects()
+	var counts = {"foes": 0, "people": 0, "doors": 0, "things": 0, "places": 0}
+	# the game's places whose corner is in a box: their own people come with them by themselves
+	var moved_places = {}
+	var base_people = []
+	if key.begins_with("land/"):
+		var kp = key.split("/")
+		var L = Assets.land(int(kp[1]))
+		var regs: Array = L.get("regions", [])
+		if int(kp[2]) < regs.size():
+			for m in regs[int(kp[2])].get("maps", []):
+				var sv = shift.call(m[1], m[2])
+				if only_place != "" and str(m[0]) != only_place:
+					sv = null
+				if sv != null:
+					p["places"][str(m[0])] = [float(m[1]) + sv.x, float(m[2]) + sv.y]
+					moved_places[str(m[0])] = sv
+					counts["places"] += 1
+		base_people = Assets.land_parts(key)["people"]
+	var place_of = func(o: Dictionary) -> String: return str(o.get("id", "")).get_slice(":", 0)
+	var used = {}
+	# foes (a zone's own come with the zone)
+	for f in ob["foes"]:
+		var sv = shift.call(f["x"], f["y"])
+		if f.get("zone", false) or sv == null:
+			continue
+		var fp = Vector2(float(f["x"]), float(f["y"]))
+		var hit = -1
+		var ea: Array = p["enemies_add"]
+		for i in ea.size():
+			if not used.has("e%d" % i) and Vector2(float(ea[i][2]), float(ea[i][3])).distance_to(fp) <= 1.0:
+				hit = i; break
+		if hit >= 0:
+			ea[hit][2] = float(ea[hit][2]) + sv.x; ea[hit][3] = float(ea[hit][3]) + sv.y
+			used["e%d" % hit] = true
+		else:
+			p["enemies_del"].append([fp.x, fp.y])
+			ea.append([int(f["type"]), int(f["set"]), fp.x + sv.x, fp.y + sv.y, int(f.get("lv", 1))])
+			used["e%d" % (ea.size() - 1)] = true
+		counts["foes"] += 1
+	# people
+	for q in ob["people"]:
+		var sv = shift.call(q["x"], q["y"])
+		if sv == null:
+			continue
+		var qp = Vector2(float(q["x"]), float(q["y"]))
+		var hit = -1
+		var pa: Array = p["people_add"]
+		for i in pa.size():
+			if not used.has("p%d" % i) and Vector2(float(pa[i]["x"]), float(pa[i]["y"])).distance_to(qp) <= 1.0:
+				hit = i; break
+		if hit >= 0:
+			pa[hit]["x"] = float(pa[hit]["x"]) + sv.x; pa[hit]["y"] = float(pa[hit]["y"]) + sv.y
+			used["p%d" % hit] = true
+		elif not moved_places.has(place_of.call(q)):
+			p["people_del"].append([qp.x, qp.y])
+			var nq: Dictionary = q.duplicate(true)
+			nq["x"] = qp.x + sv.x; nq["y"] = qp.y + sv.y
+			pa.append(nq)
+			used["p%d" % (pa.size() - 1)] = true
+		counts["people"] += 1
+	# people taken away from a place that moved: taken away at its new spot too
+	for dl in p["people_del"]:
+		for bq in base_people:
+			var bk = place_of.call(bq)
+			if moved_places.has(bk) and Vector2(float(bq["x"]), float(bq["y"])).distance_to(Vector2(float(dl[0]), float(dl[1]))) <= 6.0:
+				var sv2: Vector2 = moved_places[bk]
+				dl[0] = float(dl[0]) + sv2.x; dl[1] = float(dl[1]) + sv2.y
+				break
+	# treasure, zones, moods, event boxes (all your own)
+	for it in p["items"]:
+		var sv = shift.call(it["x"], it["y"])
+		if sv != null:
+			it["x"] = float(it["x"]) + sv.x; it["y"] = float(it["y"]) + sv.y
+			counts["things"] += 1
+	for kz in ["zones", "triggers", "moods"]:
+		for z in p[kz]:
+			var zr: Array = z["rect"]
+			var sv = shift.call((float(zr[0]) + float(zr[2])) / 2.0, (float(zr[1]) + float(zr[3])) / 2.0)
+			if sv != null:
+				z["rect"] = [float(zr[0]) + sv.x, float(zr[1]) + sv.y, float(zr[2]) + sv.x, float(zr[3]) + sv.y]
+				counts["things"] += 1
+	# rocks: yours moved; the game's own (unless their whole place moved - they go with it) taken away and put back as yours
+	var ra: Array = p["rocks_add"]
+	var new_rocks = []
+	for rr in _rocks():
+		var rc: Vector2 = (rr["pic"] as Rect2).get_center()
+		var sv = shift.call(rc.x, rc.y)
+		if sv == null or (not bool(rr["own"]) and moved_places.has(str(rr["place"]))):
+			continue
+		if bool(rr["own"]):
+			if int(rr["i"]) < ra.size():
+				ra[int(rr["i"])]["x"] = float(ra[int(rr["i"])]["x"]) + sv.x; ra[int(rr["i"])]["y"] = float(ra[int(rr["i"])]["y"]) + sv.y
+		else:
+			p["rocks_del"].append([str(rr["place"]), int(rr["n"])])
+			new_rocks.append(_rock_entry(rr, (rr["pic"] as Rect2).position + sv))
+		counts["things"] += 1
+	ra.append_array(new_rocks)
+	# doors: in a box (moved), or anywhere on this map leading into one (they arrive at its new spot)
+	for ex in ob["doors"]:
+		var rc: Array = ex["rect"]
+		var c = Vector2((float(rc[0]) + float(rc[2])) / 2.0, (float(rc[1]) + float(rc[3])) / 2.0)
+		var to_key = str(Game.planet.nodes[int(ex["to"])]["key"]) if ex.has("to") else key
+		var ar: Array = ex.get("arrive", [])
+		var cs = shift.call(c.x, c.y)
+		var as_ = shift.call(ar[0], ar[1]) if to_key == key and ar.size() >= 2 else null
+		if cs == null and as_ == null:
+			continue
+		var nrect = [float(rc[0]) + cs.x, float(rc[1]) + cs.y, float(rc[2]) + cs.x, float(rc[3]) + cs.y] if cs != null else rc.duplicate()
+		var narr = [float(ar[0]) + as_.x, float(ar[1]) + as_.y] if as_ != null else ar.duplicate()
+		var hit = -1
+		var da: Array = p["doors_add"]
+		for i in da.size():
+			var drc: Array = da[i]["rect"]
+			if not used.has("d%d" % i) and Vector2((float(drc[0]) + float(drc[2])) / 2.0, (float(drc[1]) + float(drc[3])) / 2.0).distance_to(c) <= 1.0:
+				hit = i; break
+		if hit >= 0:
+			da[hit]["rect"] = nrect; da[hit]["arrive"] = narr
+			used["d%d" % hit] = true
+		else:
+			p["doors_del"].append([c.x, c.y])
+			var nd = {"rect": nrect, "to": to_key, "arrive": narr}
+			for nk in ["need_item", "need_flag", "need_level", "locked_msg", "take_item"]:
+				if ex.has(nk):
+					nd[nk] = ex[nk]
+			da.append(nd)
+			used["d%d" % (da.size() - 1)] = true
+		counts["doors"] += 1
+	if counts["places"] > 0 and key.begins_with("land/"):
+		Assets.reset_land(int(key.split("/")[1]))
+	_rebuild_world()
+	_mini_paint([r, dest])
+	var step = {"patch": snap}
+	if cell_step.has("cells"):
+		step["cells"] = cell_step["cells"]
+	undo.append(step)
+	redo.clear()
+	dirty = true
+	_say("%s %d x %d cells with %d foes, %d people, %d doors, %d other things and %d of the game's places. SAVE to keep it - Ctrl+Z undoes it all." % [
+		"Swapped" if swap else "Moved", r.size.x, r.size.y, counts["foes"], counts["people"], counts["doors"], counts["things"], counts["places"]])
+
+## what a moved part leaves behind: the ground round it, as it is there - patches of the plain ground near the box
+## (nothing on the upper layers, walked on or not like round the box, its ground tiles among those at the box's
+## edge) copied in, 16 x 16 cells each, picked at random and kept on the game's 2-cell grid (so the grass mixes as
+## the map's own does, not one tile again and again). Smaller patches if there is little room; one cell at worst.
+## (covered: with LASSO, the cells the moved shape lands on - every other cell of it is filled; else the box it lands on)
+func _natural_fill(r: Rect2i, dest: Rect2i, mask: Dictionary = {}, covered: Dictionary = {}) -> Dictionary:
+	var tw: int = area["tw"]; var th: int = area["th"]
+	var cells: Array = area["land"]["cells"]
+	var walk: PackedByteArray = area["walk"]
+	var out = {}
+	var todo = []
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			var q = Vector2i(x, y)
+			if not mask.is_empty():
+				if mask.has(q) and not covered.has(q):
+					todo.append(q)
+			elif not dest.has_point(q):
+				todo.append(q)
+	if todo.is_empty():
+		return out
+	# what is round the box: its plain ground's tiles (4 cells deep), and whether that ground is walked on
+	var wn = [0, 0]
+	var ground = {}
+	for y in range(r.position.y - 4, r.end.y + 4):
+		for x in range(r.position.x - 4, r.end.x + 4):
+			if x < 0 or y < 0 or x >= tw or y >= th or r.has_point(Vector2i(x, y)):
+				continue
+			var i = y * tw + x
+			if (cells[1][i] == 0 or cells[1][i] & (1 << 19)) and cells[2][i] == 0 and cells[3][i] == 0 and cells[4][i] == 0:      # (plain: a moving layer over it - the sea's waves - is plain too)
+				ground[cells[0][i]] = true
+				wn[walk[i] & 1] += 1      # (the plain ground's own: trees and cliffs round it are walls, the grass is not)
+	var wb = 1 if wn[1] >= wn[0] else 0
+	# the plain ground near the box (96 cells round it), as a summed table: a patch is good if all of it is plain
+	var band = Rect2i(r.position - Vector2i(96, 96), r.size + Vector2i(192, 192)).intersection(Rect2i(0, 0, tw, th))
+	var bw = band.size.x; var bh = band.size.y
+	var sat = PackedInt32Array(); sat.resize((bw + 1) * (bh + 1))
+	for y in bh:
+		var row = 0
+		for x in bw:
+			var gx = band.position.x + x; var gy = band.position.y + y
+			var i = gy * tw + gx
+			var ok = 0
+			if not r.has_point(Vector2i(gx, gy)) and (walk[i] & 1) == wb and ground.has(cells[0][i]) and (cells[1][i] == 0 or cells[1][i] & (1 << 19)) and cells[2][i] == 0 and cells[3][i] == 0 and cells[4][i] == 0:
+				ok = 1
+			row += ok
+			sat[(y + 1) * (bw + 1) + x + 1] = sat[y * (bw + 1) + x + 1] + row
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash(str(r))
+	for size in [16, 8, 4, 2]:
+		var spots = []
+		for y in range(0, bh - size + 1, 2):
+			for x in range(0, bw - size + 1, 2):
+				if ((band.position.x + x) - r.position.x) % 2 != 0 or ((band.position.y + y) - r.position.y) % 2 != 0:
+					continue
+				var s = sat[(y + size) * (bw + 1) + x + size] - sat[y * (bw + 1) + x + size] - sat[(y + size) * (bw + 1) + x] + sat[y * (bw + 1) + x]
+				if s == size * size:
+					spots.append(Vector2i(band.position.x + x, band.position.y + y))
+					if spots.size() >= 600:
+						break
+			if spots.size() >= 600:
+				break
+		if spots.is_empty():
+			continue
+		var pick = {}
+		for at in todo:
+			var blk = Vector2i((at.x - r.position.x) / size, (at.y - r.position.y) / size)
+			if not pick.has(blk):
+				pick[blk] = spots[rng.randi_range(0, spots.size() - 1)]
+			var src: Vector2i = pick[blk] + Vector2i((at.x - r.position.x) % size, (at.y - r.position.y) % size)
+			out[at] = cell_at(src.x, src.y)
+		return out
+	var one = _ring_cell(r)
+	for at in todo:
+		out[at] = one
+	return out
+
+## the cell seen most often just round a box (what a moved part leaves behind when there is no plain ground near)
+func _ring_cell(r: Rect2i) -> Array:
+	var n = {}
+	var best = []
+	var bn = 0
+	for x in range(r.position.x - 1, r.end.x + 1):
+		for y in [r.position.y - 1, r.end.y]:
+			if _inside(x, y):
+				var v = cell_at(x, y); var k = str(v); n[k] = int(n.get(k, 0)) + 1
+				if n[k] > bn: bn = n[k]; best = v
+	for y in range(r.position.y, r.end.y):
+		for x in [r.position.x - 1, r.end.x]:
+			if _inside(x, y):
+				var v = cell_at(x, y); var k = str(v); n[k] = int(n.get(k, 0)) + 1
+				if n[k] > bn: bn = n[k]; best = v
+	return best if not best.is_empty() else [0, 0, 0, 0, 0, 0]
+
+## the map resized (kept in the map's changes; the game reads it too): 8 to 5000 cells each way. Bigger: new room
+## right and below (sea beside the planet, black beside the rooms). Smaller: cut off right and below - only when
+## nothing is there that is hard to find again (places, doors or doors leading there, foes, people, treasure, zones,
+## moods, event boxes); else it says what and where, and nothing changes. Land there is cut off with it (it says how
+## much). Ctrl+Z puts the old size back, with the edited cells that were cut off
+func _resize_map(w: int, h: int) -> void:
+	var tw: int = area["tw"]; var th: int = area["th"]
+	w = clampi(w, 8, 5000); h = clampi(h, 8, 5000)
+	if w == tw and h == th:
+		_say("It is already %d x %d cells." % [tw, th])
+		return
+	end_stroke()
+	if w < tw or h < th:
+		var keep = Rect2(0, 0, w * 8, h * 8)
+		var found = []
+		var out_pt = func(x, y) -> bool: return not keep.has_point(Vector2(float(x), float(y)))
+		var out_rc = func(r: Rect2) -> bool: return r.end.x > keep.end.x or r.end.y > keep.end.y
+		var pl = []
+		for pt in area["land"].get("parts", []):
+			if pt.size() > 3 and out_rc.call(pt[0]):
+				pl.append("%s %s" % [str(pt[1]), str(pt[3])])
+		if not pl.is_empty():
+			found.append("%d places (%s%s)" % [pl.size(), ", ".join(pl.slice(0, 4)), "..." if pl.size() > 4 else ""])
+		var ob = _objects()
+		var nf = 0
+		for f in ob["foes"]:
+			if not f.get("zone", false) and out_pt.call(f["x"], f["y"]): nf += 1
+		var np = 0
+		for q in ob["people"]:
+			if out_pt.call(q["x"], q["y"]): np += 1
+		var ni = 0
+		for it in ob["items"]:
+			if out_pt.call(it["x"], it["y"]): ni += 1
+		var nd = 0
+		for ex in ob["doors"]:
+			var rc: Array = ex["rect"]; var ar: Array = ex.get("arrive", [])
+			if out_pt.call(rc[2], rc[3]) or (ar.size() >= 2 and out_pt.call(ar[0], ar[1])): nd += 1
+		var nz = 0
+		var pp = Mods.patch(key)
+		for kz in ["zones", "triggers", "moods"]:
+			for z in pp[kz]:
+				if out_pt.call(z["rect"][2], z["rect"][3]): nz += 1
+		for c in [["foes", nf], ["people", np], ["treasures", ni], ["doors (or doors leading there)", nd], ["zones / moods / event boxes", nz]]:
+			if int(c[1]) > 0:
+				found.append("%d %s" % [int(c[1]), c[0]])
+		if not found.is_empty():
+			_say("Not resized - the part that would be cut off still has: %s. Move or clear them first." % "; ".join(found))
+			return
+	# land cut off with it: ground walked on, or anything on the upper layers (sea and black are not counted)
+	var nl = 0
+	if w < tw or h < th:
+		var cells: Array = area["land"]["cells"]
+		var walk: PackedByteArray = area["walk"]
+		for y in th:
+			var x0 = w if y < h else 0
+			for x in range(x0, tw):
+				var i = y * tw + x
+				if (walk[i] & 1) or cells[2][i] != 0 or cells[3][i] != 0 or cells[4][i] != 0:
+					nl += 1
+	Mods.backup()      # (as SAVE does: the map as it was can be put back)
+	undo.append(_set_size([w, h], {}))
+	redo.clear()
+	_say("The map is %d x %d cells now (saved - a backup of before is kept).%s Ctrl+Z puts it back." % [w, h, (" %d cells of land were cut off with it." % nl) if nl > 0 else ""])
+
+## the map's size set ([]: the map's own), the edited cells past it taken out and the given ones put back; saved
+## at once, the map read again (the undo and redo lists kept). Gives back the undo step: the size before and the
+## cells taken out
+func _set_size(size: Array, restore: Dictionary) -> Dictionary:
+	var p = Mods.patch(key)
+	var before: Array = p["size"].duplicate()
+	p["size"] = size.duplicate()
+	var cut = {}
+	if not size.is_empty():
+		for ck in p["cells"].keys():      # (changes to cells that are cut off go too - kept in the undo step)
+			var xy = str(ck).split(",")
+			if int(xy[0]) >= int(size[0]) or int(xy[1]) >= int(size[1]):
+				cut[ck] = p["cells"][ck]
+				p["cells"].erase(ck)
+	for ck in restore:
+		p["cells"][ck] = restore[ck]
+	Mods.save_patch(key)
+	Assets._areas.erase(key)
+	if key.begins_with("land/"):
+		Assets.reset_land(int(key.split("/")[1]))
+	var keep_cam = [cam.position, cam.zoom]
+	var keep_undo = [undo.duplicate(), redo.duplicate()]
+	load_map(key)
+	undo = keep_undo[0]; redo = keep_undo[1]
+	Game.planet.build_land(0, 1)
+	cam.position = keep_cam[0]; cam.zoom = keep_cam[1]
+	_refresh_side()
+	return {"resize": before, "cut": cut}
+
+# ------------------------------------------------------------------ GUIDE: a picture of your own over the map
+func _guide_load() -> void:
+	guide = {}
+	guide_tex = null
+	var j = Assets.json("user://map_guide.json")
+	if j is Dictionary and FileAccess.file_exists(str(j.get("path", ""))):
+		guide = j
+		var img = Image.load_from_file(str(j["path"]))
+		if img != null:
+			guide_tex = ImageTexture.create_from_image(img)
+
+func _guide_save() -> void:
+	if guide.is_empty():
+		return
+	var f = FileAccess.open("user://map_guide.json", FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(guide))
+
+func _guide_choose() -> void:
+	var fd = FileDialog.new()
+	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.filters = PackedStringArray(["*.png, *.jpg, *.jpeg, *.webp ; Pictures"])
+	fd.title = "A picture to line the map up with"
+	fd.use_native_dialog = true      # the computer's own file picker (the Mac's Finder, Windows Explorer)
+	ui.add_child(fd)
+	fd.file_selected.connect(func(path):
+		var img = Image.load_from_file(path)
+		if img == null:
+			_say("That picture could not be read.")
+			return
+		guide_tex = ImageTexture.create_from_image(img)
+		guide = {"path": path, "x": 0.0, "y": 0.0, "w": float(area["w"]), "h": float(area["w"]) * img.get_height() / maxf(1.0, img.get_width()), "alpha": 0.4, "on": true}
+		_guide_save()
+		_refresh_side()
+		_say("Guide laid over the map. Drag it with GUIDE; BIGGER / SMALLER on the right."))
+	fd.canceled.connect(fd.queue_free)
+	fd.popup_centered_ratio(0.7)
+
+func _guide_scale(f: float) -> void:
+	if guide.is_empty():
+		return
+	_guide_undo_point()
+	var cx = float(guide["x"]) + float(guide["w"]) / 2.0; var cy = float(guide["y"]) + float(guide["h"]) / 2.0
+	guide["w"] = float(guide["w"]) * f; guide["h"] = float(guide["h"]) * f
+	guide["x"] = cx - float(guide["w"]) / 2.0; guide["y"] = cy - float(guide["h"]) / 2.0
+	_guide_save()
+	overlay.queue_redraw()
+
+## SELECT: every place of the game - its box (what its name, music and own people cover), its name, its number in
+## the game (places with one name are the game's separate maps: a farm, a maze, a lair) and its song; the one
+## chosen thick, and where it goes while dragged
+## does a story scene of the game go to this place (zone_area)? (the opening's places, for now)
+func _story_uses(pk: String) -> bool:
+	for s in Story.event("story:intro").get("steps", []):
+		if str(s.get("do", "")) == "warp":
+			for pt in area["land"].get("parts", []):
+				if pt.size() > 3 and str(pt[3]) == pk and (pt[0] as Rect2).has_point(Vector2(float(s["x"]), float(s["y"]))):
+					return true
+	return false
+
+## a place's name (as _draw_places writes it, at its box's top left) under a spot: [rect, name, song, key] or []
+func _place_label_at(w: Vector2) -> Array:
+	var font = ThemeDB.fallback_font
+	var fs = int(clampf(9.0 / cam.zoom.x, 6, 160))
+	var best = []
+	var ba = INF
+	for pt in area["land"].get("parts", []):
+		if pt.size() < 4:
+			continue
+		var rc: Rect2 = pt[0]
+		var tag = "%s  %s%s" % [str(pt[1]) if str(pt[1]) != "" else "?", str(pt[3]), ("  \u266A%d" % int(pt[2])) if int(pt[2]) >= 0 else ""]
+		var band = Rect2(rc.position, Vector2(font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 4.0 / cam.zoom.x, fs * 1.6))
+		if band.has_point(w) and rc.get_area() < ba:      # (overlapping names: the smaller place)
+			ba = rc.get_area(); best = pt
+	return best
+
+func _draw_places() -> void:
+	var font = ThemeDB.fallback_font
+	var fs = int(clampf(9.0 / cam.zoom.x, 6, 160))
+	var lw = 1.0 / cam.zoom.x
+	var sel_key = str(selected.get("obj", {}).get("key", "")) if str(selected.get("kind", "")) == "place" else ""
+	for pt in area["land"].get("parts", []):
+		if pt.size() < 4:
+			continue
+		var rc: Rect2 = pt[0]
+		var nm = str(pt[1]) if str(pt[1]) != "" else "?"
+		var col = Color.from_hsv(float(hash(nm) % 360) / 360.0, 0.55, 1.0)
+		var mine = str(pt[3]) == sel_key
+		overlay.draw_rect(rc, Color(col.r, col.g, col.b, 0.22 if mine else 0.06))
+		overlay.draw_rect(rc, col if not mine else Color(1, 1, 0.3), false, lw * (3.0 if mine else 1.0))
+		var tag = "%s  %s%s" % [nm, str(pt[3]), ("  \u266A%d" % int(pt[2])) if int(pt[2]) >= 0 else ""]
+		_ov_text(font, rc.position + Vector2(2 * lw, fs + 2 * lw), tag, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	if not move_place.is_empty() and mouse_cell.x >= 0:      # MOVE: the place being dragged, where it would land
+		var mbx: Rect2i = move_place["box"]
+		overlay.draw_rect(Rect2(Vector2(mouse_cell - move_place["grab"]) * 8.0, Vector2(mbx.size) * 8.0), Color(0.4, 1, 0.5, 0.15))
+		overlay.draw_rect(Rect2(Vector2(mouse_cell - move_place["grab"]) * 8.0, Vector2(mbx.size) * 8.0), Color(0.4, 1, 0.5), false, lw * 2.0)
+	if sel_key != "" and selected.has("drag_to"):
+		var r0: Rect2 = selected["obj"]["rect"]
+		var at: Vector2 = selected["drag_to"]
+		overlay.draw_rect(Rect2(at - r0.size / 2.0, r0.size), Color(1, 1, 0.3), false, lw * 2.0)
+
+func _draw_move_and_guide() -> void:
+	if guide_tex != null and bool(guide.get("on", true)):
+		overlay.draw_texture_rect(guide_tex, Rect2(float(guide["x"]), float(guide["y"]), float(guide["w"]), float(guide["h"])), false, Color(1, 1, 1, float(guide.get("alpha", 0.4))))
+	if tool != "MOVE":
+		return
+	var lw = 1.5 / cam.zoom.x
+	if not move_mask.is_empty() and move_box.size.x > 0:      # LASSO: the cells picked up, and where they would land
+		var off = Vector2(mouse_cell - move_box.position) * 8.0 if mouse_cell.x >= 0 else Vector2.ZERO
+		for q in move_mask:
+			overlay.draw_rect(Rect2(Vector2(q) * 8.0, Vector2(8, 8)), Color(1, 0.6, 0.2, 0.3))
+			if mouse_cell.x >= 0:
+				overlay.draw_rect(Rect2(Vector2(q) * 8.0 + off, Vector2(8, 8)), Color(0.4, 1, 0.5, 0.3))
+		return
+	if move_lasso and dragging and lasso_pts.size() > 1:      # LASSO: the line being drawn
+		var pts = PackedVector2Array()
+		for q in lasso_pts:
+			pts.append(Vector2(q) * 8.0 + Vector2(4, 4))
+		pts.append(pts[0])
+		overlay.draw_polyline(pts, Color(1, 0.6, 0.2), lw * 2.0)
+		return
+	if move_box.size.x > 0:
+		var a = Rect2(Vector2(move_box.position) * 8.0, Vector2(move_box.size) * 8.0)
+		overlay.draw_rect(a, Color(1, 0.6, 0.2, 0.18))
+		overlay.draw_rect(a, Color(1, 0.6, 0.2), false, lw)
+		if mouse_cell.x >= 0:
+			overlay.draw_rect(Rect2(Vector2(mouse_cell) * 8.0, a.size), Color(0.4, 1, 0.5), false, lw)
+	elif dragging and drag_from.x >= 0:
+		var a2 = Vector2(mini(drag_from.x, mouse_cell.x), mini(drag_from.y, mouse_cell.y)) * 8.0
+		var b2 = Vector2(maxi(drag_from.x, mouse_cell.x) + 1, maxi(drag_from.y, mouse_cell.y) + 1) * 8.0
+		overlay.draw_rect(Rect2(a2, b2 - a2), Color(1, 0.6, 0.2, 0.18))
+		overlay.draw_rect(Rect2(a2, b2 - a2), Color(1, 0.6, 0.2), false, lw)
+
 func _paste(c: Vector2i) -> void:
 	if clipboard.is_empty():
 		_say("Copy something first (COPY).")
 		return
-	_lay(c, int(clipboard["w"]), clipboard["cells"])
+	_lay(c, int(clipboard["w"]), clipboard["cells"], clipboard.get("mask", []))
 	end_stroke()
 	_say("Pasted.")
-
-func _fill(a: Vector2i, b: Vector2i) -> void:
-	var r = _box(a, b)
-	for y in range(r.position.y, r.end.y):
-		for x in range(r.position.x, r.end.x):
-			var v = cell_at(x, y)
-			if last_brush == "STAMP":
-				v = brush_cell.duplicate()
-			else:
-				v[layer] = brush_tile
-			put(x, y, v)
-	end_stroke()
-	_say("Filled %d x %d." % [r.size.x, r.size.y])
 
 # ------------------------------------------------------------------ foes, people, treasure, doors
 func _objects() -> Dictionary:
@@ -854,6 +1671,590 @@ func _objects() -> Dictionary:
 	out["items"] = its
 	return out
 
+# ------------------------------------------------------------------ SMART - EDGE: the game's shores built where water meets land
+## content/edges.json - for each edge (beach, lake, waterfall, foam) the game's own pieces for it, picked from one place
+## where the game has that shore clean: in rings from where water meets land (l1, l2 the land's first and second row,
+## w1, w2 the water's), each by which of the 8 ways the other kind lies (the sides; a corner only when neither side next
+## to it has the other kind: an outside corner) - "<ring>:<ways>". What is water: rule "walls" (not walked on: the sea),
+## "ground" (its own ground tiles: a lake's), "anim" (its own moving tiles: a waterfall's). Cut from EARTH; the editor
+## only reads it
+var edge_extra = {}             # cells this stroke made water (a jutting bit of land filled in)
+var edge_bits = PackedByteArray()      # how many bits are set in 0..8191 (5 x 5 patterns compared fast)
+const EDGE_WAYS = [Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(-1, 1), Vector2i(0, 1), Vector2i(1, 1)]
+func _edges() -> void:
+	if edges != null:
+		return
+	var j = Assets.json(Assets.exe_dir().path_join("content/edges.json"))
+	edges = j.get("edges", []) if j is Dictionary else []
+	for e in edges:
+		var g = {}
+		for t in e.get("water_ground", []):
+			g[int(t)] = true
+		var a = {}
+		for t in e.get("water_anim", []):
+			a[int(t)] = true
+		e["ground_set"] = g
+		e["anim_set"] = a
+		var fs = {}
+		for t in e.get("fall", []):
+			fs[int(t)] = true
+		e["fall_set"] = fs
+		var ks = {}
+		for k in e.get("keys", []):
+			ks[int(k)] = true
+		e["key_set"] = ks
+	edge_bits.resize(8192)
+	for v in 8192:
+		var c = 0; var x = v
+		while x:
+			c += x & 1; x >>= 1
+		edge_bits[v] = c
+
+## that edge's water here (as it was before this stroke)
+func _edge_water(e: Dictionary, q: Vector2i) -> bool:
+	if edge_extra.has(q):
+		return true
+	var tw: int = area["tw"]
+	var qx = clampi(q.x, 0, tw - 1); var qy = clampi(q.y, 0, int(area["th"]) - 1)
+	var i = qy * tw + qx
+	var v: Array = stroke[i][0] if stroke.has(i) else cell_at(qx, qy)
+	match str(e.get("rule", "walls")):
+		"match":      # (its own water biome's cells, or water's moving tiles / the ground water lies on)
+			if e["key_set"].has(((int(v[0]) & 0x8FFFF) << 20) | (int(v[1]) & 0x8FFFF)):
+				return true
+			return e["anim_set"].has(int(v[1]) & 0x8FFFF) or e["ground_set"].has(int(v[0]) & 0x8FFFF)
+		"ground":
+			return e["ground_set"].has(int(v[0]) & 0xFFFF)
+		"anim":
+			return e["anim_set"].has(int(v[1]) & 0x8FFFF)
+	return (int(v[5]) & 1) == 0
+
+## the 8 ways as the pieces are kept: sides as they are, a corner only when neither side next to it has the other kind
+static func _edge_ways(m: int) -> int:
+	var n = (m >> 1) & 1; var w = (m >> 3) & 1; var e = (m >> 4) & 1; var s = (m >> 6) & 1
+	var k = m & 0b01011010
+	if not n and not w: k |= m & 1
+	if not n and not e: k |= m & 4
+	if not s and not w: k |= m & 32
+	if not s and not e: k |= m & 128
+	return k
+
+## the brush: each cell within the edge's rings (how many rows from where water meets land, on its side) takes the
+## game's piece for its ring and the ways the other kind lies - the often-used ones more often; a shape the game has no
+## piece for: the nearest it has. The cells chosen first, then laid (a laid one must not change its neighbours' choice)
+func _edge_brush(c: Vector2i) -> void:
+	if edges == null or edge_i < 0 or edge_i >= edges.size():
+		return
+	var e: Dictionary = edges[edge_i]
+	if e.has("lib"):
+		_edge_brush_match(c, e)
+		return
+	if str(e.get("rule", "")) == "fall":
+		_edge_brush_fall(c, e)
+		return
+	if str(e.get("rule", "")) == "foam":
+		_edge_brush_foam(c, e)
+		return
+	var pieces: Dictionary = e["pieces"]
+	var far_land = int(e.get("land", 2)); var far_water = int(e.get("water", 2))
+	var rr = edge_size / 2.0
+	var picks = {}
+	for dy in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+		for dx in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+			if Vector2(dx, dy).length() > rr:
+				continue
+			var q = c + Vector2i(dx, dy)
+			if not _inside(q.x, q.y):
+				continue
+			var wet = _edge_water(e, q)
+			if not wet and bool(e.get("rock_only", false)):      # (a lake's edge is the foot of a cliff: grass beside it stays)
+				var qi = q.y * int(area["tw"]) + q.x
+				var qv: Array = stroke[qi][0] if stroke.has(qi) else cell_at(q.x, q.y)
+				if int(qv[5]) & 1:
+					continue
+			var far = far_water if wet else far_land
+			var d = 0; var m = 0
+			for dd in range(1, far + 1):
+				for b in 8:
+					for t in range(1, dd + 1):
+						if _edge_water(e, q + EDGE_WAYS[b] * t) != wet:
+							m |= 1 << b
+							break
+				if m != 0:
+					d = dd
+					break
+			if d == 0:
+				continue
+			var pre = "%s%d:" % ["w" if wet else "l", d]
+			var key2 = pre + str(_edge_ways(m))
+			if not pieces.has(key2):
+				var best = 99
+				var want = _edge_ways(m)
+				for k in pieces:
+					if not str(k).begins_with(pre):
+						continue
+					var x2 = int(str(k).get_slice(":", 1)) ^ want
+					var n = 0
+					while x2:
+						n += x2 & 1; x2 >>= 1
+					if n < best:
+						best = n; key2 = k
+				if not pieces.has(key2):
+					continue
+			var opts: Array = pieces[key2]
+			var tot = 0
+			for o in opts:
+				tot += int(o[1])
+			var r = absi(hash([q.x, q.y])) % maxi(1, tot)
+			for o in opts:
+				r -= int(o[1])
+				if r < 0:
+					var cv: Array = (o[0] as Array).map(func(v): return int(v))
+					if pre.left(2) in e.get("overlay", []):      # (only its moving layer over your cell - a splash on your own rock)
+						var qi = q.y * int(area["tw"]) + q.x
+						var own: Array = (stroke[qi][0] if stroke.has(qi) else cell_at(q.x, q.y)).duplicate()
+						own[1] = cv[1]
+						cv = own
+					picks[q] = cv
+					break
+	for q in picks:
+		put(q.x, q.y, picks[q])
+
+## an edge kept as a library ("lib": the lake's): the game's cells from one place, each with which of the 5 x 5 round
+## it are water (25 bits); each cell near the shore on the water side takes the one whose pattern is nearest its own
+## (the one the game used most among them - next to each other they agree). Too unlike any: untouched
+func _edge_brush_match(c: Vector2i, e: Dictionary) -> void:
+	var lib: Array = e["lib"]
+	var far_land = int(e.get("land", 0)); var far_water = int(e.get("water", 2))
+	var rr = edge_size / 2.0
+	var picks = {}
+	# a lone bit of land jutting into the water (water on 5 or more of its 8 sides): water too, so the shore runs smooth
+	var tw: int = area["tw"]
+	for dy in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+		for dx in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+			var q = c + Vector2i(dx, dy)
+			if Vector2(dx, dy).length() > rr or not _inside(q.x, q.y) or _edge_water(e, q):
+				continue
+			var n = 0; var like = Vector2i(-1, -1)
+			for w in EDGE_WAYS:
+				var wq = q + w
+				var wv: Array = stroke[wq.y * tw + wq.x][0] if stroke.has(wq.y * tw + wq.x) else cell_at(clampi(wq.x, 0, tw - 1), clampi(wq.y, 0, int(area["th"]) - 1))
+				if _edge_water(e, wq) and (int(wv[0]) & 0xFFFF) >= 365 and (int(wv[0]) & 0xFFFF) <= 377:      # (open water only - not a rim already laid)
+					n += 1
+					if like.x < 0: like = q + w
+			if n >= 5:
+				var li = like.y * tw + like.x
+				var lv: Array = stroke[li][0] if stroke.has(li) else cell_at(like.x, like.y)
+				put(q.x, q.y, lv.duplicate())
+				edge_extra[q] = true      # (counted as water from now on in this stroke)
+	for dy in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+		for dx in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+			if Vector2(dx, dy).length() > rr:
+				continue
+			var q = c + Vector2i(dx, dy)
+			if not _inside(q.x, q.y):
+				continue
+			var m = 0; var b = 0
+			for yy in range(-2, 3):
+				for xx in range(-2, 3):
+					if _edge_water(e, q + Vector2i(xx, yy)):
+						m |= 1 << b
+					b += 1
+			var wet = (m >> 12) & 1
+			# more cliff on its right than its left: done as its mirror image (the left's piece, turned over) - both
+			# sides of a lake then alike (the game's own lakes have few pieces for rock on the right)
+			var flip = false
+			if bool(e.get("mirror", false)):
+				var ll = 0; var lr = 0
+				for yy in 5:
+					for xx in [0, 1]:
+						if not ((m >> (yy * 5 + xx)) & 1): ll += 1
+						if not ((m >> (yy * 5 + 4 - xx)) & 1): lr += 1
+				if lr > ll:
+					flip = true
+					var mm = 0
+					for b2 in 25:
+						if (m >> b2) & 1: mm |= 1 << ((b2 / 5) * 5 + 4 - b2 % 5)
+					m = mm
+			# (and more rock below than above: done upside down - the bottom of a lake a reflection of its top; a test)
+			var vflip = false
+			if bool(e.get("mirror_v", false)):
+				var lt = 0; var lb = 0
+				for yy in [0, 1]:
+					for xx in 5:
+						if not ((m >> (yy * 5 + xx)) & 1): lt += 1
+						if not ((m >> ((4 - yy) * 5 + xx)) & 1): lb += 1
+				if lb > lt:
+					vflip = true
+					var mv = 0
+					for b3 in 25:
+						if (m >> b3) & 1: mv |= 1 << ((4 - b3 / 5) * 5 + b3 % 5)
+					m = mv
+			var d = 0
+			for yy in range(-2, 3):
+				for xx in range(-2, 3):
+					if ((m >> ((yy + 2) * 5 + xx + 2)) & 1) != wet:
+						var dd = maxi(absi(xx), absi(yy))
+						d = dd if d == 0 else mini(d, dd)
+			if d == 0 or d > (far_water if wet else far_land):
+				continue
+			var best = 99; var top = []
+			for o in lib:
+				var p = int(o[0])
+				if ((p >> 12) & 1) != wet:
+					continue
+				var x2 = p ^ m
+				var n = edge_bits[x2 & 8191] + edge_bits[x2 >> 13]
+				var g = int(o[1][0]) & 0xFFFF
+				const RING = (1 << 6) | (1 << 7) | (1 << 8) | (1 << 11) | (1 << 13) | (1 << 16) | (1 << 17) | (1 << 18)
+				if g >= 40 and g <= 200 and ((~p & RING) & (m & RING)) != 0:
+					continue      # (a piece with the cliff's rock in it: only where every cell next to it the piece has as rock is rock - else rock juts into the water)
+				if n < best or (n == best and int(o[2]) > int(top[2])):
+					best = n; top = o
+			var plain = top.is_empty() or best > 8 or (int(top[1][0]) & 0xFFFF in range(365, 378))
+			var above = Vector2i(0, 1) if vflip else Vector2i(0, -1)
+			if wet and plain and not _edge_water(e, q + above) and (_edge_water(e, q + Vector2i(-1, 0)) or _edge_water(e, q + Vector2i(1, 0))) and e.has("flat_top"):
+				top = [0, e["flat_top"], 1]      # (cliff straight above: the game's straight-top rim - the flat bits of a steep shore)
+				flip = not _edge_water(e, q + Vector2i(1, 0))      # (rock on its right: turned over - it slopes up to the left there)
+			elif top.is_empty() or best > 8:
+				continue
+			var cv: Array = (top[1] as Array).map(func(v): return int(v))
+			if flip:
+				for k in 5:
+					if cv[k] != 0:
+						cv[k] = cv[k] ^ (1 << 16)
+			if vflip:
+				for k in 5:
+					if cv[k] != 0:
+						cv[k] = cv[k] ^ (1 << 17)
+			picks[q] = cv
+	for q in picks:
+		put(q.x, q.y, picks[q])
+
+## a waterfall's falling water here (its moving tiles on layer 1 - as it was before this stroke)
+func _is_fall(e: Dictionary, q: Vector2i) -> bool:
+	if not _inside(q.x, q.y):
+		return false
+	var i = q.y * int(area["tw"]) + q.x
+	var v: Array = stroke[i][0] if stroke.has(i) else cell_at(q.x, q.y)
+	return (int(v[1]) & (1 << 19)) != 0 and e["fall_set"].has(int(v[1]) & 0xFFFF)
+
+## WATERFALL EDGE - the game's own waterfall (the big one by the lake): its outermost column on each side is one of its
+## soft side pictures (mirrored on the left), the second from the left its own soft column, which follows the falling
+## water's 3-row cycle (the cell's own picture's place in it). The rock under it stays
+func _edge_brush_fall(c: Vector2i, e: Dictionary) -> void:
+	var rr = edge_size / 2.0
+	var sides: Array = e["sides"]
+	var phase: Dictionary = e["phase"]
+	for dy in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+		for dx in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+			var q = c + Vector2i(dx, dy)
+			if Vector2(dx, dy).length() > rr or not _is_fall(e, q):
+				continue
+			var i = q.y * int(area["tw"]) + q.x
+			var v: Array = (stroke[i][1] if stroke.has(i) else cell_at(q.x, q.y)).duplicate()
+			var left = _is_fall(e, q + Vector2i(-1, 0)); var right = _is_fall(e, q + Vector2i(1, 0))
+			var pick = absi(hash([q.x, q.y])) % sides.size()
+			if not left:
+				v[1] = int(sides[pick]) | (1 << 19) | (1 << 16)
+			elif not right:
+				v[1] = int(sides[pick]) | (1 << 19)
+			elif not _is_fall(e, q + Vector2i(-2, 0)):
+				var ph = int(phase.get(str(int(v[1]) & 0xFFFF), posmod(q.y, 3)))
+				v[1] = int(e["inner_left"][ph])
+			else:
+				continue
+			put(q.x, q.y, v)
+
+## foam may go here: water or rock (a splash shows in front of the cliff) - not the fall itself, nor ground walked on
+func _foam_ok(e: Dictionary, q: Vector2i) -> bool:
+	if not _inside(q.x, q.y) or _is_fall(e, q):
+		return false
+	var i = q.y * int(area["tw"]) + q.x
+	var v: Array = stroke[i][0] if stroke.has(i) else cell_at(q.x, q.y)
+	return (int(v[5]) & 1) == 0
+
+## water below a fall (as it was before this stroke): not walked on, something on layer 1 that is not the fall itself (a
+## lake's water is moving or still there) - a lake, the sea, foam; never bare rock
+func _foam_water(e: Dictionary, q: Vector2i) -> bool:
+	if not _inside(q.x, q.y):
+		return false
+	var i = q.y * int(area["tw"]) + q.x
+	var v: Array = stroke[i][0] if stroke.has(i) else cell_at(q.x, q.y)
+	return int(v[1]) != 0 and not e["fall_set"].has(int(v[1]) & 0xFFFF) and (int(v[5]) & 1) == 0
+
+## FOAM EDGE - where a waterfall's bottom meets the water below: the game's own foam (its big waterfall's): its band
+## under the fall, lined up with the fall's lowest point, and its own shoulders of foam each side
+func _edge_brush_foam(c: Vector2i, e: Dictionary) -> void:
+	var rr = edge_size / 2.0
+	var band: Array = e["band"]
+	var bw: int = (band[0] as Array).size()
+	var nrow: int = band.size()
+	var tw: int = area["tw"]
+	var done = {}
+	for dy in range(-int(ceil(rr)) - 8, int(ceil(rr)) + 1):
+		for dx in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+			var q = c + Vector2i(dx, dy)
+			if not _is_fall(e, q) or _is_fall(e, q + Vector2i(0, 1)) or not _foam_water(e, q + Vector2i(0, 1)):
+				continue      # (a cell of the fall's bottom, with water below it - not a step in its side over rock)
+			# its whole width - a ragged bottom (one column ending higher) is still the one fall
+			var near = func(x: int) -> bool:
+				for k in 4:
+					if _is_fall(e, Vector2i(x, q.y - k)) or _is_fall(e, Vector2i(x, q.y + k)):
+						return true
+				return false
+			var l = q.x; var r = q.x
+			while near.call(l - 1) and q.x - l < 64: l -= 1
+			while near.call(r + 1) and r - q.x < 64: r += 1
+			if done.has(l):
+				continue
+			done[l] = true
+			var bottoms = {}; var base = q.y
+			for x in range(l, r + 1):
+				var y = q.y
+				while _is_fall(e, Vector2i(x, y + 1)) and y - q.y < 16: y += 1
+				while not _is_fall(e, Vector2i(x, y)) and y > q.y - 16: y -= 1
+				if _is_fall(e, Vector2i(x, y)):
+					bottoms[x] = y
+					base = maxi(base, y)
+			var high = base
+			for x in bottoms:
+				high = mini(high, int(bottoms[x]))
+			# the cloud: under the fall and three past each side, shallower towards its ends (round); only over water
+			var soft_bottom = nrow - 1
+			var cloud = {}
+			for x in range(l - 3, r + 4):
+				var out = maxi(l - x, x - r)      # cells beside the fall (0 under it)
+				var top = (bottoms[x] + 1) if bottoms.has(x) else high + out
+				var bottom = base + nrow - maxi(0, out - 1)
+				for y in range(top, bottom + 1):
+					var t = Vector2i(x, y)
+					if _foam_water(e, t) and not _is_fall(e, t):
+						cloud[t] = true
+			# each cell's piece by what is round it: soft at its bottom; at a top that is not the fall full foam with the
+			# soft spray (turned upside down) in the water above it; foam inside - no lake showing through
+			for t in cloud:
+				var col = 1 + posmod(t.x - l, bw - 2)
+				var cv: Array
+				if not cloud.has(t + Vector2i(0, 1)):
+					cv = (band[soft_bottom][col] as Array).map(func(v): return int(v))
+				elif not cloud.has(t + Vector2i(0, -1)) and not _is_fall(e, t + Vector2i(0, -1)):
+					cv = (band[0][col] as Array).map(func(v): return int(v))
+					var up = t + Vector2i(0, -1)
+					if _foam_water(e, up):
+						var sv: Array = (band[soft_bottom][col] as Array).map(func(v): return int(v))
+						for k in 5:
+							if sv[k] != 0:
+								sv[k] = sv[k] ^ (1 << 17)
+						put(up.x, up.y, sv)
+				else:
+					var depth = 0
+					while cloud.has(t - Vector2i(0, depth + 1)) and depth < nrow:
+						depth += 1
+					cv = (band[clampi(depth, 0, nrow - 2)][col] as Array).map(func(v): return int(v))
+				put(t.x, t.y, cv)
+
+## an edge's little picture: 6 x 6 cells of the game's own edge, kept in its file (the map changes)
+func _edge_icon(e: Dictionary) -> Texture2D:
+	var cells: Array = e.get("icon", [])
+	var im = Image.create_empty(48, 48, false, Image.FORMAT_RGBA8)
+	for j in mini(36, cells.size()):
+		for k in 5:
+			var t = _cell_image(int(cells[j][k]))
+			if t != null:
+				im.blend_rect(t, Rect2i(0, 0, 8, 8), Vector2i((j % 6) * 8, (j / 6) * 8))
+	return ImageTexture.create_from_image(im)
+
+# ------------------------------------------------------------------ BIOME: natural ground painted on
+## the starting biomes come with the game (builtin/biomes.json: clean patches of the game's own ground, as tile numbers -
+## cut once from EARTH, so moving places about never changes them); yours are content/biomes.json. Ones there named
+## like the starting ones (copies an earlier editor made from the map) are left out
+const OLD_DEFAULT_NAMES = ["GREEN GRASS", "GREEN GRASS (DEEP)", "GRASS AND FLOWERS", "AUTUMN GRASS", "DIRT", "SNOW", "SNOWDRIFTS",
+	"STONE PAVING", "CITY TILES", "WASTELAND", "DESERT SAND", "BEACH SAND", "CROPS", "SEA", "LAKE WATER", "WATERFALL",
+	"WATERFALL FOAM", "NAMEK GRASS", "NAMEK WATER", "CLIFF"]
+var biome_builtin = 0           # how many of biomes are the game's own (the first ones)
+
+func _biomes_path() -> String:
+	return Assets.exe_dir().path_join("content/biomes.json")
+
+func _biomes() -> void:
+	if biomes != null:
+		return
+	var bj = Assets.json(Assets.builtin_dir().path_join("biomes.json"))
+	biomes = (bj.get("biomes", []) if bj is Dictionary else []).duplicate()
+	biome_builtin = biomes.size()
+	var names = {}
+	for b in biomes:
+		names[str(b["name"])] = true
+	var j = Assets.json(_biomes_path())
+	for b in (j.get("biomes", []) if j is Dictionary else []):
+		if not names.has(str(b["name"])) and not str(b["name"]) in OLD_DEFAULT_NAMES:
+			biomes.append(b)
+
+func _biomes_save() -> void:
+	DirAccess.make_dir_recursive_absolute(_biomes_path().get_base_dir())
+	var f = FileAccess.open(_biomes_path(), FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify({"biomes": biomes.slice(biome_builtin)}))
+
+## a box of the map as a biome: its cells (every layer and the walls)
+func _biome_from(r: Rect2i) -> Dictionary:
+	var cs = []
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			cs.append(cell_at(x, y))
+	return {"w": r.size.x, "h": r.size.y, "cells": cs}
+
+func _biome_new(r: Rect2i) -> void:
+	biome_grab = false
+	if r.size.x < 4 or r.size.y < 4:
+		_say("Drag a bigger box (16 x 16 cells or more looks best).")
+		_refresh_side()
+		return
+	var b = _biome_from(r)
+	var nm = biome_newname.strip_edges().to_upper()
+	b["name"] = nm if nm != "" and nm != "MY GROUND" else "MY GROUND %d" % (biomes.size() + 1)
+	undo.append({"biomes": biomes.duplicate()}); redo.clear()
+	biomes.append(b)
+	biome_i = biomes.size() - 1
+	_biomes_save()
+	_refresh_side()
+	_say("Biome %s made from %d x %d cells - paint with it now." % [b["name"], r.size.x, r.size.y])
+
+## a round brush of the biome: each 16 x 16 block of the map takes its own piece of the patch, picked at random (the
+## same piece every time for that block - painting over it again keeps it), kept on the game's 2-cell grid
+func _biome_brush(c: Vector2i) -> void:
+	if biomes == null or biome_i >= biomes.size():
+		return
+	var b: Dictionary = biomes[biome_i]
+	var bw: int = b["w"]; var bh: int = b["h"]
+	var cs: Array = b["cells"]
+	var rr = biome_size / 2.0
+	for dy in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+		for dx in range(-int(ceil(rr)), int(ceil(rr)) + 1):
+			if Vector2(dx, dy).length() > rr:
+				continue
+			var q = c + Vector2i(dx, dy)
+			if not _inside(q.x, q.y):
+				continue
+			var blk = Vector2i(floori(q.x / 16.0), floori(q.y / 16.0))
+			var h = absi(hash([blk.x, blk.y, biome_i]))
+			var ox = (h % maxi(1, bw / 2)) * 2; var oy = ((h / 7919) % maxi(1, bh / 2)) * 2
+			var sx = posmod(q.x - blk.x * 16 + ox, bw); var sy = posmod(q.y - blk.y * 16 + oy, bh)
+			put(q.x, q.y, (cs[sy * bw + sx] as Array).duplicate())
+
+## a biome's little picture (16 x 16 of its cells, every layer; water and the like as their first picture)
+func _biome_icon(b: Dictionary) -> Texture2D:
+	if biome_icons.has(b["name"]):
+		return biome_icons[b["name"]]
+	var n = mini(16, mini(int(b["w"]), int(b["h"])))
+	var im = Image.create_empty(n * 8, n * 8, false, Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			for k in 5:
+				var t = _cell_image(int(b["cells"][y * int(b["w"]) + x][k]))
+				if t != null:
+					im.blend_rect(t, Rect2i(0, 0, 8, 8), Vector2i(x * 8, y * 8))
+	var tx = ImageTexture.create_from_image(im)
+	biome_icons[b["name"]] = tx
+	return tx
+
+## one tile of a cell as an 8 x 8 picture, from the tile set the map is drawn with (an animated one: its first picture)
+var _src_imgs = {}
+func _cell_image(v: int) -> Image:
+	var r = Assets.kit_cell(v) if v != 0 else []
+	if r.is_empty():
+		return null
+	var si = int(r[2])
+	if not _src_imgs.has(si):
+		var src = Assets.tileset().get_source(si) as TileSetAtlasSource
+		var si_img: Image = src.texture.get_image() if src != null and src.texture != null else null
+		if si_img != null:
+			si_img.convert(Image.FORMAT_RGBA8)
+		_src_imgs[si] = si_img
+	var img: Image = _src_imgs[si]
+	if img == null:
+		return null
+	var at: Vector2i = r[0]
+	var t = img.get_region(Rect2i(at * 8, Vector2i(8, 8)))
+	if int(r[1]) & TileSetAtlasSource.TRANSFORM_TRANSPOSE:
+		var tt = Image.create_empty(8, 8, false, Image.FORMAT_RGBA8)
+		for yy in 8:
+			for xx in 8:
+				tt.set_pixel(yy, xx, t.get_pixel(xx, yy))
+		t = tt
+	if int(r[1]) & TileSetAtlasSource.TRANSFORM_FLIP_H: t.flip_x()
+	if int(r[1]) & TileSetAtlasSource.TRANSFORM_FLIP_V: t.flip_y()
+	return t
+
+## this map's breakables (made once, again after a change)
+func _rocks() -> Array:
+	if rock_cache == null:
+		rock_cache = rock_b.rock_list(area) if area.has("land") else []
+	return rock_cache
+
+## ROCK: one of yours set down where you clicked (the picture's middle there)
+func _place_rock(w: Vector2) -> void:
+	var rk = rock_b.like_rock(rock_like)
+	if rk.is_empty():
+		_say("Choose a rock on the right first.")
+		return
+	_remember_patch()
+	Mods.patch(key)["rocks_add"].append({"x": snappedf(w.x - float(rk["w"]) / 2.0, 1), "y": snappedf(w.y - float(rk["h"]) / 2.0, 1), "like": rock_like,
+		"hits": rock_hits, "drops": rock_b.DROP_TABLES[rock_drops][1]})
+	_rebuild_world()
+	_say("Rock set down (%d hit%s, drops: %s). SAVE to keep it." % [rock_hits, "" if rock_hits == 1 else "s", rock_b.DROP_TABLES[rock_drops][0]])
+
+## a rock taken away: yours out of the list, the game's own remembered as gone (rocks_del)
+func _rock_remove(p: Dictionary, o: Dictionary) -> void:
+	if bool(o["own"]):
+		var ra: Array = p["rocks_add"]
+		for i in ra.size():
+			if absf(float(ra[i]["x"]) - o["pic"].position.x) < 0.5 and absf(float(ra[i]["y"]) - o["pic"].position.y) < 0.5:
+				ra.remove_at(i)
+				return
+	else:
+		p["rocks_del"].append([str(o["place"]), int(o["n"])])
+
+## a rock as one of yours (a game rock moved or changed becomes one): its entry for rocks_add, at the picture's top left
+func _rock_entry(o: Dictionary, at: Vector2) -> Dictionary:
+	var rk: Dictionary = o["rk"]
+	return {"x": snappedf(at.x, 1), "y": snappedf(at.y, 1), "like": str(o["id"]) if not bool(o["own"]) else str(Mods.patch(key)["rocks_add"][int(o["i"])].get("like", "")) if int(o["i"]) < Mods.patch(key)["rocks_add"].size() else "",
+		"hits": int(rk.get("hits", 1)), "drops": rk.get("drops", [])}.merged({"scene": rk["scene"]} if rk.has("scene") else {})      # (a story rock moved: its scene goes with it)
+
+## the drop table a rock has, as the ROCK tool's choice (-1: its own, none of those)
+func _drops_i(drops) -> int:
+	var norm = func(t) -> String:      # (numbers read from a file are 40.0, not 40)
+		return JSON.stringify((t if t is Array else []).map(func(b): return [int(b[0]), str(b[1]), int(b[2])]))
+	for i in rock_b.DROP_TABLES.size():
+		if norm.call(rock_b.DROP_TABLES[i][1]) == norm.call(drops):
+			return i
+	return -1
+
+## SELECT on a rock: its hits and drops to change (the game's own become yours, on the same spot - one Ctrl+Z)
+func _rock_editor(o: Dictionary) -> void:
+	var rk: Dictionary = o["rk"]
+	_lab("ROCK%s: %d hit%s. %s" % ["" if bool(o["own"]) else " (the game's, place %s)" % str(o["place"]), int(rk.get("hits", 1)), "" if int(rk.get("hits", 1)) == 1 else "s",
+		"A story scene plays when it breaks." if rk.has("scene") else ""])
+	var hs = _spin(side, "hits it takes", 1, 3, int(rk.get("hits", 1)), func(_v): pass)
+	var dob = OptionButton.new(); dob.clip_text = true; dob.custom_minimum_size = Vector2(230, 0); dob.add_theme_font_size_override("font_size", 11)
+	var di = _drops_i(rk.get("drops", []))
+	for t in rock_b.DROP_TABLES:
+		dob.add_item(str(t[0]))
+	if di < 0:
+		dob.add_item("ITS OWN"); di = dob.item_count - 1
+	dob.select(di)
+	side.add_child(dob)
+	var sv = Button.new(); sv.text = "SAVE CHANGES"; side.add_child(sv)
+	sv.pressed.connect(func():
+		var e = _rock_entry(o, (o["pic"] as Rect2).position)
+		e["hits"] = int(hs.value)
+		if dob.selected < rock_b.DROP_TABLES.size():
+			e["drops"] = rock_b.DROP_TABLES[dob.selected][1]
+		selected["entry"] = e
+		_move_selected((o["pic"] as Rect2).get_center())
+		_say("Rock changed. SAVE to keep it (Ctrl+Z undoes)."))
+
 func _pick_object(w: Vector2) -> Dictionary:
 	var ob = _objects()
 	var best = {}
@@ -868,12 +2269,26 @@ func _pick_object(w: Vector2) -> Dictionary:
 		var d = Vector2(float(it["x"]), float(it["y"])).distance_to(w)
 		if d < bd: bd = d; best = {"kind": "item", "obj": it}
 	if best.is_empty():
+		for rr in _rocks():
+			if (rr["pic"] as Rect2).has_point(w) and (rr["rect"] as Rect2).grow(6.0).has_point(w):
+				best = {"kind": "rock", "obj": rr}
+	if best.is_empty():
 		var own = Mods.patch(key)
 		for kz in [["zones", "zone"], ["triggers", "trigger"], ["moods", "mood"]]:
 			for z in own[kz[0]]:
 				var r: Array = z["rect"]
 				if w.x >= float(r[0]) and w.x <= float(r[2]) and w.y >= float(r[1]) and w.y <= float(r[3]):
 					best = {"kind": kz[1], "obj": z}
+	if best.is_empty() or cam.zoom.x < FAR_ZOOM:      # a place's label (its name in the middle of it): drag it to move the place
+		var bl = 40.0 / cam.zoom.x                    # (zoomed right out the labels come first)
+		var lab = {}
+		for pt in area["land"].get("parts", []):
+			if pt.size() > 3 and str(pt[1]) != "":
+				var d = (pt[0] as Rect2).get_center().distance_to(w)
+				if d < bl:
+					bl = d; lab = {"kind": "place", "obj": {"key": str(pt[3]), "name": str(pt[1]), "rect": pt[0]}}
+		if not lab.is_empty():
+			best = lab
 	if best.is_empty():
 		for ex in ob["doors"]:
 			var r: Array = ex["rect"]
@@ -926,6 +2341,20 @@ func _person_editor(o: Dictionary) -> void:
 func _delete_selected() -> void:
 	if selected.is_empty():
 		return
+	if str(selected["kind"]) == "place":
+		_remember_patch()
+		var o0: Dictionary = selected["obj"]
+		Mods.patch(key)["places"][str(o0["key"])] = []
+		if key.begins_with("land/"):
+			Assets.reset_land(int(key.split("/")[1]))
+		var warn = ""
+		if Story.ready() and _story_uses(str(o0["key"])):
+			warn = " (Note: a story scene goes to this place - it will need a new spot.)"
+		selected = {}
+		_rebuild_world()
+		_refresh_side()
+		_say("%s (%s) deleted: no name, music or people of its own there now. SAVE to keep it, Ctrl+Z to bring it back.%s" % [str(o0["name"]), str(o0["key"]), warn])
+		return
 	_remember_patch()
 	var p = Mods.patch(key)
 	var o: Dictionary = selected["obj"]
@@ -940,6 +2369,8 @@ func _delete_selected() -> void:
 			p["people_add"] = p["people_add"].filter(func(e): return Vector2(float(e["x"]), float(e["y"])).distance_to(Vector2(float(o["x"]), float(o["y"]))) > 1.0)
 			if p["people_add"].size() == before:
 				p["people_del"].append([o["x"], o["y"]])
+		"rock":
+			_rock_remove(p, o)
 		"zone":
 			p["zones"].erase(o)
 		"trigger":
@@ -966,8 +2397,35 @@ func _delete_selected() -> void:
 func _move_selected(to: Vector2) -> void:
 	var o: Dictionary = selected["obj"].duplicate(true)
 	var kind = str(selected["kind"])
-	_delete_selected()
-	undo.pop_back()    # one undo for the whole move (the delete's own is dropped; the add below records it)
+	if kind == "place":      # a place of the game: its name, song, own people and story warps (one Ctrl+Z)
+		_remember_patch()
+		var pr: Rect2 = o["rect"]
+		var pk = str(o["key"])
+		var np = Vector2(snappedf(to.x - pr.size.x / 2.0, 8), snappedf(to.y - pr.size.y / 2.0, 8))
+		var dv = np - pr.position
+		var pp = Mods.patch(key)
+		# its people you changed or took away (kept by their spot) go with it too
+		var base_people = Assets.land_parts(key)["people"] if key.begins_with("land/") else []
+		for dl in pp["people_del"]:
+			for bq in base_people:
+				if str(bq.get("id", "")).get_slice(":", 0) == pk and Vector2(float(bq["x"]), float(bq["y"])).distance_to(Vector2(float(dl[0]), float(dl[1]))) <= 6.0:
+					dl[0] = float(dl[0]) + dv.x; dl[1] = float(dl[1]) + dv.y
+					break
+		for pa in pp["people_add"]:
+			if str(pa.get("id", "")).get_slice(":", 0) == pk:
+				pa["x"] = float(pa["x"]) + dv.x; pa["y"] = float(pa["y"]) + dv.y
+		pp["places"][pk] = [np.x, np.y]
+		if key.begins_with("land/"):
+			Assets.reset_land(int(key.split("/")[1]))
+		_rebuild_world()
+		selected = {}
+		_refresh_side()
+		_say("%s moved (its name, music, own people and story warps go with it). SAVE to keep it." % str(o["name"]))
+		return
+	var rock_e = {}
+	if kind == "rock":      # (worked out before it is taken away: yours are found by their place in the list)
+		rock_e = selected["entry"] if selected.has("entry") else _rock_entry(o, (to - (o["pic"] as Rect2).size / 2.0).round())
+	_delete_selected()      # (its snapshot of the map's lists, taken before, is the whole move's one undo step)
 	var p = Mods.patch(key)
 	match kind:
 		"foe":
@@ -978,6 +2436,8 @@ func _move_selected(to: Vector2) -> void:
 		"item":
 			o["x"] = snappedf(to.x, 1); o["y"] = snappedf(to.y, 1)
 			p["items"].append(o)
+		"rock":
+			p["rocks_add"].append(rock_e)
 		"zone", "trigger", "mood":
 			var r: Array = o["rect"]
 			var dw = float(r[2]) - float(r[0]); var dh = float(r[3]) - float(r[1])
@@ -1008,6 +2468,10 @@ func _process(_dt: float) -> void:
 		if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP): cam.position.y -= sp
 		if Input.is_key_pressed(KEY_S) and not Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_DOWN): cam.position.y += sp
 	var far = cam.zoom.x < FAR_ZOOM
+	if mini_dirty and mini_tex != null:
+		mini_dirty = false
+		(mini_tex as ImageTexture).update(mini_img)
+		if minimap: minimap.queue_redraw()
 	if world_sprite:
 		world_sprite.visible = far
 	for i in tiles.size():
@@ -1015,7 +2479,7 @@ func _process(_dt: float) -> void:
 	if not far:
 		_stream()
 	# drawn again only when something to see changed (the walls of a whole screen each frame made it slow)
-	var look = [cam.position, cam.zoom, mouse_cell, stroke.size(), undo.size(), redo.size(), tool, selected.size(), show_walls, show_grid, show_changes, show_objects, layer, paint_size, door_rect.size(), selected.get("drag_to", Vector2.ZERO)]
+	var look = [cam.position, cam.zoom, mouse_cell, stroke.size(), undo.size(), redo.size(), tool, selected.size(), show_walls, show_over, show_grid, show_changes, show_objects, layer, paint_size, door_rect.size(), selected.get("drag_to", Vector2.ZERO)]
 	_redraw_t += _dt
 	if look != _last_look or dragging or _redraw_t > 0.25:      # (and a few times a second anyway, for anything else that changed)
 		_last_look = look
@@ -1037,9 +2501,26 @@ func _typing() -> bool:
 	var f = get_viewport().gui_get_focus_owner()
 	return f is LineEdit or f is TextEdit or f is SpinBox
 
+## the rocks as the game draws them: above the ground, below the trees' tops and roofs
+func _draw_rocks() -> void:
+	if area.is_empty() or tab != "MAP" or cam.zoom.x < FAR_ZOOM:
+		return
+	if rock_b.atlas == null and not rock_b._ready_data():
+		return
+	var vs = get_viewport_rect().size / cam.zoom
+	var rview = Rect2(cam.position - vs / 2 - Vector2(64, 64), vs + Vector2(128, 128))
+	for rr in _rocks():
+		var pr: Rect2 = rr["pic"]
+		if rview.intersects(pr):
+			var rk: Dictionary = rr["rk"]
+			rock_layer.draw_texture_rect_region(rock_b.atlas, pr, Rect2(float(rk["at"][0]), float(rk["at"][1]), float(rk["w"]), float(rk["h"])))
 func _draw_overlay() -> void:
+	rock_layer.queue_redraw()
 	if area.is_empty() or tab != "MAP":
 		return
+	_draw_move_and_guide()
+	if tool == "SELECT" or tool == "MOVE":
+		_draw_places()
 	if cam.zoom.x < FAR_ZOOM:
 		# the whole world: the places' names; a click goes in there
 		var font0 = ThemeDB.fallback_font
@@ -1047,7 +2528,7 @@ func _draw_overlay() -> void:
 		var done = {}
 		for pt in area["land"].get("parts", []):
 			var nm = str(pt[1])
-			if nm == "" or done.has(nm):
+			if nm == "" or done.has(nm) or tool == "SELECT" or tool == "MOVE":      # (SELECT / MOVE draw every place's own, with its box)
 				continue
 			done[nm] = true
 			var c: Vector2 = pt[0].get_center()
@@ -1057,19 +2538,39 @@ func _draw_overlay() -> void:
 			for ex in Game.planet.nodes[ni0]["exits"]:
 				var r: Array = ex["rect"]
 				overlay.draw_circle(Vector2(float(r[0]), float(r[1])), 2.0 / cam.zoom.x, Color(1, 0.9, 0.2))
+		if mouse_cell.x >= 0 and tool in PAINT_FAR:      # the brush, zoomed right out too
+			var bs = {"BIOME": biome_size, "SMART": edge_size if edge_i >= 0 else smart_size * 2 - 1}.get(tool, paint_size)
+			overlay.draw_circle(Vector2(mouse_cell) * 8.0 + Vector2(4, 4), maxf(bs * 4.0, 3.0 / cam.zoom.x), Color(1, 1, 1, 0.9), false, 2.0 / cam.zoom.x)
 		return
 	var vs = get_viewport_rect().size / cam.zoom
 	var x0 = maxi(0, int((cam.position.x - vs.x / 2) / 8)); var y0 = maxi(0, int((cam.position.y - vs.y / 2) / 8))
 	var x1 = mini(int(area["tw"]) - 1, int((cam.position.x + vs.x / 2) / 8) + 1); var y1 = mini(int(area["th"]) - 1, int((cam.position.y + vs.y / 2) / 8) + 1)
 	var tw: int = area["tw"]
 	var walk: PackedByteArray = area["walk"]
+	if show_over and (x1 - x0) * (y1 - y0) < 40000 and area.has("land"):
+		# where you can walk and something is drawn over the hero (layers 3-4): leaves you walk under are fine,
+		# grass, ledges or rocks there want the UNDER HERO brush
+		var lc: Array = area["land"]["cells"]
+		for y in range(y0, y1 + 1):
+			for x in range(x0, x1 + 1):
+				var i = y * tw + x
+				var cv = stroke[i][1] if stroke.has(i) else null
+				var t3 = int(cv[3]) if cv != null else int(lc[3][i])
+				var t4 = int(cv[4]) if cv != null else int(lc[4][i])
+				var hw = int(stroke[i][1][5]) if stroke.has(i) else int(area["walk"][i])
+				if (t3 != 0 or t4 != 0) and not _hg(hw):      # (high ground hides whoever walks behind it by itself: one violet, OVER or not)
+					overlay.draw_rect(Rect2(x * 8, y * 8, 8, 8), Color(0.15, 0.4, 1.0, 0.45))
 	if show_walls and (x1 - x0) * (y1 - y0) < 40000:
 		for y in range(y0, y1 + 1):
 			var run_x = -1
 			for x in range(x0, x1 + 1):
 				var i = y * tw + x
 				var wv = int(stroke[i][1][5]) if stroke.has(i) else int(walk[i])
-				if not (wv & 1):
+				if _hg(wv) and show_over:
+					# a platform top you made (HIGH GROUND): bold violet, only with OVER HERO (otherwise not shown at all -
+					# in red it looked like a wall you had painted)
+					overlay.draw_rect(Rect2(x * 8, y * 8, 8, 8), Color(0.55, 0.15, 1.0, 0.8))
+				if not (_walk_bits(wv) & 1):
 					if run_x < 0:
 						run_x = x
 				elif run_x >= 0:
@@ -1097,6 +2598,18 @@ func _draw_overlay() -> void:
 				overlay.draw_rect(Rect2(x * 8 + 0.5, y * 8 + 0.5, 7, 7), col, false, 1.0 / cam.zoom.x)
 	var font = ThemeDB.fallback_font
 	var fs = int(clampf(8.0 / cam.zoom.x, 6, 24))
+	# the breakables (rocks): their pictures are on rock_layer; here, with the objects shown, their hits ("2x") and yours marked +
+	if rock_b.atlas != null or rock_b._ready_data():
+		var rview = Rect2(cam.position - vs / 2 - Vector2(64, 64), vs + Vector2(128, 128))
+		for rr in _rocks():
+			var pr: Rect2 = rr["pic"]
+			if not rview.intersects(pr):
+				continue
+			var rk: Dictionary = rr["rk"]
+			if selected.get("kind", "") == "rock" and str(selected["obj"]["id"]) == str(rr["id"]):
+				overlay.draw_rect(rr["rect"], Color(1, 1, 0.3), false, 2.0 / cam.zoom.x)
+			elif show_objects:
+				_ov_text(font, Vector2(pr.end.x - 2, pr.position.y + fs), "%dx%s" % [int(rk.get("hits", 1)), "+" if bool(rr["own"]) else ""], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.85, 0.85, 0.85))
 	if show_objects:
 		var ob = _objects()
 		var view = Rect2(cam.position - vs / 2 - Vector2(40, 40), vs + Vector2(80, 80))
@@ -1135,7 +2648,9 @@ func _draw_overlay() -> void:
 				_ov_text(font, rr.position + Vector2(0, -2), "TO " + str(Game.planet.nodes[int(ex["to"])]["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 0.95, 0.6))
 	if not selected.is_empty():
 		var o: Dictionary = selected["obj"]
-		if o.has("rect"):
+		if o.get("rect") is Rect2:      # (a rock, a place)
+			overlay.draw_rect((o["rect"] as Rect2).grow(2.0), Color(0.3, 1, 0.4), false, 2.0 / cam.zoom.x)
+		elif o.has("rect"):
 			var r: Array = o["rect"]
 			overlay.draw_rect(Rect2(float(r[0]) - 2, float(r[1]) - 2, float(r[2]) - float(r[0]) + 4, float(r[3]) - float(r[1]) + 4), Color(0.3, 1, 0.4), false, 2.0 / cam.zoom.x)
 		else:
@@ -1144,10 +2659,6 @@ func _draw_overlay() -> void:
 			overlay.draw_circle(selected["drag_to"], 4, Color(0.3, 1, 0.4, 0.6))
 	if door_rect.size() == 4:
 		overlay.draw_rect(Rect2(float(door_rect[0]), float(door_rect[1]), float(door_rect[2]) - float(door_rect[0]), float(door_rect[3]) - float(door_rect[1])), Color(0.3, 1, 0.4, 0.5))
-	if dragging and tool in ["LINE", "RECT"] and drag_from.x >= 0:
-		var cs = MT.line_cells(drag_from, mouse_cell) if tool == "LINE" else MT.rect_cells(drag_from, mouse_cell, rect_filled)
-		for q in cs:
-			overlay.draw_rect(Rect2(Vector2(q) * 8.0, Vector2(8, 8)), Color(0.4, 0.9, 1, 0.35))
 	if show_objects:
 		var mp = Mods.merged(key, false)
 		for z in mp["zones"]:
@@ -1174,14 +2685,30 @@ func _draw_overlay() -> void:
 			_ov_text(ThemeDB.fallback_font, rr.position + Vector2(2, 8 / cam.zoom.x + 2), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, int(clampf(8.0 / cam.zoom.x, 6, 24)), Color(0.7, 0.8, 1))
 	if tool == "THINGS" and stamp_i >= 0 and stamp_i < stamps.size() and mouse_cell.x >= 0:
 		overlay.draw_rect(Rect2(Vector2(mouse_cell) * 8.0, Vector2(int(stamps[stamp_i]["w"]), int(stamps[stamp_i]["h"])) * 8.0), Color(0.4, 1, 0.6), false, 1.0 / cam.zoom.x)
-	if dragging and tool in ["COPY", "FILL", "DOOR", "ZONE", "EVENT", "MOOD"] and drag_from.x >= 0:
+	if dragging and tool == "COPY" and copy_lasso and lasso_pts.size() > 1:      # LASSO: the line being drawn
+		var lp = PackedVector2Array()
+		for q in lasso_pts:
+			lp.append(Vector2(q) * 8.0 + Vector2(4, 4))
+		lp.append(lp[0])
+		overlay.draw_polyline(lp, Color(0.4, 0.9, 1), 2.0 / cam.zoom.x)
+	elif dragging and ((tool == "BIOME" and biome_grab) or tool in ["COPY", "DOOR", "ZONE", "EVENT", "MOOD"]) and drag_from.x >= 0:
 		var a = Vector2(mini(drag_from.x, mouse_cell.x), mini(drag_from.y, mouse_cell.y)) * 8.0
 		var b = Vector2(maxi(drag_from.x, mouse_cell.x) + 1, maxi(drag_from.y, mouse_cell.y) + 1) * 8.0
 		overlay.draw_rect(Rect2(a, b - a), Color(0.4, 0.9, 1, 0.25))
 		overlay.draw_rect(Rect2(a, b - a), Color(0.4, 0.9, 1), false, 1.0 / cam.zoom.x)
-	if tool == "PASTE" and not clipboard.is_empty() and mouse_cell.x >= 0:
+	if tool == "PASTE" and clipboard.has("mask") and mouse_cell.x >= 0:      # a LASSO copy: its shape
+		var cw: int = clipboard["w"]
+		var cm: Array = clipboard["mask"]
+		for j in cm.size():
+			if int(cm[j]) != 0:
+				overlay.draw_rect(Rect2(Vector2(mouse_cell + Vector2i(j % cw, j / cw)) * 8.0, Vector2(8, 8)), Color(0.4, 0.9, 1, 0.3))
+	elif tool == "PASTE" and not clipboard.is_empty() and mouse_cell.x >= 0:
 		overlay.draw_rect(Rect2(Vector2(mouse_cell) * 8.0, Vector2(int(clipboard["w"]), int(clipboard["h"])) * 8.0), Color(0.4, 0.9, 1), false, 1.0 / cam.zoom.x)
-	if mouse_cell.x >= 0 and tool in ["TILE", "STAMP", "ERASE", "WALL", "GROUND", "PICK"]:
+	if mouse_cell.x >= 0 and tool == "SMART" and edge_i >= 0:
+		overlay.draw_circle(Vector2(mouse_cell) * 8.0 + Vector2(4, 4), edge_size * 4.0, Color(0.6, 0.9, 1, 0.9), false, 1.0 / cam.zoom.x)
+	if mouse_cell.x >= 0 and tool == "BIOME" and not biome_grab:
+		overlay.draw_circle(Vector2(mouse_cell) * 8.0 + Vector2(4, 4), biome_size * 4.0, Color(1, 1, 1, 0.8), false, 1.0 / cam.zoom.x)
+	if mouse_cell.x >= 0 and tool in ["TILE", "STAMP", "ERASE", "WALL", "GROUND", "UNDER", "OVER", "PICK"]:
 		var bs = 1 if tool == "PICK" else paint_size
 		overlay.draw_rect(Rect2(Vector2(mouse_cell - Vector2i((bs - 1) / 2, (bs - 1) / 2)) * 8.0, Vector2(bs, bs) * 8.0), Color(1, 1, 1, 0.8), false, 1.0 / cam.zoom.x)
 
@@ -1240,9 +2767,9 @@ func _build_ui() -> void:
 	layer_pick = OptionButton.new()
 	for i in 5:
 		layer_pick.add_item(["LAYER 0 GROUND", "LAYER 1", "LAYER 2", "LAYER 3 OVER", "LAYER 4 OVER"][i], i)
-	layer_pick.item_selected.connect(func(i): layer = i)
+	layer_pick.item_selected.connect(func(i): layer = i; _refresh_side())
 	bar.add_child(layer_pick)
-	for t in [["WALLS", "show_walls"], ["GRID", "show_grid"], ["OBJECTS", "show_objects"], ["CHANGES", "show_changes"]]:
+	for t in [["WALLS", "show_walls"], ["OVER HERO", "show_over"], ["GRID", "show_grid"], ["OBJECTS", "show_objects"], ["CHANGES", "show_changes"]]:
 		var cb = CheckBox.new(); cb.text = t[0]; cb.button_pressed = get(t[1])
 		cb.toggled.connect(func(on): set(t[1], on))
 		bar.add_child(cb)
@@ -1367,6 +2894,7 @@ func _refresh_minimap() -> void:
 	if area.is_empty() or minimap == null:
 		return
 	var img = MT.mini_image(area)
+	mini_img = img
 	mini_tex = ImageTexture.create_from_image(img) if img != null else null
 	minimap.queue_redraw()
 	if world_sprite == null:
@@ -1376,6 +2904,21 @@ func _refresh_minimap() -> void:
 	world_sprite.texture = mini_tex
 	if mini_tex:
 		world_sprite.scale = Vector2.ONE * (float(area["w"]) / mini_tex.get_size().x)
+
+## the minimap's cells in these boxes (cells) drawn again as they are now - not the whole picture (EARTH's took
+## seconds: every one of your changes drawn in again)
+func _mini_paint(boxes: Array) -> void:
+	if mini_img == null or mini_tex == null or key != "land/0/0" or mini_img.get_size() != Vector2i(int(area["tw"]), int(area["th"])):
+		_refresh_minimap()
+		return
+	for b in boxes:
+		var bx: Rect2i = (b as Rect2i).intersection(Rect2i(Vector2i.ZERO, mini_img.get_size()))
+		for y in range(bx.position.y, bx.end.y):
+			for x in range(bx.position.x, bx.end.x):
+				var cv = cell_at(x, y)
+				mini_img.set_pixel(x, y, MT.mini_color(cv, int(cv[5])))
+	(mini_tex as ImageTexture).update(mini_img)
+	minimap.queue_redraw()
 
 ## the whole world at a glance: zoomed right out (EARTH is big: the planet as one picture)
 func _world_view() -> void:
@@ -1494,9 +3037,15 @@ func _make_mine() -> void:
 func _set_tool(t: String) -> void:
 	tool = t
 	for k in tool_buttons:
-		tool_buttons[k].button_pressed = k == t
+		tool_buttons[k].button_pressed = k == t or (k == "PICK" and t == "STAMP")      # (stamping is PICK's)
 	if t != "DOOR" and t != "SELECT":
 		door_rect = []
+	if t != "MOVE":
+		move_box = Rect2i()
+		move_mask = {}
+		lasso_pts = []
+	if t == "GUIDE" and guide.is_empty():
+		_guide_load()
 	help.text = t + ": " + TOOL_HELP.get(t, "")
 	_refresh_side()
 
@@ -1555,9 +3104,17 @@ func _refresh_side() -> void:
 	preview = null
 	var title = Label.new(); title.text = tool; title.add_theme_font_size_override("font_size", 13); side.add_child(title)
 	match tool:
-		"TILE", "FILL", "ERASE", "STAMP", "PICK":
-			_lab("Tile %d on LAYER %d. Click a tile below. PICK copies a cell from the map." % [brush_tile & 0xFFFF, layer])
-			if tool in ["TILE", "ERASE", "STAMP"]:
+		"PICK", "STAMP":
+			var ps = CheckBox.new(); ps.text = "STAMP"; ps.button_pressed = pick_stamp; side.add_child(ps)
+			ps.toggled.connect(func(on):
+				pick_stamp = on
+				if on and ((last_brush == "STAMP" and int(brush_cell[0]) != 0) or last_brush == "TILE"):
+					_set_tool("STAMP")
+				elif not on and tool == "STAMP":
+					_set_tool("PICK"))
+			_lab("STAMP on: click a cell to pick it, then click or drag to stamp it (all its layers and its wall). Or choose a tile below: it is stamped onto the LAYER chosen under the game. Click the PICK button to pick another.")
+			if tool == "STAMP":
+				_lab("Stamping: %s" % ("tile %d onto LAYER %d" % [brush_tile & 0xFFFF, layer] if last_brush == "TILE" else "the picked cell (all layers)"))
 				_spin(side, "brush size", 1, 32, paint_size, func(v): paint_size = int(v); overlay.queue_redraw())
 			var gsel = OptionButton.new()
 			gsel.add_item("TILES: LEGACY OF GOKU II"); gsel.set_item_metadata(0, "")
@@ -1567,17 +3124,40 @@ func _refresh_side() -> void:
 					if g == pal_game: gsel.select(gsel.item_count - 1)
 			gsel.item_selected.connect(func(j): pal_game = str(gsel.get_item_metadata(j)); _refresh_side())
 			side.add_child(gsel)
+			# the layer a tile is picked from / stamped onto (the same as the bar's at the top)
+			var lsel = OptionButton.new()
+			for i in 5:
+				lsel.add_item(["LAYER 0 GROUND", "LAYER 1", "LAYER 2", "LAYER 3 OVER THE HERO", "LAYER 4 OVER THE HERO"][i], i)
+			lsel.select(layer)
+			lsel.item_selected.connect(func(i):
+				layer = i
+				layer_pick.select(i)
+				if tool == "PICK" or tool == "STAMP":
+					var t2 = int(brush_cell[layer]) & ~(1 << 18)
+					if last_brush != "TILE" and t2 > 0:
+						brush_tile = t2
+				_refresh_side())
+			side.add_child(lsel)
 			palette = preload("res://scripts/dev_palette.gd").new()
 			palette.game = pal_game
 			palette.custom_minimum_size = Vector2(232, 420)
 			palette.chosen = brush_tile
 			palette.jump_to(brush_tile & 0xFFFF)      # the list opens at the tile chosen (or PICKed)
-			palette.picked.connect(func(t): brush_tile = t; last_brush = "TILE"; _set_tool("TILE") if tool in ["PICK", "STAMP"] else _refresh_side())
+			palette.picked.connect(func(t):
+				brush_tile = t
+				last_brush = "TILE"
+				if pick_stamp:
+					_set_tool("STAMP")
+				_refresh_side()
+				_say("Tile %d chosen for LAYER %d.%s" % [t & 0xFFFF, layer, " Click or drag to stamp it." if pick_stamp else " (STAMP on the right: stamp it.)"]))
 			side.add_child(palette)
 			var jb = HBoxContainer.new(); side.add_child(jb)
 			var sp = SpinBox.new(); sp.min_value = 0; sp.max_value = 65535; sp.value = brush_tile & 0xFFFF; sp.prefix = "tile"
 			sp.value_changed.connect(func(v): brush_tile = palette.cell_of(int(v)); palette.chosen = brush_tile; palette.jump_to(int(v)))
 			jb.add_child(sp)
+		"ERASE":
+			_lab("Takes the tile away from LAYER %d." % layer)
+			_spin(side, "brush size", 1, 32, paint_size, func(v): paint_size = int(v); overlay.queue_redraw())
 		"FOE":
 			_lab("Choose the foe (weakest at the top): its look, its moves and its own strength. Then its level (0 = its own) and, if you like, another look (a sprite set; Frieza is 48).")
 			# every foe of the game with a picture, weakest first: the original level and health on each line
@@ -1682,17 +3262,115 @@ func _refresh_side() -> void:
 			_line(side, "locked text", str(door_need["locked_msg"]), func(t): door_need["locked_msg"] = t.to_upper())
 		"SELECT":
 			if selected.is_empty():
-				_lab("Click a foe (red), person (blue), treasure (gold) or door (yellow).")
+				_lab("Click a foe (red), person (blue), treasure (gold) or door (yellow) - or a place's name (its box).")
 			else:
 				var o: Dictionary = selected["obj"]
+				if str(selected["kind"]) == "place":
+					var pr: Rect2 = o["rect"]
+					var song = -1
+					for pt in area["land"].get("parts", []):
+						if pt.size() > 3 and str(pt[3]) == str(o["key"]): song = int(pt[2])
+					_lab("PLACE: %s  (the game's map %s)" % [str(o["name"]), str(o["key"])])
+					_lab("Box: %d x %d cells at cell %d, %d. Music: %s." % [int(pr.size.x / 8), int(pr.size.y / 8), int(pr.position.x / 8), int(pr.position.y / 8), ("the game's song %d" % song) if song >= 0 else "the land's own"])
+					_lab("Drag it to move it (name, music, its own people and story warps go with it).")
+					var dbp = Button.new(); dbp.text = "DELETE THIS PLACE (Del)"; dbp.pressed.connect(_delete_selected); side.add_child(dbp)
+					return
 				if str(selected["kind"]) == "person":
 					_person_editor(o)
+				elif str(selected["kind"]) == "rock":
+					_rock_editor(o)
 				else:
 					_lab(str(selected["kind"]).to_upper() + ": " + JSON.stringify(o).left(300))
 				var db = Button.new(); db.text = "DELETE (Del)"; db.pressed.connect(_delete_selected); side.add_child(db)
 				_lab("Drag it to move it.")
+		"BIOME":
+			_biomes()
+			var bl = ItemList.new(); bl.custom_minimum_size = Vector2(230, 300); bl.fixed_icon_size = Vector2i(40, 40)
+			for b in biomes:
+				bl.add_item(str(b["name"]), _biome_icon(b))
+			if biome_i < bl.item_count:
+				bl.select(biome_i)
+			bl.item_selected.connect(func(j): biome_i = j; biome_grab = false)
+			side.add_child(bl)
+			_spin(side, "brush size", 1, 64, biome_size, func(v): biome_size = int(v); overlay.queue_redraw())
+			var gb = Button.new(); gb.text = "MAKE A BIOME FROM A BOX" if not biome_grab else "DRAG A BOX ON THE MAP... (click to stop)"; side.add_child(gb)
+			gb.pressed.connect(func(): biome_grab = not biome_grab; _refresh_side())
+			_line(side, "its name", biome_newname, func(t): biome_newname = t)
+			if biome_i >= biome_builtin and biome_i < biomes.size():      # (only yours: the game's own stay)
+				var db = Button.new(); db.text = "DELETE THIS BIOME"; side.add_child(db)
+				db.pressed.connect(func():
+					undo.append({"biomes": biomes.duplicate()}); redo.clear()
+					biomes.remove_at(biome_i); biome_i = 0; _biomes_save(); _refresh_side())
+			_lab("Paints every layer and its walls (water stays water). Ctrl+Z undoes a stroke. Make one from a box of 16 x 16 cells or more for the best look.")
+		"ROCK":
+			_lab("Choose what to set down, then click on the map.")
+			var rl = ItemList.new(); rl.custom_minimum_size = Vector2(230, 200); rl.max_columns = 5; rl.icon_mode = ItemList.ICON_MODE_TOP      # (5 a row: wider pushed the panel off the screen)
+			rl.fixed_icon_size = Vector2i(32, 32); rl.same_column_width = true
+			var ks = rock_b.kinds()
+			for k in ks:
+				var rk2: Dictionary = k["rk"]
+				var tx = AtlasTexture.new(); tx.atlas = rock_b.atlas
+				tx.region = Rect2(float(rk2["at"][0]), float(rk2["at"][1]), float(rk2["w"]), float(rk2["h"]))
+				rl.add_icon_item(tx)
+				rl.set_item_metadata(rl.item_count - 1, k["like"])
+				if str(k["like"]) == rock_like: rl.select(rl.item_count - 1)
+			if rock_like == "" and not ks.is_empty():
+				rock_like = str(ks[0]["like"]); rl.select(0)
+			rl.item_selected.connect(func(j): rock_like = str(rl.get_item_metadata(j)))
+			side.add_child(rl)
+			_spin(side, "hits it takes", 1, 3, rock_hits, func(v): rock_hits = int(v))
+			_lab("What it drops (the game's own choices): food heals HP, ki fills EP - each only while that is not full, unless EVEN IF FULL. Small, medium and large give back 10, 20 and 30%.")
+			var dob = OptionButton.new(); dob.clip_text = true; dob.custom_minimum_size = Vector2(230, 0); dob.add_theme_font_size_override("font_size", 11)
+			for t in rock_b.DROP_TABLES:
+				dob.add_item(str(t[0]))
+			dob.select(rock_drops)
+			dob.item_selected.connect(func(j): rock_drops = j)
+			side.add_child(dob)
+			_lab("SELECT a rock to change, drag or delete it. Rocks in front of a cave door are left out in the game for now.")
+		"MOVE":
+			var sw = CheckBox.new(); sw.text = "SWAP"; sw.button_pressed = move_swap; side.add_child(sw)      # (a checkbox's text does not wrap: kept short)
+			sw.toggled.connect(func(on): move_swap = on)
+			var ls = CheckBox.new(); ls.text = "LASSO"; ls.button_pressed = move_lasso; side.add_child(ls)
+			ls.toggled.connect(func(on): move_lasso = on; move_box = Rect2i(); move_mask = {}; lasso_pts = []; _refresh_side())
+			_lab("LASSO on: press and draw round what you want, any shape - let go and it closes back to where you started. Every cell inside is picked up.")
+			_lab("SWAP on: what's there goes where yours was. Off (COVER): what's there is covered, and the ground round fills the spot you left.")
+			if move_box.size.x > 0:
+				_lab(("Picked up: %d cells (LASSO). Click where it goes (the green shape)." % move_mask.size()) if not move_mask.is_empty() else ("Picked up: %d x %d cells. Click where its top-left corner goes (the green box)." % [move_box.size.x, move_box.size.y]))
+				var cb = Button.new(); cb.text = "NEVER MIND"; cb.pressed.connect(func(): move_box = Rect2i(); move_mask = {}; _refresh_side()); side.add_child(cb)
+			else:
+				_lab("Press on a place's name and drag to move the whole place - or drag a box round any part (zoom right out for big parts).")
+			_lab("Then SAVE. Ctrl+Z undoes the whole move.")
+			if key.begins_with("land/"):
+				_lab("MAP SIZE (now %d x %d cells). Bigger: new room on the right and at the bottom (sea). Smaller: cut off on the right and at the bottom, land and all - not while places, foes, people, doors, treasure or zones are still there. Ctrl+Z puts it back." % [int(area["tw"]), int(area["th"])])
+				var gw = _line(side, "width", str(int(area["tw"])), func(_t): pass)
+				var gh = _line(side, "height", str(int(area["th"])), func(_t): pass)
+				var gbt = Button.new(); gbt.text = "RESIZE WHOLE MAP"; side.add_child(gbt)
+				gbt.pressed.connect(func(): _resize_map(int(gw.text), int(gh.text)))
+		"GUIDE":
+			var gb = Button.new(); gb.text = "CHOOSE A PICTURE"; gb.pressed.connect(_guide_choose); side.add_child(gb)
+			if not guide.is_empty():
+				var sh = CheckBox.new(); sh.text = "SHOW IT"; sh.button_pressed = bool(guide.get("on", true)); side.add_child(sh)
+				sh.toggled.connect(func(on): _guide_undo_point(); guide["on"] = on; _guide_save(); overlay.queue_redraw())
+				_lab("How strong it shows")
+				var sl = HSlider.new(); sl.min_value = 0.05; sl.max_value = 1.0; sl.step = 0.05; sl.value = float(guide.get("alpha", 0.4)); side.add_child(sl)
+				sl.value_changed.connect(func(v): guide["alpha"] = v; _guide_save(); overlay.queue_redraw())
+				var bg = Button.new(); bg.text = "BIGGER"; bg.pressed.connect(_guide_scale.bind(1.05)); side.add_child(bg)
+				var sm = Button.new(); sm.text = "SMALLER"; sm.pressed.connect(_guide_scale.bind(1.0 / 1.05)); side.add_child(sm)
+				var ft = Button.new(); ft.text = "FIT TO THE MAP"; side.add_child(ft)
+				ft.pressed.connect(func():
+					_guide_undo_point()
+					guide["x"] = 0.0; guide["y"] = 0.0
+					var ar = float(guide["h"]) / maxf(1.0, float(guide["w"]))
+					guide["w"] = float(area["w"]); guide["h"] = float(area["w"]) * ar
+					if guide["h"] > float(area["h"]):
+						guide["h"] = float(area["h"]); guide["w"] = float(area["h"]) / maxf(0.001, ar)
+					_guide_save(); overlay.queue_redraw())
+				_lab("Drag on the map to move it. Kept for next time (only on this computer).")
 		"COPY", "PASTE":
 			_lab("COPY: drag a box. PASTE: click where its top-left goes. Clipboard: %s" % ("empty" if clipboard.is_empty() else "%d x %d" % [clipboard["w"], clipboard["h"]]))
+			var lc = CheckBox.new(); lc.text = "LASSO"; lc.button_pressed = copy_lasso; side.add_child(lc)
+			lc.toggled.connect(func(on): copy_lasso = on; lasso_pts = [])
+			_lab("LASSO on: COPY by drawing any shape round it (let go: it closes back to where you started) - only that shape is pasted.")
 			var kg = CheckBox.new(); kg.text = "KEEP THE GROUND THERE (G)"; kg.button_pressed = keep_ground
 			kg.toggled.connect(func(on): keep_ground = on); side.add_child(kg)
 			if not clipboard.is_empty():
@@ -1708,16 +3386,17 @@ func _refresh_side() -> void:
 			_lab("Ground to paint: %s. PICK another one first if you want (water, sand, a path, snow...)." % ("none yet" if int(brush_cell[0]) == 0 else str(brush_cell.slice(0, 5))))
 			_spin(side, "brush size", 1, 6, smart_size, func(v): smart_size = int(v))
 			_lab("Paint the shape; when you let go the edges are chosen from the game's own maps so they join up (like the game's lakes, beaches and paths). Ctrl+Z undoes.")
-		"LINE", "RECT":
-			var ob = OptionButton.new()
-			for b in ["TILE", "CELL", "WALL", "GROUND"]:
-				ob.add_item({"TILE": "THE TILE (on the layer)", "CELL": "THE PICKED CELL (all layers)", "WALL": "WALLS", "GROUND": "WALKABLE GROUND"}[b])
-				ob.set_item_metadata(ob.item_count - 1, b)
-				if b == shape_brush: ob.select(ob.item_count - 1)
-			ob.item_selected.connect(func(j): shape_brush = str(ob.get_item_metadata(j)))
-			side.add_child(ob)
-			if tool == "RECT":
-				var cb = CheckBox.new(); cb.text = "FILLED"; cb.button_pressed = rect_filled; cb.toggled.connect(func(on): rect_filled = on); side.add_child(cb)
+			_edges()
+			var et = Label.new(); et.text = "EDGE"; et.add_theme_font_size_override("font_size", 13); side.add_child(et)
+			_lab("Brush along where water meets land: the game's own shore is built there, piece by piece, following its bends - BEACH: sea against sand (wet sand and foam); LAKE: lake water against a cliff's foot (its rim); WATERFALL: a waterfall's soft sides; FOAM: under a waterfall's bottom where it falls into water (paint the fall's bottom straight). Choose one (OFF: SMART's own painting).")
+			var el = ItemList.new(); el.custom_minimum_size = Vector2(230, 150); el.fixed_icon_size = Vector2i(40, 40)
+			el.add_item("OFF")
+			for e in edges:
+				el.add_item(str(e["name"]), _edge_icon(e))
+			el.select(edge_i + 1)
+			el.item_selected.connect(func(j): edge_i = j - 1)
+			side.add_child(el)
+			_spin(side, "edge brush", 1, 12, edge_size, func(v): edge_size = int(v); overlay.queue_redraw())
 		"THINGS":
 			if stamps.is_empty():
 				stamps = MT.list_stamps()
@@ -1732,6 +3411,24 @@ func _refresh_side() -> void:
 				il.select(stamp_i)
 			il.item_selected.connect(func(j): stamp_i = j; _say("Click the map: %s goes there (its top-left at the mouse)." % str(stamps[j].get("name", ""))))
 			side.add_child(il)
+			# the chosen thing (one FIND THINGS IN VIEW found, or a saved one) kept under a name of your own
+			var tn = LineEdit.new(); tn.placeholder_text = "its name"; tn.custom_minimum_size = Vector2(230, 0); side.add_child(tn)
+			var tsb = Button.new(); tsb.text = "SAVE THIS THING"; side.add_child(tsb)
+			tsb.pressed.connect(func():
+				if stamp_i < 0 or stamp_i >= stamps.size():
+					_say("Choose a thing in the list first.")
+					return
+				var nm = tn.text.strip_edges().to_upper()
+				if nm == "":
+					_say("Give it a name first.")
+					return
+				var f = MT.save_stamp(nm, stamps[stamp_i])
+				if f == "":
+					_say("Could not save it.")
+					return
+				stamps[stamp_i]["name"] = nm
+				_say("Saved as %s: it is in THINGS from now on (SAVED THINGS ONLY lists them)." % nm)
+				_refresh_side())
 			var fb = Button.new(); fb.text = "FIND THINGS IN VIEW"; side.add_child(fb)
 			fb.pressed.connect(func():
 				var vs = get_viewport_rect().size / cam.zoom
@@ -1739,7 +3436,20 @@ func _refresh_side() -> void:
 				var found = MT.find_objects(self, r)
 				stamps = MT.list_stamps() + found
 				stamp_i = -1
-				_say("%d things found here (the saved ones first). Choose one, click the map. To keep one: COPY it, SAVE THE COPY AS A THING." % found.size())
+				_say("%d things found here (the saved ones first). Choose one, click the map. To keep one: give it a name, SAVE THIS THING." % found.size())
+				_refresh_side())
+			var tdb = Button.new(); tdb.text = "DELETE THIS SAVED THING"; side.add_child(tdb)
+			tdb.pressed.connect(func():
+				if stamp_i < 0 or stamp_i >= stamps.size() or not stamps[stamp_i].has("file"):
+					_say("Choose one of your saved things in the list first.")
+					return
+				var nm = str(stamps[stamp_i].get("name", ""))
+				var stp = _thing_gone(str(stamps[stamp_i]["file"]))
+				if not stp.is_empty():
+					undo.append(stp)
+					redo.clear()
+				stamps = MT.list_stamps(); stamp_i = -1
+				_say("%s deleted. Ctrl+Z brings it back." % nm)
 				_refresh_side())
 			var rb = Button.new(); rb.text = "SAVED THINGS ONLY"; side.add_child(rb)
 			rb.pressed.connect(func(): stamps = MT.list_stamps(); stamp_i = -1; _refresh_side())
@@ -1774,11 +3484,81 @@ func _refresh_side() -> void:
 			_line(side, "music", str(mood_cfg["music"]), func(t): mood_cfg["music"] = t.strip_edges().to_lower())
 			_lab("(music: empty = the place's own; field, cave, lair, boss, title, or a song file from your music folder)")
 			_lab("Drag a box: in it the place is dark (a light round each fighter), has weather or its own music. SELECT (click inside) to delete.")
-		"WALL", "GROUND":
+		"UNDER", "OVER":
+			_lab(TOOL_HELP[tool])
+			_spin(side, "brush size", 1, 32, paint_size, func(v): paint_size = int(v); overlay.queue_redraw())
+		"GROUND":
+			var hg = CheckBox.new(); hg.text = "HIGH GROUND"; hg.button_pressed = high_ground
+			_big_check(hg)
+			hg.toggled.connect(func(on): high_ground = on)
+			side.add_child(hg)
+			_lab("HIGH GROUND - the tops of platforms and roofs you can land on. Tick HIGH GROUND and paint them (seen with OVER HERO ticked). A hero who flies there and lands stands on top and is drawn over it - he cannot walk off it, only fly off.")
+			_hg_sample("VIOLET - high ground you can walk behind. What hides you there are its tiles drawn over the hero (blue with OVER HERO) - the game's roofs, trees and cliffs already are. On a thing whose tiles are all on the ground layers, paint them with OVER.", false)
+			_hg_sample("MAGENTA - wall painted on violet: high ground that is a wall nobody can walk behind.", true)
+			_lab("Untick HIGH GROUND and paint GROUND to make it normal ground again.")
+			_spin(side, "brush size", 1, 32, paint_size, func(v): paint_size = int(v); overlay.queue_redraw())
+		"WALL":
 			_lab("Red = wall (WALLS on). Paint walls or walkable ground. The game's own walls are kept exactly; change only what you mean to.")
 			_spin(side, "brush size", 1, 32, paint_size, func(v): paint_size = int(v); overlay.queue_redraw())
 		_:
 			_lab(TOOL_HELP.get(tool, ""))
+
+## a big, clear tick box (the theme's was tiny and blurry): a white box, a thick green tick when on
+static var _check_icons = []
+## walk bits: 1 = walkable from the ground, 2 = the game's own upper level, 4 = HIGH GROUND (land on it, stand on top)
+static func _hg(w: int) -> bool:
+	return (w & 4) != 0
+
+## (cells painted earlier today as 6 / 7 were meant to be walked behind: walkable)
+static func _walk_bits(w: int) -> int:
+	w = w & 7
+	return w | 1 if (w & 6) == 6 else w
+
+func _big_check(cb: CheckBox) -> void:
+	if _check_icons.is_empty():
+		for on in [false, true]:
+			var n = 22
+			var img = Image.create(n, n, false, Image.FORMAT_RGBA8)
+			img.fill(Color(0, 0, 0, 0))
+			for i in n:
+				for t in 2:
+					img.set_pixel(i, t, Color.WHITE); img.set_pixel(i, n - 1 - t, Color.WHITE)
+					img.set_pixel(t, i, Color.WHITE); img.set_pixel(n - 1 - t, i, Color.WHITE)
+			if on:
+				var pts = []
+				for k in 6:
+					pts.append(Vector2i(5 + k, 11 + k))      # down stroke
+				for k in 10:
+					pts.append(Vector2i(10 + k, 16 - k))     # up stroke
+				for p in pts:
+					for dx in range(-1, 2):
+						for dy in range(-1, 2):
+							var q = p + Vector2i(dx, dy)
+							if q.x > 1 and q.y > 1 and q.x < n - 2 and q.y < n - 2:
+								img.set_pixel(q.x, q.y, Color(0.35, 1.0, 0.45))
+			_check_icons.append(ImageTexture.create_from_image(img))
+	for nm in ["unchecked", "unchecked_disabled"]:
+		cb.add_theme_icon_override(nm, _check_icons[0])
+	for nm in ["checked", "checked_disabled"]:
+		cb.add_theme_icon_override(nm, _check_icons[1])
+	cb.add_theme_font_size_override("font_size", 14)
+
+## HIGH GROUND's help: a sample of the colour the map shows (violet - or magenta, violet with the wall's red over it,
+## drawn the same way over the same ground) and what it means, a gap above it
+func _hg_sample(t: String, wall: bool) -> void:
+	var gap = Control.new(); gap.custom_minimum_size = Vector2(0, 6); side.add_child(gap)
+	var h = HBoxContainer.new(); side.add_child(h)
+	var sw = Control.new(); sw.custom_minimum_size = Vector2(22, 22)
+	sw.draw.connect(func():
+		sw.draw_rect(Rect2(0, 0, 22, 22), Color(0.62, 0.58, 0.28))      # (a grass-like ground under it)
+		sw.draw_rect(Rect2(0, 0, 22, 22), Color(0.55, 0.15, 1.0, 0.8))
+		if wall:
+			sw.draw_rect(Rect2(0, 0, 22, 22), Color(1, 0.1, 0.1, 0.28)))
+	h.add_child(sw)
+	var l = Label.new(); l.text = t; l.autowrap_mode = TextServer.AUTOWRAP_WORD; l.custom_minimum_size = Vector2(200, 0)
+	l.add_theme_font_size_override("font_size", 10)
+	h.add_child(l)
+	var gap2 = Control.new(); gap2.custom_minimum_size = Vector2(0, 6); side.add_child(gap2)
 
 func _lab(t: String) -> Label:
 	var l = Label.new(); l.text = t; l.autowrap_mode = TextServer.AUTOWRAP_WORD; l.custom_minimum_size = Vector2(230, 0)

@@ -1,0 +1,131 @@
+STORY MODE EDITOR GUIDE
+=======================
+
+There's a full story-mode creator built right into the game's own DEV TOOLS map editor - it's how the
+built-in "Example - A Story Of Your Own: The Missing Key Capsule" mod was made, and it's open to anyone. You don't need to touch
+the GBA cartridge or write any code: a story is just a list of steps you build in the EVENTS tab, which
+you can watch run instantly with TEST IN THE GAME.
+
+Open DEV TOOLS from the main menu: OPTIONS - DEV TOOLS (Windows and Mac).
+
+
+1. STARTING A STORY
+--------------------
+Go to the STORY tab and give it a TITLE. From then on the main menu shows your story at the top, with
+3 save slots, PLAY THE STORY and ERASE SLOT - it keeps its own saves, separate from normal heroes
+(where you stood, flags, numbers, companions, opened places, who was shown or sent away).
+
+Fields:
+  TITLE          shown in the main menu and at THE END
+  SUBTITLE       a line under the title
+  HERO           who you play as
+  START_MAP, X, Y  where a new game starts (use X, Y FROM THE MAP VIEW in the EVENTS tab to fill these
+                 from wherever the MAP tab is currently showing)
+  INTRO_EVENT    an EVENTS id that plays once, automatically, the moment a new game begins
+  CREDITS        the lines that scroll at THE END
+  CREDITS_MUSIC  the song that plays over them
+
+
+2. THE EVENTS TAB: WHAT A STORY IS MADE OF
+-------------------------------------------
+An event is a little script: WHEN it starts (talking to someone, walking into an EVENT box, beating a
+foe kind, the world starting, or - for your intro - nothing at all, it just plays), ONLY IF some
+condition holds (flags, level, a mission done, an item), and ONCE or EVERY TIME. Then the steps
+themselves, one under the other, run top to bottom unless something sends them elsewhere.
+
+TEST IN THE GAME plays the event you're editing immediately, right where you are - this is the fast
+feedback loop that makes building a story practical. Use it constantly: write two or three steps, test,
+adjust, test again.
+
+Steps, grouped by what they're for:
+
+  BASIC       say, choice (its answers jump to labels), label, goto, if_flag, flag, give, take, zeni,
+              exp, heal, quest (hand out a mission), finish_quest, wait, fade, warp (to a map and a
+              spot), spawn (a foe), shop, sound, music, toast, end
+
+  SCENES      move (someone, or PLAYER, walks to x, y; waits for it to finish, or not), face, pose (any
+              pose the sprite set has - e.g. 18 is charging a beam, 9 is the transform animation),
+              camera (to a spot or a person, with a zoom and a frame count), camera_back, shake,
+              show_person, hide_person, emote (!, ?, ... over someone's head), and say / choice with a
+              FACE (a sprite set shown to the left of the text box)
+
+  NUMBERS     var (set, add, sub, mul, random), if_var (=, !=, <, <=, >, >=), timer (counts down,
+              shown on screen), if_timer (has it run out?)
+
+  STORY-ONLY  companion (a hero or sprite set fights beside you; leave to dismiss them), switch_hero
+              (play as someone else - everyone keeps their own level), open_area / close_area (a box of
+              the map becomes walkable or a wall - a boulder smashed, a bridge built; this is kept after
+              saving), save (a save point, right here), the_end (rolls your story's own CREDITS)
+
+  BOSS FIGHTS boss_fight (kind, level, name, hp multiplier, where; a WIN label, a LOSE label, and
+              phases like 0.5:half or 0.2:last - at that much health left, the fight pauses, jumps to
+              that label, says its lines, and FIGHT ON resumes it). The doors stay shut until it ends.
+
+"%s" in a line of text becomes the hero's own name; "{var:coins}" becomes a number you're tracking.
+A line too long for one box is flagged - SPLIT INTO BOXES THAT FIT cuts it up for you.
+LINES FROM THE GAME searches every line any of the game's own people say - click one and it drops into
+your step already carrying the right speaker and face.
+
+
+3. HOW THE GAME'S OWN STORY FEELS, STEP BY STEP
+-------------------------------------------------
+This is the pattern the original game's cutscenes use - copy it freely:
+
+  1. A cutscene: SHOW PERSON, CAMERA to them (zoom 1.5), EMOTE !, MOVE them to you, SAY with a FACE,
+     CAMERA BACK.
+  2. Asking around: PERSON-tool people each with an EVENT that adds 1 to a number (VAR add), then an
+     IF VAR >= 3 that sets a flag once you've spoken to enough of them.
+  3. A place you can only enter later: an EVENT box set to ONLY WHEN flags are set, a locked DOOR that
+     needs an item, or a boulder (an EVENT box set to ONLY BY AN ATTACK, paired with OPEN AREA once
+     it's smashed).
+  4. A boss: BOSS FIGHT with a WIN label, a LOSE label, and a phase (say, 0.5:angry) - a SAY and a
+     TRANSFORM step at half health, then FIGHT ON to continue the fight.
+  5. SAVE, and right at the very end, THE END.
+
+
+4. PLACING A PERSON OR AN NPC-ONLY LOOK FOR A SCENE
+------------------------------------------------------
+SHOW_PERSON drops someone into the map at a spot you choose, with their own sprite set, even if the
+real map data has nobody standing there - useful for a character who should only appear for this one
+scene. HIDE_PERSON removes them again by name.
+
+If you've made a colour variant or a new look just for a cutscene (see COLORS - NEW VARIANT in the main
+DEV TOOLS guide), you can swap a placed person onto it mid-scene the same way the port's own "FUTURE
+GOHAN (CUTSCENE)" look does it: give them that variant's sprite-set number in SHOW_PERSON (or edit it
+onto them afterwards), and pose/move them as usual - the editor doesn't need a separate step for this,
+it's just which sprite set they're carrying at the time.
+
+
+5. TESTING AND FIXING PROBLEMS
+---------------------------------
+- TEST IN THE GAME: plays the event you're editing immediately.
+- F8 in the running game: the EVENT DEBUGGER. Shows the running event, its current step, and every
+  flag, number, timer and state you're tracking. Invaluable for "why isn't this working" - it tells you
+  exactly where the script actually is.
+- F7 (with F8 open): jumps over the step the event is currently waiting on, so you can skip ahead
+  without playing through everything again.
+- CHECK EVERYTHING (the CHECK tab): looks over your whole story and flags what won't work - events
+  that name people who aren't there, goto's aimed at a label that doesn't exist, boss phases written
+  wrong, or a story intro that isn't a valid event id. Fix what it lists before you call it done.
+
+
+6. A WORKING EXAMPLE
+------------------------
+The game ships with "Example - A Story Of Your Own" (modpacks, switched off by default). Switch it on
+in MODS, then open its events in the EVENTS tab and read through them - it's a complete short story
+(about 5 minutes: THE MISSING KEY CAPSULE) that uses nearly everything in this guide: a cutscene,
+clues, a timer, a dark park, a two-phase boss, a locked door, a companion, and credits at the end.
+It's the fastest way to see all of this working together rather than imagining it from a list.
+
+
+GOOD TO KNOW
+------------
+- The story camera's zoom is built for one player; with two players on one PC it only moves, it
+  doesn't zoom.
+- Companions don't get hurt.
+- The original GBA game's own story scenes can't be read out of the cartridge - they're compiled code,
+  not data - so there's no shortcut to importing them automatically. But every line any of its people
+  say IS readable, and shows up searchable under LINES FROM THE GAME, which is a real head start if
+  you're rebuilding a scene from the original game by hand.
+- Nothing you build here needs any ROM file to run or to share: SHARE - MAKE THE MOD FILE packages only
+  what you made.

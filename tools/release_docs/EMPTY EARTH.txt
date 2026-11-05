@@ -1,0 +1,22 @@
+LoG2 ONLINE - v44.5 "EMPTY EARTH" (experimental)
+================================================
+
+This is a snapshot of Earth while it is being rebuilt. It is not the official v45 release.
+
+What is in it:
+  - The new shape of the world: one big continent, with its mountains, deserts, grassland, rivers and snowy north
+    painted in.
+  - The SOUTHERN CONTINENT built, with its places set in it, as an example of a finished part of the world.
+  - Every other place of the game parked at the edge of the map (the strip on the right and the dark area along the
+    bottom), ready to be dragged into the world with the map editor (DEV TOOLS - MOVE).
+  - Roaming foes all over. The story's events are not placed yet.
+
+Play around in it, or open the map editor and build your own Earth from it. See "Earth Editor Guide.txt" and
+"DEV TOOLS.txt".
+
+New in the map editor since v44: BIOME (natural ground, any brush size), the EDGE brushes under SMART (beach,
+lake, waterfall, foam), ROCK (rocks to smash that drop food and ki), LASSO for MOVE and COPY, and painting while
+zoomed right out.
+
+The first start reads your game again (the importer has new parts) and lays this Earth in once - give it a minute.
+You need your own Legacy of Goku II (USA) game file, as always. Nothing from the game is included.

@@ -1,5 +1,12 @@
 # Changelog
 
+## v45
+
+- Capsule Corp computer terminal: a villain database for Free Play - stand at the computer and view stats,
+  portraits and descriptions for the characters you've faced, including the ones you can't play as.
+- Brawl and Heroes vs Villains modes finished.
+- Earth is baked in fresh for this release (every tile, wall and object change from the editor laid in).
+
 ## v44 - "LoG2 Online"
 
 ### Now on Android, Windows and Mac - and a new name

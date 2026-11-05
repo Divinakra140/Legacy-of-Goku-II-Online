@@ -71,6 +71,7 @@ export class Directory {
             host: text(data.host, 24) || "PLAYER",
             private: data.private === true,
             players: whole(data.players, 1, max), max,
+            bots: whole(data.bots, 0, 15),      // (fighters the computer plays there: BRAWL, FRIENDLY CPUS)
             salt: text(data.salt, 64), protocol: text(data.protocol, 48), mods: text(data.mods, 64),
             seen: this.now(), client,
         };

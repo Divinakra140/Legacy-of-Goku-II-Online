@@ -382,6 +382,18 @@ static func mini_image(a: Dictionary, max_px: int = 220) -> Image:
 		if FileAccess.file_exists(p):
 			var im = Image.load_from_file(p)
 			im.convert(Image.FORMAT_RGBA8)
+			var under = Image.create_empty(im.get_width(), im.get_height(), false, Image.FORMAT_RGBA8)
+			under.fill(Color.BLACK)      # (the picture's empty cells are see-through: black under them, as the game has it)
+			under.blend_rect(im, Rect2i(Vector2i.ZERO, im.get_size()), Vector2i.ZERO)
+			im = under
+			var mtw: int = a["tw"]; var mth: int = a["th"]
+			if im.get_width() != mtw or im.get_height() != mth:      # (the map resized: new room the sea's colour, or cut)
+				var bigger = Image.create_empty(mtw, mth, false, Image.FORMAT_RGBA8)
+				bigger.fill(Color.BLACK)
+				var ph = int(a.get("land", {}).get("info", {}).get("planet_h", im.get_height()))      # (beside the planet: the sea; beside the rooms: black)
+				bigger.fill_rect(Rect2i(0, 0, bigger.get_width(), mini(ph, bigger.get_height())), im.get_pixel(im.get_width() - 1, 0))
+				bigger.blit_rect(im, Rect2i(Vector2i.ZERO, im.get_size()), Vector2i.ZERO)
+				im = bigger
 			var ch: Dictionary = Mods.merged("land/0/0")["cells"]      # the changes drawn in (the picture is the import's)
 			for k in ch:
 				var xy = str(k).split(",")

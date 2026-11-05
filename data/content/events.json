@@ -1,4 +1,22 @@
 {
   "_help": "Events (DEV TOOLS - EVENTS): trigger, if, once, steps.",
-  "events": []
+  "events": [
+    {
+      "id": "event1",
+      "if": {},
+      "name": "NEW EVENT",
+      "once": false,
+      "steps": [
+        {
+          "do": "story",
+          "from": 0.0,
+          "table": "intro"
+        }
+      ],
+      "trigger": {
+        "person": "TRAVELLER",
+        "type": "talk"
+      }
+    }
+  ]
 }

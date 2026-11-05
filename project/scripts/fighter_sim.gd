@@ -446,16 +446,16 @@ func _anim_or(a: int, alt: int) -> int:
 func _eyes() -> Vector2:
 	return Assets.eye_point(set_id, anim, dir) * size_scale()
 
-## "from": "chest" (TRI BEAM): facing up or down, from the middle of the body at the hands' height (from the hand it
-## came out to one side); left or right, from the hands
-func _chest_or_hand(sk: Dictionary, a: int) -> Vector2:
-	var h = hand(a)
-	if str(sk.get("from", "")) == "chest" and dir < 2:
-		return Vector2(0.0, h.y)
-	return h
+## "from": "chest" (TRI BEAM): facing up or down, from the middle of the body at the hands' height - as every hand
+## shot is now (hand()); left or right, from the hands
+func _chest_or_hand(_sk: Dictionary, a: int) -> Vector2:
+	return hand(a)
 
 func hand(a: int) -> Vector2:
-	return Assets.hand_point(set_id, a, dir) * size_scale()
+	var h = Assets.hand_point(set_id, a, dir) * size_scale()
+	if dir < 2:      # facing up or down: from the middle of the body (the sprite is not drawn centred on x)
+		h.x = Assets.body_mid_x(set_id, a, dir) * size_scale()
+	return h
 
 func _pose(sk: Dictionary, kind: String) -> int:
 	if sk.has("anim") and _frame_count(int(sk["anim"])) > 0:
@@ -483,13 +483,30 @@ func set_anim(a: int) -> void:
 ## the game has two levels of ground (1 = low, 2 = raised: bridges, cliff tops; 3 = both, where you step
 ## from one to the other): you stay on your level until you pass over a tile that has both
 var lay = 3
+## the ground under the feet: as the game has it, a box 16 wide and 8 high whose top left is the hero's point
+## (measured in mGBA against rock 1's walls: stops at x+16 = the wall from the left, x = the wall from the right,
+## y = the wall from below, y+8 from above) - the hero is drawn round it the same way
+const FOOT_W = 16.0
+const FOOT_H = 8.0
 func _under(px: float, py: float) -> int:
-	return Assets.walk_at(area, px - 5, py) & Assets.walk_at(area, px + 4, py) & Assets.walk_at(area, px - 5, py - 4) & Assets.walk_at(area, px + 4, py - 4)
+	var u = 7
+	for fy in [py, py + FOOT_H - 0.5]:
+		for fx in [px, px + FOOT_W * 0.5, px + FOOT_W - 0.5]:
+			u &= Assets.walk_at(area, fx, fy)
+	return u
+
+## standing on a platform top (the upper level only - HIGH GROUND): drawn over the map's top layers
+var high = false      # landed on a platform top (HIGH GROUND): drawn on top of it, kept on it, until flying off
+func on_high() -> bool:
+	return high and not flying
 
 func can_stand(px: float, py: float) -> bool:
 	if area.is_empty():
 		return true
-	return (_under(px, py) & lay) != 0
+	var u = _under(px, py)
+	if high:
+		return (u & 4) != 0      # on top of high ground you walk all of it, wall underneath or not - and never off it (fly off)
+	return (u & lay) != 0
 
 var fly_boost = false      # Y held while flying: twice as fast
 func _fly_step(mx: int, my: int) -> void:
@@ -523,6 +540,22 @@ func _land() -> void:
 	flying = false
 	state = "idle"
 	set_anim(Rules.A_IDLE)
+	if not area.is_empty():
+		# landing chooses the level under you; on a platform top you made (HIGH GROUND) you stand on top of it
+		var u = _under(x, y)
+		if u & 4:
+			high = true      # on top of a platform / roof (it may be a wall from the ground)
+			return
+		high = false
+		if u != 0:
+			lay = u & 3 if u & 3 else 3
+			# landed with the feet hanging over a wall's edge (just behind a building): up the few pixels to it
+			for k in int(FEET_BELOW) + 1:
+				if _feet_ok(x, y):
+					break
+				if can_stand(x, y - 1.0):
+					y -= 1.0
+			return
 	if area.is_empty() or can_stand(x, y):
 		return
 	for r in range(4, 400, 4):
@@ -533,14 +566,69 @@ func _land() -> void:
 				place_at(px, py)
 				return
 
+const FEET_BELOW = 7.0      # pixels of feet and shadow below the standing point
+## the feet and shadow, where they are drawn (whole pixels - with the fraction they showed a row or not after a fight)
+## (on the ground the feet need ground you can walk at ground level: the game's upper level - also red - let them
+## over a wall now and then, depending on where you had walked)
+func _feet_ok(px: float, py: float) -> bool:
+	if area.is_empty():
+		return true
+	var u = _under(px, roundf(py))      # (the feet box already reaches down to them)
+	if on_high():
+		return (u & 4) != 0
+	if lay & 1:
+		return (u & 1) != 0
+	return (u & lay) != 0
 func move_by(dx: float, dy: float) -> void:
-	if dx != 0.0 and can_stand(x + dx, y):
+	var x0 = x
+	# sideways too: along a rounded wall (a capsule house) the feet slid over the curve - unless they are over a wall
+	# already (never stuck)
+	var moved_x = dx != 0.0 and can_stand(x + dx, y) and (_feet_ok(x + dx, y) or not _feet_ok(x, y))
+	if moved_x:
 		x += dx
-	if dy != 0.0 and can_stand(x, y + dy):
+	# walking down: the feet and shadow are drawn a few pixels below the point that is checked - stop where they
+	# meet a wall's edge (they hung over the wall just behind a building)
+	var moved_y = dy != 0.0 and can_stand(x, y + dy) and (dy < 0.0 or _feet_ok(x, y + dy))
+	if moved_y:
 		y += dy
+	if dx != 0.0 and dy != 0.0 and not moved_x and not moved_y:
+		# straight into a corner on the diagonal (the usual way one is hit, walking at an angle): try sliding round
+		# it either way, not just when walking dead straight at it
+		_round_corner(Vector2(dx, 0))
+		if x == x0:
+			_round_corner(Vector2(0, dy))
+	elif dx == 0.0 and dy != 0.0 and not moved_y:
+		_round_corner(Vector2(0, dy))
+	elif dy == 0.0 and dx != 0.0 and x0 == x:
+		_round_corner(Vector2(dx, 0))
 	if not area.is_empty():
 		var u = _under(x, y)
-		lay = 3 if u == 3 else (lay & u if (lay & u) != 0 else lay)
+		lay = 3 if u & 3 == 3 else (lay & u if (lay & u) != 0 else lay)
+		if high and not (u & 4):
+			high = false      # (walked off the platform's edge: back on the ground)
+
+## walking straight into the corner of a wall: slid round it - if a few pixels to one side the way is open (and the
+## ground between is too), stepped that way (as fast as walking) instead of being caught on the corner
+const CORNER = 20      # pixels either side searched for an opening - a corner's open ground can be a tile or more away, not just a few pixels
+func _round_corner(step: Vector2) -> void:
+	var side = Vector2(step.y, step.x).abs().normalized()      # (across the way you walk)
+	var sp = step.length()
+	for k in range(1, CORNER + 1):
+		for sg in [-1.0, 1.0]:
+			var o = side * sg * k
+			var ok = can_stand(x + o.x + step.x, y + o.y + step.y) and (step.y <= 0.0 or _feet_ok(x + o.x + step.x, y + o.y + step.y))
+			if not ok:
+				continue
+			var clear = true
+			for j in range(1, k + 1):
+				if not can_stand(x + side.x * sg * j, y + side.y * sg * j) or (side.y * sg > 0.0 and not _feet_ok(x, y + sg * j)):
+					clear = false
+					break
+			if clear:
+				var mv = side * sg * minf(sp, float(k))
+				x += mv.x
+				y += mv.y
+				return
 
 ## put somewhere new (a way in, a revive, a warp): on whatever level is there
 func place_at(px: float, py: float) -> void:
@@ -877,6 +965,18 @@ func _fire(beam: bool) -> void:
 		"kind": 0, "vx": v.x * Rules.KI_SPEED, "vy": v.y * Rules.KI_SPEED, "col": 0, "w": 0, "ox": 0.0, "oy": 0.0, "pierce": false})
 	_sfx("ki")
 
+## a flat 10px above a foe's feet read as "the middle" for a big one (T-Rex, Cell): a beam aimed at the middle of a
+## tall sprite flew clean over the hit box and only their legs (near the flat 10px mark) ever registered. Big foes
+## now use their own standing height instead; small ones keep the old flat 10 so nothing else changes.
+var _hit_mid_cache = {}
+func _hit_mid_y(e: Dictionary) -> float:
+	if not e.get("big", false):
+		return 10.0
+	var sid = int(e.get("set", -1))
+	if not _hit_mid_cache.has(sid):
+		_hit_mid_cache[sid] = Assets.body_size(sid).y * 0.5
+	return maxf(10.0, _hit_mid_cache[sid])
+
 var skill_inflict = {}     # the last move's "inflict" (its blasts carry it when they hit)
 func _step_shots(enemies: Array) -> void:
 	for s0 in shots:
@@ -944,33 +1044,34 @@ func _step_shots(enemies: Array) -> void:
 				continue
 			var big: bool = e.get("big", false)
 			var rx = 18.0 if big else 11.0
-			var ry = 22.0 if big else 13.0
+			var mid = _hit_mid_y(e)      # the enemy's own standing height, not a flat guess (a T-Rex or Cell stands much
+			var ry = maxf(13.0, mid * 0.75) if big else 13.0      # taller than the old flat "big" box ever reached)
 			var touch = false
 			if kind == 1:
 				# a beam: anything along it, from the hands to its head
 				var p0 = Vector2(s["ox"], s["oy"])
 				var p1 = Vector2(s["x"], s["y"])
-				var q = Vector2(e["x"], e["y"] - 10)
+				var q = Vector2(e["x"], e["y"] - mid)
 				var seg = p1 - p0
 				var t = clampf((q - p0).dot(seg) / maxf(1.0, seg.length_squared()), 0.0, 1.0)
 				touch = q.distance_to(p0 + seg * t) < float(s["w"]) / 2.0 + rx
 			else:
-				touch = absf(e["x"] - s["x"]) < rx + float(s.get("size", 0)) * 0.5 and absf((e["y"] - 10) - s["y"]) < ry + float(s.get("size", 0)) * 0.5
+				touch = absf(e["x"] - s["x"]) < rx + float(s.get("size", 0)) * 0.5 and absf((e["y"] - mid) - s["y"]) < ry + float(s.get("size", 0)) * 0.5
 			if touch:
 				if kind == 2 and not s.get("pierce", false):
 					explode = true
 					break
 				s["hit"][e["id"]] = true
 				if kind == 2 and str(s.get("look", "")) != "":      # a ball that cuts on through (the Destructo Disk): its hit at each foe
-					fx.append(["xboom", e["x"], e["y"] - 10, 14.0, s["col"], 0, 16, str(s["look"]), int(s["dir"])])
+					fx.append(["xboom", e["x"], e["y"] - mid, 14.0, s["col"], 0, 16, str(s["look"]), int(s["dir"])])
 				var dv = Vector2(s["vx"], s["vy"]).normalized()
-				events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": dv.x * 3.0, "ky": dv.y * 3.0, "stun": int(s.get("stun", 0)), "inflict": s.get("inf", {})})
+				events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": dv.x * 3.0, "ky": dv.y * 3.0, "stun": int(s.get("stun", 0)), "inflict": s.get("inf", {}), "ki": kind == 0})      # (ki: the plain blast, B - its purple spark)
 				if not s.get("pierce", false):
 					gone = true
 		if explode:
 			var r = float(s.get("radius", 40))
 			for e in enemies:
-				if e["alive"] and Vector2(e["x"] - s["x"], e["y"] - 10 - s["y"]).length() < r + (14.0 if e.get("big", false) else 0.0):
+				if e["alive"] and Vector2(e["x"] - s["x"], e["y"] - _hit_mid_y(e) - s["y"]).length() < r + (14.0 if e.get("big", false) else 0.0):
 					var kv = Vector2(e["x"] - s["x"], e["y"] - s["y"]).normalized() * 7.0
 					events.append({"type": "hit", "enemy": e["id"], "dmg": roundi(s["dmg"] * rng.randf_range(0.9, 1.1)), "crit": s["crit"], "kx": kv.x, "ky": kv.y, "stun": 20, "inflict": s.get("inf", {})})
 			if str(s.get("look", "")) != "":
@@ -1236,9 +1337,13 @@ func _step_skill(enemies: Array) -> void:
 # ------------------------------------------------------------------ transformations
 ## this look has no transformation frames (Gohan's own): the form's look plays them (it showed a walk instead)
 func _tf_look(target: int) -> void:
+	# the form's own transformation frames, when its look has them and: this look has none, or the form says so
+	# ("tf_from_form": Gohan's own row 9 is his walk facing down - his first transformation showed him walking)
 	var has_tf = func(fr: Array) -> bool: return fr.size() > Rules.A_TRANSFORM * 4 and fr[Rules.A_TRANSFORM * 4].size() >= 3
 	var tset = int(forms[target].get("set", -1))
-	if not has_tf.call(Assets.sprite_set(set_id).get("slots", [])) and tset > 0 and has_tf.call(Assets.sprite_set(tset).get("slots", [])):
+	if tset <= 0 or not has_tf.call(Assets.sprite_set(tset).get("slots", [])):
+		return
+	if bool(forms[target].get("tf_from_form", false)) or not has_tf.call(Assets.sprite_set(set_id).get("slots", [])):
 		set_id = tset
 
 func _transform_next() -> void:
@@ -1396,6 +1501,10 @@ func revive(px: float, py: float) -> void:
 	invuln = 90
 	set_anim(Rules.A_IDLE)
 
+## a beam on its way: charging one, or letting it go (an eye beam has no pose of its own to tell it by)
+func beaming() -> bool:
+	return state == "skill" and str(cur.get("type", "")) == "beam"
+
 func snapshot() -> Dictionary:
 	var sh = []
 	for s in shots:
@@ -1408,8 +1517,8 @@ func snapshot() -> Dictionary:
 	for e in fx:
 		fxs.append(e.duplicate())
 	return {"ch": ch, "x": x, "y": y, "dir": dir, "anim": anim, "frame": frame, "hp": hp, "maxhp": maxhp, "ep": ep, "maxep": maxep,
-		"lvl": level, "shots": sh, "down": state == "down", "inv": invuln > 0 or flying, "set": shape_set if shape_set >= 0 else set_id, "aura": aura(),
-		"tint": (tint() * state_tint()).to_rgba32(), "sts": states.keys(), "scale": size_scale(), "dx": draw_dx, "fx": fxs, "form": str(form().get("name", "")), "fly": flying, "pvp": pvp}
+		"lvl": level, "shots": sh, "down": state == "down", "inv": invuln > 0 or flying or on_high(), "set": shape_set if shape_set >= 0 else set_id, "aura": aura(),
+		"tint": (tint() * state_tint()).to_rgba32(), "sts": states.keys(), "scale": size_scale(), "dx": draw_dx, "fx": fxs, "form": str(form().get("name", "")), "fly": flying, "pvp": pvp, "high": on_high(), "hurt": state == "hurt", "beaming": beaming()}
 
 # ------------------------------------------------------------------ the heroes' own attacks, exactly as the game draws them
 ## content/rom_specials.json: measured from the game frame by frame (the glow at the hands, the beam or the ball,
@@ -1558,7 +1667,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 		for e in enemies:
 			if not e["alive"] or s["hit"].has(e["id"]):
 				continue
-			var q = Vector2(e["x"], e["y"] - 10)
+			var q = Vector2(e["x"], e["y"] - _hit_mid_y(e))
 			var seg = e2 - a
 			var k = clampf((q - a).dot(seg) / maxf(1.0, seg.length_squared()), 0.0, 1.0)
 			if q.distance_to(a + seg * k) < (8.0 if not e.get("big", false) else 16.0) + 4.0:
@@ -1600,7 +1709,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 	for e in enemies:
 		if hit:
 			break
-		if e["alive"] and absf(e["x"] - c.x) < size * 0.5 + 6 and absf((e["y"] - 10) - c.y) < size * 0.5 + 8:
+		if e["alive"] and absf(e["x"] - c.x) < size * 0.5 + 6 and absf((e["y"] - _hit_mid_y(e)) - c.y) < size * 0.5 + 8:
 			hit = true
 			events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": v.x * 4.0, "ky": v.y * 4.0, "stun": 16, "inflict": s.get("inf", {})})
 			s["hit"][e["id"]] = true
@@ -1610,7 +1719,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 		if R.has("radius"):      # Gohan's blast bursts: everything around is caught
 			_sfx("boom")
 			for e in enemies:
-				if e["alive"] and not s["hit"].has(e["id"]) and Vector2(e["x"] - c.x, e["y"] - 10 - c.y).length() < float(R["radius"]) * float(s.get("k", 1.0)):
+				if e["alive"] and not s["hit"].has(e["id"]) and Vector2(e["x"] - c.x, e["y"] - _hit_mid_y(e) - c.y).length() < float(R["radius"]) * float(s.get("k", 1.0)):
 					events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": 0.0, "ky": 0.0, "stun": 16, "inflict": s.get("inf", {})})
 	return true
 

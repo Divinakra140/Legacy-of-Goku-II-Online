@@ -65,6 +65,12 @@ Keep the ground there: tick KEEP THE GROUND THERE on the right (or press G) in P
 
 Mirroring: after COPY, press X (or the MIRROR LEFT-RIGHT button on the right) to flip the copy left-right, or Y (MIRROR UPSIDE DOWN) to flip it upside down. Then PASTE as usual. Press X again to turn it back.
 
+DRAWN OVER OR UNDER THE HERO (NEW): tick OVER HERO in the top bar - every cell with something drawn over the hero
+turns blue. The UNDER tool paints tiles under the hero (he is drawn over them); the OVER tool paints them over him (he
+walks behind them). Layer 0, the ground, never moves. Ctrl+Z undoes; SAVE keeps it.
+HIGH GROUND (in the GROUND tool, tick HIGH GROUND): tops of platforms and roofs a hero can land on after flying - violet
+with OVER HERO ticked. From the ground the cell stays as it was (walkable, or a wall: paint WALL over it).
+
 SAVE POINTS (NEW): they are in THINGS now, so you can drop one anywhere in a click.
 Choose THINGS and pick SAVE POINT from the list, then click the map. It is the game's own Capsule Corp pad with a see-through edge, so it sits on any ground (grass, sand, snow, paving). Standing anywhere on it: A saves and heals, R2 turns PvP on or off. SAVE the map to keep it.
 

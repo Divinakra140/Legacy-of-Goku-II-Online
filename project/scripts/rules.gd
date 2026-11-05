@@ -73,6 +73,39 @@ static func group_of(t: int) -> String:
 			return {1: "human", 2: "animal", 4: "robot", 8: "big"}.get(int(e[2]), "human")
 	return "human"
 
+## a blow from another player (PVP, BRAWL): content/social.json pvp - a share of its strength, at most a small part of
+## the health (a long fight, like a boss's bar, not one beam and down)
+static func pvp_damage(dmg: int, maxhp: int) -> int:
+	var cfg: Dictionary = Content.social_cfg.get("pvp", {})
+	return clampi(roundi(float(dmg) * float(cfg.get("damage", 0.25))), 1, maxi(1, roundi(maxhp * float(cfg.get("max_hit", 0.06)))))
+
+## BRAWL / HEROES VS VILLAINS: the kill goes to whoever dealt the most damage since the fighter was last at full
+## health, not whoever only landed the finishing blow - ledger: {attacker pid -> {"dmg", "ch", "name"}}. [] if nobody
+static func top_attacker(ledger: Dictionary) -> Array:
+	var best_pid = -1
+	var best: Dictionary = {}
+	for p in ledger:
+		if best.is_empty() or int(ledger[p].get("dmg", 0)) > int(best.get("dmg", 0)):
+			best = ledger[p]; best_pid = p
+	return [] if best_pid == -1 else [best_pid, int(best.get("ch", -1)), str(best.get("name", "?"))]
+
+## heroes you must earn: the level another hero needs first, or -1 for one not finished yet (never shown, never a brawler)
+const LOCKED_HEROES = {"KING COLD": -1}
+static func not_ready(ch: int) -> bool:
+	return ch >= 0 and ch < Assets.CHARACTERS.size() and int(LOCKED_HEROES.get(str(Assets.CHARACTERS[ch]), 0)) < 0
+
+## HEROES VS VILLAINS: the villains' side (everyone else is a hero)
+const VILLAINS = ["ANDROID 17", "ANDROID 18", "CELL", "COOLER", "FRIEZA", "KING COLD"]
+static func is_villain(ch: int) -> bool:
+	return ch >= 0 and ch < Assets.CHARACTERS.size() and VILLAINS.has(str(Assets.CHARACTERS[ch]))
+
+## the game's robots (spawn class 4): they go in a white ring when beaten, not the brown smoke
+static func is_robot_set(set_id: int) -> bool:
+	for e in SPAWN:
+		if int(e[1]) == set_id and int(e[2]) == 4:
+			return true
+	return false
+
 static func kind_to_type_set(k: int) -> Array:
 	if k >= 1000:
 		var s = SPAWN[clampi(k - 1000, 0, SPAWN.size() - 1)]

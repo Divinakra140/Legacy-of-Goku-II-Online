@@ -18,10 +18,10 @@ var built = false
 const STEP_TYPES = ["say", "choice", "label", "goto", "if_flag", "flag", "give", "take", "zeni", "exp", "heal", "quest", "finish_quest",
 	"wait", "fade", "warp", "spawn", "shop", "sound", "music", "toast", "unlock_form", "lock_form", "transform", "revert", "state",
 	"move", "face", "pose", "camera", "camera_back", "shake", "show_person", "hide_person", "emote", "boss_fight", "fight_on",
-	"var", "if_var", "timer", "if_timer", "companion", "switch_hero", "open_area", "close_area", "save", "the_end", "end"]
+	"var", "if_var", "timer", "if_timer", "companion", "switch_hero", "open_area", "close_area", "save", "the_end", "story", "end"]
 const STEP_HELP = {
 	"say": "A line in the text box (who speaks, what). %s = the player's name.", "choice": "A question with answers: each answer goes to a LABEL (empty: goes on).",
-	"label": "A place to jump to.", "goto": "Jump to a LABEL.", "if_flag": "If the flag is set, jump to the LABEL.", "flag": "Set (on) or clear a story flag.",
+	"story": "One of LoG2's own scenes, read from your game: table = its index (hex), from = the first entry; table INTRO = the whole opening. It plays instead of the rest of this event.", "label": "A place to jump to.", "goto": "Jump to a LABEL.", "if_flag": "If the flag is set, jump to the LABEL.", "flag": "Set (on) or clear a story flag.",
 	"give": "Give an item.", "take": "Take an item away.", "zeni": "Give (or take, minus) zeni.", "exp": "Give EXP.", "heal": "Full health and ki.",
 	"quest": "Start a mission.", "finish_quest": "Finish a mission (its reward).", "wait": "Wait (60 = one second).", "fade": "Fade in.",
 	"warp": "Send the player to a map (key, like land/0/0 or custom/mymap) at x, y.", "spawn": "A foe (or boss) appears (x, y; -1 = next to the player).",
@@ -49,7 +49,7 @@ const STEP_FIELDS = {
 	"say": [["who", "text"], ["text", "long"], ["face", "int"]], "choice": [["who", "text"], ["text", "long"], ["options", "options"], ["face", "int"]],
 	"label": [["name", "text"]], "goto": [["label", "text"]], "if_flag": [["name", "text"], ["goto", "text"]], "flag": [["name", "text"], ["on", "bool"]],
 	"give": [["item", "item"], ["count", "int"]], "take": [["item", "item"], ["count", "int"]], "zeni": [["amount", "int"]], "exp": [["amount", "int"]],
-	"heal": [], "quest": [["id", "quest"]], "finish_quest": [["id", "quest"]], "wait": [["frames", "int"]], "fade": [],
+	"story": [["table", "text"], ["from", "int"]], "heal": [], "quest": [["id", "quest"]], "finish_quest": [["id", "quest"]], "wait": [["frames", "int"]], "fade": [],
 	"warp": [["map", "text"], ["x", "int"], ["y", "int"]], "spawn": [["kind", "int"], ["level", "int"], ["boss", "bool"], ["x", "int"], ["y", "int"]],
 	"shop": [["id", "shop"]], "sound": [["name", "text"]], "music": [["name", "text"]], "toast": [["text", "text"]], "end": [],
 	"unlock_form": [["id", "form"]], "lock_form": [["id", "form"]], "transform": [["id", "form"]], "revert": [],
@@ -259,6 +259,7 @@ func _add_step() -> void:
 		"choice": st["face"] = -1
 		"give", "take": st["count"] = 1
 		"wait": st["frames"] = 60
+		"story": st["table"] = "intro"; st["from"] = 0
 		"spawn": st["kind"] = 8; st["level"] = 5; st["boss"] = false; st["x"] = -1; st["y"] = -1
 		"warp": st["map"] = "land/0/0"
 		"state": st["seconds"] = -1; st["off"] = false

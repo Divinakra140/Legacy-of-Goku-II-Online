@@ -269,6 +269,20 @@ static void export_fx(const fs::path& dir) {
         romcat::save_png_rgba((dir / (std::string(x.name) + ".png")).string(), img, C * x.frames, C * x.dirs);
         write_text(dir / (std::string(x.name) + ".json"), js);
     }
+    // the purple spark where a ki blast strikes a foe: one 16 x 16 picture, a byte a pixel (4 tiles of 8 x 8, in rows),
+    // in the sprite colours - just before the blast's own pictures (seen in mGBA at the moment of a hit)
+    {
+        const uint32_t at = 0x0840E37Cu;
+        std::vector<uint8_t> img(16u * 16u * 4u, 0);
+        for (int t = 0; t < 4; ++t) for (int y = 0; y < 8; ++y) for (int xx = 0; xx < 8; ++xx) {
+            const uint8_t c = u8(at + static_cast<uint32_t>(t * 64 + y * 8 + xx));
+            if (!c) continue;
+            const uint32_t v = g_objpal[c];
+            std::memcpy(&img[(static_cast<size_t>((t / 2) * 8 + y) * 16 + static_cast<size_t>((t % 2) * 8 + xx)) * 4], &v, 4);
+        }
+        romcat::save_png_rgba((dir / "kihit.png").string(), img, 16, 16);
+        write_text(dir / "kihit.json", "{\"cell\":16,\"frames\":[{\"w\":16,\"h\":16,\"ox\":8,\"oy\":8}]}");
+    }
 }
 
 // ---------------------------------------------------------------- maps
@@ -407,11 +421,11 @@ static void export_ui(const fs::path& dir) {
             romcat::save_png_rgba((dir / "ball.png").string(), img, 8, 8);
         }
     }
-    // the menus' two fonts (the game's text routine at 0x08020ec2): a table of halfword offsets by character code;
+    // the menus' two fonts and the story's (the game's text routine at 0x08020ec2): a table of halfword offsets by character code;
     // a glyph = its width, then one 16-pixel column per halfword (bit 0 at the top). Saved as a strip of white glyphs
     // plus where each one is; the game adds the shadow when drawing (one pixel right and down).
     struct Fnt { const char* name; uint32_t at; };
-    const Fnt fonts[] = {{"font_head", 0x081d6b1cu}, {"font_small", 0x08028724u}};
+    const Fnt fonts[] = {{"font_head", 0x081d6b1cu}, {"font_small", 0x08028724u}, {"font_talk", 0x0802cc64u}};   // font_talk: the story's lines
     for (const Fnt& f : fonts) {
         std::vector<std::pair<int, int>> where(256, {-1, 0});
         int total = 0;
@@ -787,6 +801,9 @@ static int export_kit(const fs::path& dir) {
             if (tot > 0 && (bottom < 0 || sm.pri[k] > sm.pri[bottom] || (sm.pri[k] == sm.pri[bottom] && k > bottom))) bottom = k;
         }
         if (bottom >= 0 && used > 1 && cover[bottom] * 2 >= sm.tw * sm.th) light &= static_cast<uint8_t>(~(1u << bottom));
+        if (m.z == 8 && m.a == 17) light &= static_cast<uint8_t>(~(1u << 2));   // Northern Mountains: BG2 is the grey generator, drawn solid in the game
+        if (m.z == 8 && m.a == 39) light &= static_cast<uint8_t>(~(1u << 2));   // Vinnie's house: BG2 is the same grey generator
+        if (m.z == 6 && m.a == 5) light &= static_cast<uint8_t>(~(1u << 1));    // Capsule Corp's lab: BG1 is its border and furniture tops (black only round the room), drawn solid
         std::vector<uint8_t> b;
         auto put8 = [&](uint32_t v) { b.push_back(static_cast<uint8_t>(v)); };
         auto put16 = [&](uint32_t v) { put8(v); put8(v >> 8); };
@@ -3926,6 +3943,198 @@ static void export_people(const fs::path& dir) {
     js += "}";
     write_text(dir / "people.json", js);
 }
+// a breakable's drop script (0x0800F9A3 runs it) read as its table: "push 100; f11" (r = a random 0-99), then brackets
+// "r < T [and HP / EP not full: f0d != f0e / f0f != f10] -> f5c item" tried in order, the first that holds drops its
+// item (11-13 food: 10 / 20 / 30 % of max HP, 14-16 ki: the same of max EP - 0x0800F593 / 0x0800F639). Other scripts
+// (a story's switch, a sound) give "" (no drops).
+static std::string drop_table(uint32_t a) {
+    if (!romp(a + 64) || !(u8(a) == 0x00 && u8(a + 1) == 100 && u8(a + 2) == 0x02 && u8(a + 3) == 0x11 && u8(a + 4) == 0x03 && u8(a + 5) == 0x00)) return "";
+    std::string out;
+    uint32_t p = a + 6;
+    for (int n = 0; n < 16 && romp(p + 16); ++n) {
+        if (!(u8(p) == 0x02 && u8(p + 1) == 0x00 && u8(p + 2) == 0x00 && u8(p + 4) == 0x0F)) break;
+        const unsigned t = u8(p + 3);
+        p += 5;
+        const char* cond = "";
+        if (u8(p) == 0x02 && u8(p + 2) == 0x02 && u8(p + 4) == 0x0C && u8(p + 5) == 0x04) {
+            cond = u8(p + 1) == 0x0D ? "hp" : (u8(p + 1) == 0x0F ? "ep" : "?");
+            p += 6;
+        }
+        if (!(u8(p) == 0x13 && u8(p + 2) == 0x00 && u8(p + 4) == 0x02 && u8(p + 5) == 0x5C)) break;
+        char b[48];
+        std::snprintf(b, sizeof b, "%s[%u,\"%s\",%u]", out.empty() ? "" : ",", t, cond, u8(p + 3));
+        out += b;
+        p += 6;
+        if (u8(p) == 0x12) p += 2;      // (jump past the rest)
+        else break;
+    }
+    return out.empty() ? "" : ",\"drops\":[" + out + "]";
+}
+// the game's breakable things (the rocks to smash, pots, fences...): each map variant lists its pictures (var +0x24
+// count, +0x28 records of 24 bytes: x0, y0, x1, y1, the sprite's OAM attributes (shape, size, 8bpp), picture offset in
+// 32-byte units) and points at its own packed sheet of them (var +0x2C). Which of them break: the map entry's list 1
+// (+0x18, count at +5) of objects {0, [picture (from 0), hits, what breaks it (1 a blow, 2 a blast), 0], routine run
+// when it breaks (0x0800F9C7 plays a scene group, 0x0800F9A3 a script - the drop), data} - the game builds them in
+// 0x0800F034 / 0x0800EEA8; the other pictures (doors, signs, save points) never break and are left out.
+// -> data/breakables.json {"maps": {"z_a": {"rocks": [{r, w, h, hits, how, at, scene | script [drops]}]}}},
+//    kit/breakables.png (every picture, rows of up to 1024 pixels; the sprite palette 0x081DA6C8, 0 see-through),
+//    kit/items.png (the drops' pictures)
+static void export_breakables(const fs::path& data_dir, const fs::path& kit_dir) {
+    static const int kW[3][4] = {{8, 16, 32, 64}, {16, 32, 32, 64}, {8, 8, 16, 32}};
+    static const int kH[3][4] = {{8, 16, 32, 64}, {8, 8, 16, 32}, {16, 32, 32, 64}};
+    uint32_t pal[256];
+    for (int i = 0; i < 256; ++i) {
+        const uint16_t c = u16(0x081DA6C8u + 2u * static_cast<uint32_t>(i));
+        pal[i] = i == 0 ? 0u : (0xFF000000u | (((c >> 10) & 31u) * 255u / 31u) << 16 | (((c >> 5) & 31u) * 255u / 31u) << 8 | ((c & 31u) * 255u / 31u));
+    }
+    struct Pic { int w, h; std::vector<uint32_t> px; };
+    std::vector<Pic> pics;
+    std::string js = "{\"maps\":{";
+    bool firstm = true;
+    std::vector<uint8_t> sheet;
+    for (const auto& mr : romtiles::maps()) {
+        const uint32_t e = mr.entry;
+        if (!romp(e + 0x2C) || !romp(u32(e + 0x2C))) continue;
+        const uint32_t var = u32(u32(e + 0x2C));
+        if (!romp(var + 0x2C)) continue;
+        const uint32_t n = u32(var + 0x24), rl = u32(var + 0x28);
+        if (n == 0 || n >= 64 || !romp(rl + 24u * n)) continue;
+        if (!mapbuild::decode(R, u32(var + 0x2C), &sheet)) sheet.clear();
+        std::string rocks, props;
+        std::vector<bool> breaks(n, false);
+        const uint32_t nb = u8(e + 5), lp = u32(e + 0x18);
+        for (uint32_t j = 0; j < nb && j < 64 && romp(lp + 4u * j); ++j) {
+            const uint32_t ob = u32(lp + 4u * j);
+            if (!romp(ob + 12)) continue;
+            const uint32_t k = u8(ob + 4);
+            if (k >= n) continue;
+            breaks[k] = true;
+            const uint32_t r = rl + 24u * k;
+            const uint32_t attrs = u32(r + 16), gw = u32(r + 20);
+            const int shape = static_cast<int>((attrs >> 14) & 3u), size = static_cast<int>((attrs >> 30) & 3u);
+            if (shape > 2) continue;
+            Pic pc{kW[shape][size], kH[shape][size], {}};
+            pc.px.assign(static_cast<size_t>(pc.w * pc.h), 0u);
+            const size_t off = static_cast<size_t>(gw & 0xFFFFu) * 32u;
+            const int tw = pc.w / 8;
+            for (int t = 0; t < tw * (pc.h / 8); ++t)
+                for (int q = 0; q < 64; ++q) {
+                    const size_t at = off + static_cast<size_t>(t) * 64u + static_cast<size_t>(q);
+                    if (at < sheet.size()) pc.px[static_cast<size_t>(((t / tw) * 8 + q / 8) * pc.w + (t % tw) * 8 + q % 8)] = pal[sheet[at]];
+                }
+            const uint32_t rt = u32(ob + 8);
+            char ev[320] = "";
+            if (rt == 0x0800F9C7u || rt == 0x0800F9A3u)
+                std::snprintf(ev, sizeof ev, ",\"%s\":\"%08x\"%s", rt == 0x0800F9C7u ? "scene" : "script", u32(ob + 12), rt == 0x0800F9A3u ? drop_table(u32(ob + 12)).c_str() : "");
+            char b[512];
+            std::snprintf(b, sizeof b, "%s{\"r\":[%d,%d,%d,%d],\"w\":%d,\"h\":%d,\"hits\":%u,\"how\":%u%s,\"pic\":%zu}", rocks.empty() ? "" : ",", static_cast<int32_t>(u32(r)), static_cast<int32_t>(u32(r + 4)),
+                static_cast<int32_t>(u32(r + 8)), static_cast<int32_t>(u32(r + 12)), pc.w, pc.h, u8(ob + 5), u8(ob + 6), ev, pics.size());      // (signed: a rock can stand past a map's edge)
+            rocks += b;
+            pics.push_back(std::move(pc));
+        }
+        // the pictures that never break (jars, boxes, signs, the save points' and doors' pictures): "props", drawn
+        // where the game draws them (their walls are in the map's own already)
+        for (uint32_t k = 0; k < n; ++k) {
+            if (breaks[k]) continue;
+            const uint32_t r = rl + 24u * k;
+            const uint32_t attrs = u32(r + 16), gw = u32(r + 20);
+            const int shape = static_cast<int>((attrs >> 14) & 3u), size = static_cast<int>((attrs >> 30) & 3u);
+            if (shape > 2) continue;
+            Pic pc{kW[shape][size], kH[shape][size], {}};
+            pc.px.assign(static_cast<size_t>(pc.w * pc.h), 0u);
+            const size_t off = static_cast<size_t>(gw & 0xFFFFu) * 32u;
+            const int tw = pc.w / 8;
+            bool any = false;
+            for (int t = 0; t < tw * (pc.h / 8); ++t)
+                for (int q = 0; q < 64; ++q) {
+                    const size_t at = off + static_cast<size_t>(t) * 64u + static_cast<size_t>(q);
+                    if (at < sheet.size() && sheet[at]) { pc.px[static_cast<size_t>(((t / tw) * 8 + q / 8) * pc.w + (t % tw) * 8 + q % 8)] = pal[sheet[at]]; any = true; }
+                }
+            if (!any) continue;
+            char b[256];
+            std::snprintf(b, sizeof b, "%s{\"r\":[%d,%d,%d,%d],\"w\":%d,\"h\":%d,\"k\":%u,\"pic\":%zu}", props.empty() ? "" : ",", static_cast<int32_t>(u32(r)), static_cast<int32_t>(u32(r + 4)),
+                static_cast<int32_t>(u32(r + 8)), static_cast<int32_t>(u32(r + 12)), pc.w, pc.h, k, pics.size());
+            props += b;
+            pics.push_back(std::move(pc));
+        }
+        if (rocks.empty() && props.empty()) continue;
+        js += (firstm ? "" : ",") + std::string("\"") + std::to_string(mr.z) + "_" + std::to_string(mr.a) + "\":{\"rocks\":[" + rocks + "],\"props\":[" + props + "]}";
+        firstm = false;
+    }
+    // the atlas: rows of up to 1024 pixels; "pic" in the list becomes "at": [x, y]
+    const int W = 1024;
+    std::vector<std::pair<int, int>> place(pics.size());
+    int x = 0, y = 0, rowh = 0;
+    for (size_t i = 0; i < pics.size(); ++i) {
+        if (x + pics[i].w > W) { x = 0; y += rowh; rowh = 0; }
+        place[i] = {x, y}; x += pics[i].w; rowh = std::max(rowh, pics[i].h);
+    }
+    const int H = std::max(1, y + rowh);
+    std::vector<uint8_t> img(static_cast<size_t>(W) * H * 4, 0);
+    for (size_t i = 0; i < pics.size(); ++i)
+        for (int py = 0; py < pics[i].h; ++py)
+            for (int px = 0; px < pics[i].w; ++px) {
+                const uint32_t c = pics[i].px[static_cast<size_t>(py * pics[i].w + px)];
+                uint8_t* o = &img[(static_cast<size_t>(place[i].second + py) * W + place[i].first + px) * 4];
+                o[0] = (c >> 16) & 255u; o[1] = (c >> 8) & 255u; o[2] = c & 255u; o[3] = c >> 24;
+            }
+    for (size_t i = 0; i < pics.size(); ++i) {
+        const std::string from = "\"pic\":" + std::to_string(i) + "}";
+        const size_t at = js.find(from);
+        if (at != std::string::npos) js.replace(at, from.size(), "\"at\":[" + std::to_string(place[i].first) + "," + std::to_string(place[i].second) + "]}");
+    }
+    fs::create_directories(kit_dir);
+    romcat::save_png_rgba((kit_dir / "breakables.png").string(), img, W, H);
+    write_text(data_dir / "breakables.json", js + "}}");
+    std::fprintf(stderr, "[export] breakables: %zu\n", pics.size());
+    // what they drop: the game's items 11-16 (the item table 0x086ADE24, 0x38 bytes each; +0x14 and +0x24 its two
+    // pictures, 16 x 16, 8 bits a pixel in plain rows, the same palette) -> kit/items.png: a row a item (11 food small,
+    // 12 medium, 13 large, 14-16 ki), its two pictures side by side
+    std::vector<uint8_t> it(static_cast<size_t>(32) * 96 * 4, 0);
+    std::vector<uint8_t> buf;
+    for (uint32_t n = 11; n <= 16; ++n)
+        for (uint32_t f = 0; f < 2; ++f) {
+            const uint32_t e = 0x086ADE24u + n * 0x38u;
+            if (!romp(e + 0x28) || !romp(u32(e + (f ? 0x24u : 0x14u))) || !mapbuild::decode(R, u32(e + (f ? 0x24u : 0x14u)), &buf)) continue;
+            for (size_t q = 0; q < 256 && q < buf.size(); ++q) {
+                const uint32_t c = pal[buf[q]];
+                uint8_t* o = &it[((static_cast<size_t>(n - 11) * 16 + q / 16) * 32 + f * 16 + q % 16) * 4];
+                o[0] = (c >> 16) & 255u; o[1] = (c >> 8) & 255u; o[2] = c & 255u; o[3] = c >> 24;
+            }
+        }
+    romcat::save_png_rgba((kit_dir / "items.png").string(), it, 32, 96);
+}
+
+// the Dragon Balls: never reachable in the shipped game, but their pictures are still sitting in the game's own
+// item table, right after the items export_breakables reads above - 7 unused slots (items 29-35, same table,
+// same 0x38-byte stride, 0x086ADE24 + n*0x38), one star through seven, each with the generic placeholder message
+// and no "use" routine (nothing ever wires them up) -> kit/dragonballs.png (a row a ball, 1 star to 7)
+static void export_dragonballs(const fs::path& kit_dir) {
+    // a palette of its own, read with the GBA's real BGR555 bit order (bit0-4 red, 5-9 green, 10-14 blue) - the
+    // pal[] built above for breakables has red and blue swapped, which export_breakables' own items happen not
+    // to show clearly, but swaps a correct gold-and-red Dragon Ball into a wrong-looking blue one
+    auto rgb15 = [](uint16_t c) -> uint32_t {
+        const uint32_t r = (c & 31u) * 255u / 31u, g = ((c >> 5) & 31u) * 255u / 31u, b = ((c >> 10) & 31u) * 255u / 31u;
+        return 0xFF000000u | (r << 16) | (g << 8) | b;
+    };
+    uint32_t pal[256];
+    for (int i = 0; i < 256; ++i) pal[i] = rgb15(static_cast<uint16_t>(u16(0x081DA6C8u + 2u * static_cast<uint32_t>(i))));
+    std::vector<uint8_t> img(static_cast<size_t>(16) * 112 * 4, 0);
+    std::vector<uint8_t> buf;
+    for (uint32_t star = 1; star <= 7; ++star) {
+        const uint32_t n = 28 + star, e = 0x086ADE24u + n * 0x38u;
+        if (!romp(e + 0x28) || !romp(u32(e + 0x14u)) || !mapbuild::decode(R, u32(e + 0x14u), &buf)) continue;
+        for (size_t q = 0; q < 256 && q < buf.size(); ++q) {
+            const uint8_t idx = buf[q];
+            if (idx == 0 || idx == 240) continue;      // the sheet's own colour-key, not real pixels
+            const uint32_t c = pal[idx];
+            uint8_t* o = &img[((static_cast<size_t>(star - 1) * 16 + q / 16) * 16 + q % 16) * 4];
+            o[0] = (c >> 16) & 255u; o[1] = (c >> 8) & 255u; o[2] = c & 255u; o[3] = c >> 24;
+        }
+    }
+    romcat::save_png_rgba((kit_dir / "dragonballs.png").string(), img, 16, 112);
+}
+
 static void export_data(const fs::path& dir) {
     fs::create_directories(dir);
     std::string js = "[";
@@ -3947,6 +4156,18 @@ static void export_data(const fs::path& dir) {
             ai += "]]";
         }
         write_text(dir / "ai.json", ai + "]}");
+    }
+    {   // the story: LoG2's scene records (little scripts and the lines between them), as hex for the game's story player
+        static const char kHex[] = "0123456789abcdef";
+        std::string st = "{\"base\":\"083b0000\",\"hex\":\"";
+        for (uint32_t a2 = 0x083B0000u; a2 < 0x08420000u; ++a2) { const uint8_t c = u8(a2); st += kHex[c >> 4]; st += kHex[c & 15]; }
+        // the faces of the text boxes: packed 64 x 64 pictures (the table of them, 107, is at 0x083EC9F4, in the range
+        // above), and the colours they are drawn with (256, the game's sprite palette for them)
+        st += "\",\"faces_base\":\"086af000\",\"faces\":\"";
+        for (uint32_t a2 = 0x086AF000u; a2 < 0x086CB000u; ++a2) { const uint8_t c = u8(a2); st += kHex[c >> 4]; st += kHex[c & 15]; }
+        st += "\",\"face_pal\":\"";
+        for (uint32_t a2 = 0x081DA6C8u; a2 < 0x081DA8C8u; ++a2) { const uint8_t c = u8(a2); st += kHex[c >> 4]; st += kHex[c & 15]; }
+        write_text(dir / "story.json", st + "\"}");
     }
     js = "[";
     for (uint32_t i = 0; i < 80; ++i) {
@@ -4168,6 +4389,37 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[music] %d songs\n", n);
         return n > 0 ? 0 : 1;
     }
+    if (std::string(argv[1]) == "dumpobj" && argc >= 5) {   // dev: godot_export dumpobj GAME Z A - every raw object
+        // in that map entry's 4 lists, whatever its handler (the normal export only keeps recognised kinds)
+        std::ifstream gf(argv[2], std::ios::binary);
+        g_rom.assign((std::istreambuf_iterator<char>(gf)), std::istreambuf_iterator<char>());
+        if (g_rom.size() < 0x800000) { std::fprintf(stderr, "[dumpobj] not a game file\n"); return 1; }
+        R = Rom{g_rom.data(), g_rom.size()};
+        romtiles::init(R);
+        const int wantZ = std::atoi(argv[3]), wantA = std::atoi(argv[4]);
+        for (const auto& m : romtiles::maps()) {
+            if (m.z != wantZ || m.a != wantA) continue;
+            std::fprintf(stderr, "[dumpobj] z=%d a=%d entry=%08x var=%08x place=%s\n", m.z, m.a, m.entry, m.var, romtiles::place_name(m.z, m.a).c_str());
+            static const uint32_t kList[4] = {0x14, 0x18, 0x1C, 0x10};
+            for (int L = 0; L < 4; ++L) {
+                const uint32_t cnt = u8(m.entry + 4 + static_cast<uint32_t>(L)), arr2 = u32(m.entry + kList[L]);
+                std::fprintf(stderr, "[dumpobj] list %d (offset +0x%02x): count=%u array=%08x\n", L, kList[L], cnt, arr2);
+                for (uint32_t i = 0; i < cnt && i < 64; ++i) {
+                    if (!romp(arr2)) { std::fprintf(stderr, "[dumpobj]   array ptr not in ROM\n"); break; }
+                    const uint32_t r = u32(arr2 + 4u * i);
+                    if (!romp(r)) { std::fprintf(stderr, "[dumpobj]   [%u] entry ptr %08x not in ROM\n", i, r); continue; }
+                    const uint32_t h = u32(r);
+                    const uint32_t pos = u32(r + 0xC);
+                    std::fprintf(stderr, "[dumpobj]   [%u] @ %08x: handler=%08x type=%u x=%d y=%d set=%u w4=%08x w14=%08x w18=%08x w1c=%08x w20=%08x\n",
+                        i, r, h, u32(r + 8), static_cast<int16_t>(pos & 0xFFFF), static_cast<int16_t>(pos >> 16), u32(r + 0x10),
+                        u32(r + 4), u32(r + 0x14), u32(r + 0x18), u32(r + 0x1C), u32(r + 0x20));
+                }
+            }
+            return 0;
+        }
+        std::fprintf(stderr, "[dumpobj] no map z=%d a=%d found\n", wantZ, wantA);
+        return 1;
+    }
     if (std::string(argv[1]) == "fixqoa") {   // godot_export fixqoa FILE_OR_DIR...: mend songs recorded before v19
         int n = 0;
         for (int i = 2; i < argc; ++i) n += fs::is_directory(argv[i]) ? qoafix::fix_dir(argv[i]) : (qoafix::fix_file(argv[i]) ? 1 : 0);
@@ -4209,6 +4461,8 @@ int main(int argc, char** argv) {
         export_data(out / "data");
         // the music ripper is gone: your own songs go in the music folder
         export_people(out / "data");
+        export_breakables(out / "data", out / "kit");
+        export_dragonballs(out / "kit");
         export_sfx(out / "sounds");
         const int k = export_kit(out / "kit");
         std::fprintf(stderr, "[export] building kit: %d maps\n", k);
@@ -4223,7 +4477,7 @@ int main(int argc, char** argv) {
     progress("ui", 0, 1);
     export_ui(out / "ui");
     progress("done", 1, 1);
-    write_text(out / "version.txt", "36\n");
+    write_text(out / "version.txt", "38\n");      // = IMPORT_VERSION in project/scripts/assets.gd: raise both together, or the game asks for the game on every start
     std::fprintf(stderr, "[export] done: %s\n", out.string().c_str());
     return 0;
 }

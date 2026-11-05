@@ -7,7 +7,10 @@ var anim = 0
 var dir = 0
 var frame = 0
 var tint = Color(1, 1, 1, 1)
-var flash = false
+var flash = false          # hit: flashing red, as the game's foes do
+var dying = false          # beaten: gone in the game's cloud of brown smoke (fx v_boom) - a robot's white ring (fx e_ring)
+var robot = false
+var _dying_ms = -1
 var concealed = false
 var size_scale = 1.0
 var label = ""
@@ -71,7 +74,15 @@ func _draw() -> void:
 	var dst = Rect2(Vector2(f["x"], f["y"]) * size_scale, Vector2(f["w"], f["h"]) * size_scale)
 	var c = tint
 	if flash:
-		c = Color(tint.r * 1.8, tint.g * 1.8, tint.b * 1.8, tint.a)
+		c = Color(c.r * 1.3, c.g * 0.35, c.b * 0.35, c.a)
+	var dk = -1.0
+	if dying:
+		if _dying_ms < 0:
+			_dying_ms = Time.get_ticks_msec()
+		dk = clampf((Time.get_ticks_msec() - _dying_ms) / 660.0, 0.0, 1.0)      # (the game's 40 ticks)
+		c.a *= clampf(1.0 - dk * 3.0, 0.0, 1.0)      # under the smoke at once
+	else:
+		_dying_ms = -1
 	var smoke_k = -1.0
 	if hero and set_data.get("villain_fx", false):
 		if anim == 2 and (Time.get_ticks_msec() / 80) % 2 == 0:
@@ -79,7 +90,19 @@ func _draw() -> void:
 		elif anim == 3 and _dead_ms >= 0 and set_data.get("smoke_down", false):
 			smoke_k = clampf((Time.get_ticks_msec() - _dead_ms) / 1400.0, 0.0, 1.0)
 			c.a *= clampf(1.6 - smoke_k * 2.0, 0.0, 1.0)              # beaten: gone in the smoke
-	draw_texture_rect_region(set_data["tex"], dst, src, c)
+	if c.a > 0.0:
+		draw_texture_rect_region(set_data["tex"], dst, src, c)
+	if dk >= 0.0 and dk < 1.0:
+		# the game's brown cloud (puff, cloud, ring, bits); a robot's white ring first, the cloud a quarter second later
+		var bb2 = _opaque_box(f, frame % fr.size(), slot)
+		var mid2 = Vector2(f["x"] + bb2.position.x + bb2.size.x * 0.5, f["y"] + bb2.position.y + bb2.size.y * 0.5) * size_scale
+		if robot:
+			_death_fx("e_ring", dk, mid2)
+			if dk >= 0.38:
+				_death_fx("v_boom", (dk - 0.38) / 0.62, mid2)
+		else:
+			_death_fx("v_boom", dk, mid2)
+		queue_redraw()
 	if smoke_k >= 0.0 and smoke_k < 1.0:
 		var fx = Assets.efx("e_smoke")
 		if not fx.is_empty():
@@ -150,6 +173,16 @@ func _text_font(z: float) -> Font:
 ## the part of a frame that has pixels (cached per sprite set image)
 static var _boxes = {}
 static var _imgs = {}
+## one of the game's 4-picture effects at k (0..1 through it), centred on p
+func _death_fx(name: String, k: float, p: Vector2) -> void:
+	var sfx = Assets.efx(name)
+	if sfx.is_empty():
+		return
+	var i = clampi(int(k * 4.0), 0, mini(3, sfx["frames"].size() - 1))
+	var sf: Dictionary = sfx["frames"][i]
+	if int(sf["w"]) > 0:
+		draw_texture_rect_region(sfx["tex"], Rect2((p - Vector2(sf["w"], sf["h"]) * 0.5).floor(), Vector2(sf["w"], sf["h"])), Rect2(i * int(sfx["cell"]), 0, sf["w"], sf["h"]))
+
 func _opaque_box(f: Dictionary, fi: int, slot: int) -> Rect2:
 	var tex: Texture2D = set_data["tex"]
 	var key = "%d:%d:%d" % [tex.get_rid().get_id(), slot, fi]

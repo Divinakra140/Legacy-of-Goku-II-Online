@@ -295,7 +295,9 @@ func state_is(e: Dictionary, id: String) -> bool:
 	return str(e.get("st", {}).get("id", "")) == id
 
 func ensure_state(e: Dictionary, id: String) -> void:
-	if not state_is(e, id):
+	# (walking, but showing another picture - put there by dying, coming back, a freeze...: the foe slid along
+	# without moving its legs until a blow reset it - the TIGER MEN. The walk's own picture again)
+	if not state_is(e, id) or (id in ["walk", "run", "backwalk"] and int(e["anim"]) != 1):
 		set_state(e, id)
 
 func step_state(e: Dictionary) -> void:
