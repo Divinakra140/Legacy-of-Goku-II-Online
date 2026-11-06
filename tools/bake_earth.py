@@ -84,7 +84,7 @@ def main() -> int:
             i = y * w + x
             for k in range(5):
                 layers[k][i] = int(v[k]) & 0xFFFFFFFF
-            walk[i] = int(v[5]) & 1
+            walk[i] = int(v[5]) & 0xFF      # every bit: 1 ground, 4 HIGH GROUND (& 1 lost every roof you can land on)
             changed.add(i)
     os.makedirs(OUT, exist_ok=True)
     body = raw[:8] + b"".join(l.astype("<u4").tobytes() for l in layers) + walk.tobytes()
