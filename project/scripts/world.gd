@@ -1110,7 +1110,7 @@ func _step_local(L: Local) -> void:
 	if clash_rt.step(L, raw):
 		return      # in a beam clash: held in the pose, tapping (clash.gd)
 	f.step(inp, elist)
-	_bump(L)
+	_bump(L, elist)
 	_step_comps(L, elist)
 	if Engine.get_physics_frames() % 10 == L.k:
 		_find_mood(L)
@@ -1384,13 +1384,27 @@ func _database_step(L: Local, raw: Dictionary, inp: Dictionary, elist: Array) ->
 	return inp
 
 ## people stand their ground: you walk around them, not through them (and a duel's two fighters don't merge)
-func _bump(L: Local) -> void:
+func _bump(L: Local, elist: Array) -> void:
 	var f: FighterSim = L.fighter
 	if f.state == "down" or f.flying:
 		return
 	var others = []
 	for p in L.area.get("people", []):
 		others.append([Vector2(float(p["x"]), float(p["y"])), 9.0])
+	# the other players, the BRAWL / HEROES VS VILLAINS / FRIENDLY CPU fighters (kept with the players) and the foes:
+	# solid too - each machine moves only its own heroes out of the way, so nobody is pushed twice
+	for pid in Game.remote_states:
+		if pid / 8 == Game.my_id() and _local_of(pid % 8) != null:
+			continue      # (one of this machine's own heroes)
+		var st: Dictionary = Game.remote_states[pid]
+		if int(st.get("node", -1)) == L.node_i and not st.get("down", false) and not st.get("fly", false) and not st.get("high", false):
+			others.append([Vector2(float(st.get("x", 0)), float(st.get("y", 0))), 10.0])
+	for o in locals:
+		if o != L and o.node_i == L.node_i and o.fighter.state != "down" and not o.fighter.flying:
+			others.append([Vector2(o.fighter.x, o.fighter.y), 10.0])
+	for e in elist:
+		if e["alive"]:
+			others.append([Vector2(e["x"], e["y"]), 14.0 if e["big"] else 10.0])
 	if not L.duel.is_empty():
 		var q = _pos_of_pid(int(L.duel["with"]))
 		if q != null:
@@ -3606,6 +3620,16 @@ func _draw_hud() -> void:
 	for i in locals.size():
 		_draw_talk(c, locals[i], i)
 		var Ld: Local = locals[i]
+		# knocked out until a timer runs out (multiplayer, BRAWL, HEROES VS VILLAINS): big and in the middle, or the
+		# game just looks frozen - the small "DOWN 5" over the hero is for the other players
+		var Fd: FighterSim = Ld.fighter
+		if Fd.state == "down" and Fd.down_t > 0 and (locals.size() > 1 or not Game.remote_states.is_empty()):
+			var scd = _side_centre(i)
+			var bu = _pf_unit(4.0 if split_now else 6.0)
+			var t2 = str(ceili(Fd.down_t / 60.0))
+			c.draw_rect(Rect2(scd.x - _pf_width("DEAD", bu) * 0.75, scd.y - _pf_h * bu * 1.9, _pf_width("DEAD", bu) * 1.5, _pf_h * bu * 3.6), Color(0, 0, 0, 0.45))
+			_pf_draw(c, Vector2(scd.x - _pf_width("DEAD", bu) / 2.0, scd.y - _pf_h * bu * 1.5), "DEAD", Color(1, 0.15, 0.1), bu, true)
+			_pf_draw(c, Vector2(scd.x - _pf_width(t2, bu) / 2.0, scd.y + _pf_h * bu * 0.2), t2, Color(1, 1, 1), bu, true)
 		var same_pc = not Ld.duel.is_empty() and int(Ld.duel["with"]) / 8 == Game.my_id()
 		if not Ld.duel.is_empty() and not (same_pc and i == 1 and not split_now):
 			var sc2 = _side_centre(i)
@@ -4588,15 +4612,25 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 					line.call("BRAWL - FIRST TO %d KILLS WINS" % brawl.KILLS_TO_WIN_BRAWL, Color(1, 0.85, 0.3))
 					var my_pid = _my_pid(L)
 					var srows: Array = match_score_info.get("rows", [])
+					# one line each - in two columns with a line between them past 8 fighters (one long list ran off a
+					# handheld's screen)
+					var ents = []
 					var have_mine = false
 					for srow in srows:
-						if int(srow.get("pid", -1)) == my_pid:
-							have_mine = true
-					if not have_mine:      # no kills yet: your own line still shows, so you know it is working
-						line.call("%s LVL %d: 0 KILLS  (YOU)" % [f.name.to_upper(), f.level], Color(0.6, 1, 0.7))
-					for srow in srows:
 						var is_me = int(srow.get("pid", -1)) == my_pid
-						line.call("%s LVL %d: %d KILLS%s" % [str(srow.get("name", "?")).to_upper(), int(srow.get("lvl", 1)), int(srow.get("n", 0)), "  (YOU)" if is_me else ""], Color(0.6, 1, 0.7) if is_me else Color(1, 1, 1))
+						have_mine = have_mine or is_me
+						ents.append(["%s LVL %d: %d%s" % [str(srow.get("name", "?")).to_upper(), int(srow.get("lvl", 1)), int(srow.get("n", 0)), "  (YOU)" if is_me else ""], Color(0.6, 1, 0.7) if is_me else Color(1, 1, 1)])
+					if not have_mine:      # no kills yet: your own line still shows, so you know it is working
+						ents.push_front(["%s LVL %d: 0  (YOU)" % [f.name.to_upper(), f.level], Color(0.6, 1, 0.7)])
+					var per = ents.size() if ents.size() <= 8 else ceili(ents.size() / 2.0)
+					var cw = W if per == ents.size() else (W - 8) / 2.0
+					var top = Y[0]
+					for ei in ents.size():
+						var cx = x0 if ei < per else x0 + cw + 8
+						_ds(c, font, Vector2(cx, top + (ei % per) * 10), ents[ei][0], HORIZONTAL_ALIGNMENT_LEFT, cw, 7, ents[ei][1])
+					if per < ents.size():
+						c.draw_line(Vector2(x0 + cw + 4, top - 8), Vector2(x0 + cw + 4, top + (per - 1) * 10 + 2), Color(1, 0.85, 0.3, 0.6), 1.0)
+					Y[0] = top + per * 10
 			Y[0] += 4
 			line.call("TRANSFORMATIONS (TRANSFORM BUTTON: NEXT FORM / BACK TO NORMAL)", Color(1, 0.85, 0.3))
 			if rows.is_empty():

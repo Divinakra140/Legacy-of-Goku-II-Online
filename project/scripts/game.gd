@@ -264,7 +264,8 @@ func _lan_host_poll() -> void:
 		var server = str(cfg.get("mode", "")) == "server"
 		var info = {"name": "SERVER" if server else str(cfg.get("name", "HOST")), "planet": planet.title if planet != null else "",
 			"character": "SERVER (NO PLAYER)" if server else str(Assets.CHARACTERS[clampi(int(cfg.get("character", 0)), 0, Assets.CHARACTERS.size() - 1)]),
-			"players": remote_states.size() + (0 if server else 1), "server": server}
+			"players": remote_states.size() + (0 if server else 1), "server": server,
+			"kind": "HEROES VS VILLAINS" if bool(cfg.get("hvv", false)) else ("BRAWL" if bool(cfg.get("brawl", false)) else ("STORY" if cfg.has("story") else "FREE PLAY"))}
 		_lan_host.set_dest_address(ip, port)
 		_lan_host.put_packet(("LOG2!" + JSON.stringify(info)).to_utf8_buffer())
 
@@ -611,6 +612,8 @@ func host_step(locs: Array) -> Array:
 			var peer = int(f["peer"]) / 8
 			if peer != 1 and not sent.has(peer) and not f.get("bot", false):      # (a FRIENDLY CPU: played here)
 				sent[peer] = true
+				if _behind_peers().has(peer):
+					continue      # (not keeping up: skipped, the next picture replaces it)
 				if big:
 					# a big land: each PC only hears about what is near its own players
 					var mine = []
@@ -846,7 +849,33 @@ func send_state(k: int, node: int, st: Dictionary, nm: String) -> void:
 	d["node"] = node
 	d["name"] = nm
 	d["k"] = k
-	rpc("player_state", d)
+	var behind = _behind_peers()
+	if behind.is_empty():
+		rpc("player_state", d)
+		return
+	for p in multiplayer.get_peers():
+		if not behind.has(p):
+			rpc_id(p, "player_state", d)
+
+## the machines that are not keeping up with what is sent to them (a slow PC, a slow link): their positions and the
+## world's picture are skipped until they catch up - the next ones replace them anyway. Queued instead, a slow
+## Windows PC in a 14-fighter BRAWL filled its 4 MB queue, everything after was dropped and it lost the game every
+## half a minute. Worked out once a frame
+var _behind_cache = []
+var _behind_frame = -1
+func _behind_peers() -> Array:
+	var fr = Engine.get_process_frames()
+	if fr == _behind_frame:
+		return _behind_cache
+	_behind_frame = fr
+	_behind_cache = []
+	var mp = multiplayer.multiplayer_peer
+	if mp is WebSocketMultiplayerPeer:
+		for p in multiplayer.get_peers():
+			var wp = mp.get_peer(p)
+			if wp != null and wp.get_current_outbound_buffered_amount() > 256 * 1024:
+				_behind_cache.append(p)
+	return _behind_cache
 
 ## a player on this PC stopped playing (split screen back to one)
 func local_gone(k: int) -> void:

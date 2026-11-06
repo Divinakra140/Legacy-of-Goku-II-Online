@@ -98,7 +98,12 @@ static func hvv() -> bool:
 
 ## how many fighters in all (the host picked it: BRAWL / HEROES VS VILLAINS screen)
 static func places() -> int:
-	return clampi(int(Game.cfg.get("brawl_places", PLACES)), 2, PLACES)
+	return clampi(int(Game.cfg.get("brawl_places", default_places())), 2, PLACES)
+
+## the count a game starts with: small enough for a handheld (16 slowed a Retroid Pocket Flip 2, 7 did not);
+## HEROES VS VILLAINS keeps its two sides even
+static func default_places() -> int:
+	return 8 if hvv() else 7
 
 func is_bot(pid: int) -> bool:
 	return bots.has(pid)

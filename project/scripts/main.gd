@@ -616,6 +616,7 @@ func _green(b: Button) -> void:
 
 ## PLAY: big and green (the colour of Steam's play button) with a triangle - the first thing to press (Android port)
 const DIFF_W = 110      # the NORMAL box, and the room under it where PLAY stands
+const Brawl = preload("res://scripts/brawl.gd")
 func _play_button() -> Button:
 	var b = Button.new()
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -2142,7 +2143,7 @@ func _brawl_count(back: Callable, then: Callable) -> void:
 	_global_back = back
 	var hv = bool(Game.cfg.get("hvv", false))
 	_gheading("Heroes vs Villains" if hv else "Brawl")
-	Game.cfg["brawl_places"] = 16
+	Game.cfg["brawl_places"] = Brawl.default_places()
 	var step = 2 if hv else 1
 	var n_l = _gtext(gba, "", Vector2(0, 34), true, G_CYAN)
 	n_l.size = Vector2(GW, 18); n_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -2479,15 +2480,23 @@ func _mp_kind() -> void:
 	# the same in two sides of 8 (brawl.gd)
 	_glist([["FREE PLAY", func(): _mp_story_slot = 0; Game.cfg.erase("story"); _free_choice(_mp_kind, _mp_choice)],
 		["STORY MODE", _story_screen],
-		["BRAWL", func(): _mp_story_slot = 0; Game.cfg.erase("story"); Game.cfg["brawl"] = true; _brawl_count(_mp_kind, _mp_choice)],
-		["HEROES VS VILLAINS", func(): _mp_story_slot = 0; Game.cfg.erase("story"); Game.cfg["brawl"] = true; Game.cfg["hvv"] = true; _brawl_count(_mp_kind, _mp_choice)]], 50, 22, true)
+		["BRAWL", func(): _mp_story_slot = 0; Game.cfg.erase("story"); Game.cfg["brawl"] = true; Game.cfg["brawl_places"] = Brawl.default_places(); _mp_choice()],
+		["HEROES VS VILLAINS", func(): _mp_story_slot = 0; Game.cfg.erase("story"); Game.cfg["brawl"] = true; Game.cfg["hvv"] = true; Game.cfg["brawl_places"] = Brawl.default_places(); _mp_choice()]], 50, 22, true)
+
+## BRAWL / HEROES VS VILLAINS in multiplayer: only whoever hosts picks how many fighters (someone joining plays the
+## host's game), so the count comes after HOST or SPLIT SCREEN, never before JOIN
+func _host_count(back: Callable, then: Callable) -> void:
+	if Game.cfg.get("brawl", false):
+		_brawl_count(back, then)
+	else:
+		then.call()
 
 func _mp_choice() -> void:
 	_gba_screen()
 	_global_back = _mp_kind if _mp_story_slot == 0 else _story_slots
 	_gheading("Story Co-op" if _mp_story_slot > 0 else "Multiplayer")
 	_no_balls = true      # (the pictures beside these choices: the gold letters show the pick)
-	var bs = _glist([["GLOBAL", _global_multiplayer], ["LOCAL", _local_multiplayer], ["SPLIT SCREEN", _split_screen]], 26, 50, true)
+	var bs = _glist([["GLOBAL", _global_multiplayer], ["LOCAL", _local_multiplayer], ["SPLIT SCREEN", func(): _host_count(_mp_choice, _split_screen)]], 26, 50, true)
 	_no_balls = false
 	bs[0].icon = _globe_icon(); bs[1].icon = _wifi_icon(); bs[2].icon = _split_icon()
 	for b in bs:
@@ -3044,9 +3053,9 @@ func _local_multiplayer() -> void:
 	_gba_screen()
 	_global_back = _mp_choice
 	_gheading("Local Multiplayer")
-	_gchoices([["HOST GAME", func(): _pick_map_char(_local_multiplayer, _host), "ONLY PEOPLE ON YOUR WI-FI CAN JOIN"],
+	_gchoices([["HOST GAME", func(): _host_count(_local_multiplayer, func(): _pick_map_char(_local_multiplayer, _host)), "ONLY PEOPLE ON YOUR WI-FI CAN JOIN"],
 		["JOIN GAME", func(): _char_screen(_local_multiplayer, _find_games), "JOIN A GAME ON YOUR WI-FI"],
-		["HOST SERVER WITHOUT PLAYING", func(): _map_screen(_local_multiplayer, _server_from_menu), "THIS DEVICE RUNS THE WORLD, OTHERS JOIN IT"]], 40, 38)
+		["HOST SERVER WITHOUT PLAYING", func(): _host_count(_local_multiplayer, func(): _map_screen(_local_multiplayer, _server_from_menu)), "THIS DEVICE RUNS THE WORLD, OTHERS JOIN IT"]], 40, 38)
 
 var _online_label: Label
 func _global_multiplayer() -> void:
@@ -3057,10 +3066,10 @@ func _global_multiplayer() -> void:
 	_gheading("Global Multiplayer")
 	_online_label = _gtext(gba, "", Vector2(0, 19), false, Color(0.6, 1, 0.7))
 	_online_label.size = Vector2(GW, 12); _online_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_gchoices([["HOST PUBLIC GAME", func(): _world_name_screen(func(): _pick_map_char(_global_multiplayer, func(): _online_action(func(): _host_online("")))), "ANYONE IN THE WORLD CAN JOIN"],
-		["HOST PRIVATE GAME", _private_password_screen, "ONLY PEOPLE WITH YOUR PASSWORD CAN JOIN"],
+	_gchoices([["HOST PUBLIC GAME", func(): _host_count(_global_multiplayer, func(): _world_name_screen(func(): _pick_map_char(_global_multiplayer, func(): _online_action(func(): _host_online(""))))), "ANYONE IN THE WORLD CAN JOIN"],
+		["HOST PRIVATE GAME", func(): _host_count(_global_multiplayer, _private_password_screen), "ONLY PEOPLE WITH YOUR PASSWORD CAN JOIN"],
 		["JOIN GAME", func(): _char_screen(_global_multiplayer, _online_games), "SEE THE GAMES PEOPLE ARE PLAYING ONLINE"],
-		["HOST SERVER WITHOUT PLAYING", func(): _world_name_screen(func(): _map_screen(_global_multiplayer, func(): _online_action(func(): _global_back = Callable(); test["online"] = "1"; _server_from_menu()))), "THIS DEVICE RUNS AN ONLINE WORLD"]], 36, 34)
+		["HOST SERVER WITHOUT PLAYING", func(): _host_count(_global_multiplayer, func(): _world_name_screen(func(): _map_screen(_global_multiplayer, func(): _online_action(func(): _global_back = Callable(); test["online"] = "1"; _server_from_menu())))), "THIS DEVICE RUNS AN ONLINE WORLD"]], 36, 34)
 	_tick(_show_online_state)
 
 func _show_online_state() -> void:
@@ -3182,9 +3191,12 @@ func _refresh_online_games() -> void:
 	var rows = []
 	for g in Online.lobbies:
 		sig += "%s|%s|%s|%d|%d|%s;" % [g["id"], g["character"], g["planet"], g["players"], int(g.get("bots", 0)), g["private"]]
-		var kind = "HEROES VS VILLAINS - " if str(g["world"]).begins_with("HEROES VS VILLAINS") else ("BRAWL - " if str(g["world"]).begins_with("BRAWL") else "")
 		var shown = mini(int(g["max"]), int(g["players"]) + int(g.get("bots", 0)))      # the lobby's own fighters count too, same as real players
-		rows.append(["%s%s - %s  (%d/%d)%s" % [kind, str(g["character"]), str(g["planet"]), shown, int(g["max"]), "  PRIVATE" if g["private"] else ""], _pick_online_game.bind(g)])
+		# "BRAWL: MY WORLD - DIVINAKRA (PICCOLO) - EARTH": the kind of game and the world's name (an older host: only the
+		# name), who hosts it, and the map - left out when the world is simply called after it
+		var world = str(g["world"])
+		var where = "" if world.ends_with(str(g["planet"])) else " - " + str(g["planet"])
+		rows.append(["%s - %s%s  (%d/%d)%s" % [world, str(g["character"]), where, shown, int(g["max"]), "  PRIVATE" if g["private"] else ""], _pick_online_game.bind(g)])
 	_fill_games(sig, rows, Online.list_error.to_upper() if Online.list_error != "" else "LOOKING FOR GAMES... NOBODY IS HOSTING ONE ONLINE RIGHT NOW")
 
 var finding = false
@@ -3206,7 +3218,9 @@ func _refresh_find() -> void:
 	for ip in ips:
 		var g: Dictionary = Game.lan_found[ip]
 		sig += "%s|%s|%s;" % [ip, g.get("character", ""), g.get("planet", "")]
-		rows.append(["%s - %s" % [str(g.get("character", g.get("name", "?"))), str(g.get("planet", ""))], _join_found.bind(ip)])
+		# "BRAWL - DIVINAKRA (PICCOLO) - EARTH" (an older host sends no kind: only the hero and the map)
+		var who = str(g.get("character", "?")) if bool(g.get("server", false)) or not g.has("name") else "%s (%s)" % [str(g["name"]), str(g.get("character", "?"))]
+		rows.append(["%s%s - %s" % [(str(g["kind"]) + " - ") if g.has("kind") else "", who, str(g.get("planet", ""))], _join_found.bind(ip)])
 	_fill_games(sig, rows, "LOOKING FOR GAMES... SOMEONE ON YOUR WI-FI HAS TO HOST ONE")
 
 func _leave_find() -> void:

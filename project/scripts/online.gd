@@ -301,9 +301,10 @@ func _announce(now: int) -> void:
 		return
 	var server = str(Game.cfg.get("mode", "")) == "server"
 	var record = {"key": _key, "address": str(s["address"]),
-		"name": ("HEROES VS VILLAINS: " if bool(Game.cfg.get("hvv", false)) else ("BRAWL: " if bool(Game.cfg.get("brawl", false)) else "")) + (world_name if world_name != "" else (Game.planet.title if Game.planet != null else "")),
+		"name": ("HEROES VS VILLAINS: " if bool(Game.cfg.get("hvv", false)) else ("BRAWL: " if bool(Game.cfg.get("brawl", false)) else ("STORY: " if Game.cfg.has("story") else "FREE PLAY: "))) + (world_name if world_name != "" else (Game.planet.title if Game.planet != null else "")),
 		"mods": Game.planet.title if Game.planet != null else "",
-		"host": "SERVER (NO PLAYER)" if server else str(Assets.CHARACTERS[clampi(int(Game.cfg.get("character", 0)), 0, Assets.CHARACTERS.size() - 1)]),
+		# the host's own name and their hero ("DIVINAKRA (PICCOLO)"): older versions show it as it is
+		"host": "SERVER (NO PLAYER)" if server else "%s (%s)" % [Game.lobby_name(), str(Assets.CHARACTERS[clampi(int(Game.cfg.get("character", 0)), 0, Assets.CHARACTERS.size() - 1)])],
 		"private": is_private, "salt": salt, "players": maxi(1, players), "max": Game.MAX_CLIENTS + (0 if server else 1), "bots": bots,
 		"protocol": PROTOCOL}
 	_next_announce = now + ANNOUNCE_MS
@@ -350,8 +351,8 @@ func _listed(code: int, body: String) -> void:
 		var addr = str(e.get("address", "")).left(45)
 		if addr == "" or addr == own:
 			continue
-		out.append({"id": str(e.get("id", addr)), "address": addr, "world": str(e.get("name", "")).left(24), "planet": str(e.get("mods", e.get("name", ""))).left(32),
-			"character": str(e.get("host", "")).left(24), "private": bool(e.get("private", false)),
+		out.append({"id": str(e.get("id", addr)), "address": addr, "world": str(e.get("name", "")).left(40), "planet": str(e.get("mods", e.get("name", ""))).left(32),
+			"character": str(e.get("host", "")).left(40), "private": bool(e.get("private", false)),
 			"players": int(e.get("players", 1)), "max": int(e.get("max", 16)), "bots": int(e.get("bots", 0)), "salt": str(e.get("salt", "")).left(64)})
 	out.sort_custom(func(x, y): return str(x["character"]) + str(x["planet"]) < str(y["character"]) + str(y["planet"]))
 	lobbies = out
