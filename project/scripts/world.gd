@@ -4277,16 +4277,17 @@ func _pvp_hit_out(L: Local, pid: int, ev: Dictionary) -> void:
 ## a tick of a BEAM CLASH at p (clash.gd, brawl.gd): sparks shooting straight out from where the beams push on each
 ## other - each beam's colour sprays out on its own side (`left`: the colour of the beam coming from the left), a few
 ## white ones every way - and the white-hot middle
-func clash_burst(node_i: int, p: Vector2, left: Color, right: Color) -> void:
+func clash_burst(node_i: int, p: Vector2, left: Color, right: Color, vert: bool = false) -> void:
 	var av = views.get(node_i)
 	if av == null:
 		return
-	av.clash_core[p.round()] = [3, left, right]
+	av.clash_core[p.round()] = [3, left, right, vert]
 	for i in 5:
 		var white = randi() % 5 == 0
 		var from_left = randi() % 2 == 0
-		# out away from its own beam (back the way it came is blocked by the beam): a wide fan, up and down too
-		var a = randf_range(-1.35, 1.35) + (PI if from_left else 0.0)
+		# out away from its own beam (back the way it came is blocked by the beam): a wide fan, up and down too. One
+		# above the other (vert): `left` is the upper beam's, sprayed up, `right` the lower one's, sprayed down
+		var a = randf_range(-1.35, 1.35) + ((-PI / 2.0 if from_left else PI / 2.0) if vert else (PI if from_left else 0.0))
 		if white:
 			a = randf() * TAU
 		var sp = randf_range(1.6, 4.2)
@@ -4318,11 +4319,13 @@ func _draw_clash(n: Node2D, av) -> void:
 		var tips = []
 		for k2 in n_sp:
 			var a2 = (k2 + rng.randf_range(-0.3, 0.3)) * TAU / n_sp
-			tips.append([a2, rng.randf_range(14.0, 34.0) * (1.25 if absf(cos(a2)) > 0.7 else 1.0), rng.randf_range(0.16, 0.26)])
+			var along = absf(sin(a2)) if (c.size() > 3 and c[3]) else absf(cos(a2))      # (longer spikes along the beams)
+			tips.append([a2, rng.randf_range(14.0, 34.0) * (1.25 if along > 0.7 else 1.0), rng.randf_range(0.16, 0.26)])
 		for layer in [[1.0, 4.0, false], [0.55, 2.6, true]]:
 			for tp in tips:
 				var a2: float = tp[0]
-				var col: Color = Color(1, 1, 1, 0.95) if layer[2] else (c[1] if cos(a2) < 0.0 else c[2])
+				var side = sin(a2) if (c.size() > 3 and c[3]) else cos(a2)      # (one above the other: the upper beam's colour up)
+				var col: Color = Color(1, 1, 1, 0.95) if layer[2] else (c[1] if side < 0.0 else c[2])
 				var tip = p + Vector2.from_angle(a2) * float(tp[1]) * float(layer[0])
 				var w2 = float(tp[2])
 				var base0 = p + Vector2.from_angle(a2 - w2 * 3.0) * float(layer[1])

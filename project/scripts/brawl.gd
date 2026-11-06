@@ -413,7 +413,7 @@ func _fight(b: Dictionary, f, tgt: Dictionary) -> Dictionary:
 		b["ranged"] = randf() < 0.4
 	# a beam coming at it (being charged, or out): one of its own back at once, if it has one ready - the beams meet
 	# in a clash (as near in line as a clash takes). Slow to answer, the first beam would hit it while it charges
-	if ax > ay and ay < Clash.ROWS and ax > 30.0 and ax < 280.0 and not f.busy() and _beam_at(int(tgt["id"]), float(tgt["x"]), f) and _special(b, f, true):
+	if ((ax > ay and ay < Clash.ROWS) or (ay > ax and ax < Clash.ROWS)) and maxf(ax, ay) > 30.0 and maxf(ax, ay) < 280.0 and not f.busy() and _beam_at(int(tgt["id"]), float(tgt["x"]), float(tgt["y"]), f) and _special(b, f, true):
 		_face(inp, f, dv)
 		inp["sp"] = true
 		return inp
@@ -525,7 +525,7 @@ func _special(b: Dictionary, f, beam_only: bool = false) -> bool:
 
 ## the one it fights is letting a beam go sideways at it: charging one (in the beam pose) or with it out
 const BEAM_POSE = 18
-func _beam_at(tid: int, tx: float, f) -> bool:
+func _beam_at(tid: int, tx: float, ty: float, f) -> bool:
 	var q = PVP_ID - tid
 	var d = -1
 	var beam = {}
@@ -546,7 +546,7 @@ func _beam_at(tid: int, tx: float, f) -> bool:
 			d = int(st.get("dir", 0))
 			beam = Clash._beam_snap(st.get("shots", []), d)
 			pose = bool(st.get("beaming", false)) or int(st.get("anim", -1)) == BEAM_POSE      # (older games: the beam pose)
-	return (pose or not beam.is_empty()) and ((d == 3 and f.x > tx) or (d == 2 and f.x < tx))
+	return (pose or not beam.is_empty()) and ((d == 3 and f.x > tx) or (d == 2 and f.x < tx) or (d == 0 and f.y > ty) or (d == 1 and f.y < ty))
 
 ## turned to them: the way pressed only while not facing it (a tap turns a fighter without a step)
 static func _face(inp: Dictionary, f, dv: Vector2) -> void:
@@ -600,6 +600,7 @@ func _social_in(pid: int, from_pid: int, from_name: String, kind: String, data: 
 			_clash_start(pid, b, from_pid)
 		if int(b["clash"]["with"]) == from_pid:
 			b["clash"]["theirs"] = maxi(int(b["clash"]["theirs"]), int(data.get("n", 0)))
+			b["clash"]["heard"] = int(b["clash"]["t"])
 	elif kind == "clash_end" and int(b.get("clash", {}).get("with", -1)) == from_pid:
 		_clash_finish(pid, b, bool(data.get("you_won", false)))
 
@@ -614,7 +615,7 @@ func _clash_start(pid: int, b: Dictionary, with: int) -> void:
 ## two brawlers' beams meeting (the players' games find their own): the clash starts for both
 func _clash_look(pid: int, b: Dictionary) -> void:
 	var f = b["f"]
-	if f.dir < 2 or not b.get("clash", {}).is_empty():
+	if not b.get("clash", {}).is_empty():
 		return
 	var mine = Clash._beam_of(f.shots, f.dir)
 	if mine.is_empty():
@@ -622,16 +623,16 @@ func _clash_look(pid: int, b: Dictionary) -> void:
 	for q in bots:
 		var o: Dictionary = bots[q]
 		var of = o["f"]
-		if q == pid or int(o["node"]) != int(b["node"]) or not o.get("clash", {}).is_empty() or of.state == "down" or of.dir != (f.dir ^ 1):
+		if q == pid or int(o["node"]) != int(b["node"]) or not o.get("clash", {}).is_empty() or of.state == "down":
 			continue
-		if absf(of.y - f.y) > Clash.ROWS or (of.x > f.x) != (f.dir == 3):
+		if not Clash.lined_up(f.dir, Vector2(f.x, f.y), of.dir, Vector2(of.x, of.y)):
 			continue
 		if hvv() and Rules.is_villain(int(f.ch)) == Rules.is_villain(int(of.ch)):
 			continue
 		var theirs = Clash._beam_of(of.shots, of.dir)
 		if theirs.is_empty():
 			continue
-		if (mine["head"].x >= theirs["head"].x) if f.dir == 3 else (mine["head"].x <= theirs["head"].x):
+		if Clash.heads_met(f.dir, mine["head"], theirs["head"]):
 			_clash_start(pid, b, q)
 			_clash_start(q, o, pid)
 			return
@@ -652,28 +653,41 @@ func _clash_step(pid: int, b: Dictionary, host) -> bool:
 		c["mine"] = int(c["mine"]) + 1
 	if bots.has(with):
 		c["theirs"] = int(bots[with].get("clash", {}).get("mine", c["theirs"]))
+		c["heard"] = int(c["t"])      # (both here: never quiet)
 	elif int(c["t"]) % 6 == 0:
 		Game.send_social(with, pid, str(b["name"]), "clash_taps", {"n": int(c["mine"])})
+	# no time limit: the beam eats ki as a held one does, and out of ki it gives out (clash.gd)
+	if int(c["t"]) % FighterSim.BEAM_DRAIN_TICKS == 0:
+		f.ep = maxi(0, f.ep - 1)
+	if f.ep <= 0:
+		if bots.has(with):
+			_clash_finish(with, bots[with], true)
+		else:
+			Game.send_social(with, pid, str(b["name"]), "clash_end", {"you_won": true})
+		_clash_finish(pid, b, false)
+		return false
 	# the clash point between them, pushed by the taps: our beam's head kept on it, sparks where they meet
 	var lead = clampi(int(c["mine"]) - int(c["theirs"]), -Clash.LEAD, Clash.LEAD)
 	var k = 0.5 + 0.4 * float(lead) / float(Clash.LEAD)
-	var p = Vector2(lerpf(f.x, float(other["x"]), k), Clash.meet_y(f, with, (f.y + float(other["y"])) * 0.5 - 14.0, world))
-	for s in f.shots:
-		if int(s.get("kind", 0)) == 1:
-			s["x"] = p.x
+	var me = Vector2(f.x, f.y)
+	var them = Vector2(float(other["x"]), float(other["y"]))
+	var p = Clash.clash_point(f.dir, me, them, k, Clash.meet(f, with, Vector2((me.x + them.x) * 0.5, (me.y + them.y) * 0.5 - 14.0), world))
+	Clash.pin_head(f.shots, f.dir, p)
 	if int(b["node"]) == host.node_i and bool(c["ref"]) and bots.has(with):
 		# two brawlers: the sparks here (with a player, their game shows them)
 		var mc = Clash._beam_of(f.shots, f.dir).get("col", Color(1, 1, 1))
 		var tc = Clash._beam_of(bots[with]["f"].shots, bots[with]["f"].dir).get("col", Color(1, 1, 1))
-		world.clash_burst(host.node_i, p, mc if f.x < float(other["x"]) else tc, tc if f.x < float(other["x"]) else mc)
-	if bool(c["ref"]) and (int(c["t"]) >= Clash.TIME or absi(int(c["mine"]) - int(c["theirs"])) >= Clash.LEAD):
+		var vert = Rules.dir_vec(f.dir).x == 0.0
+		var first = (me.y < them.y) if vert else (me.x < them.x)
+		world.clash_burst(host.node_i, p, mc if first else tc, tc if first else mc, vert)
+	if bool(c["ref"]) and absi(int(c["mine"]) - int(c["theirs"])) >= Clash.LEAD:
 		var won = int(c["mine"]) >= int(c["theirs"])
 		if bots.has(with):
 			_clash_finish(with, bots[with], not won)
 		else:
 			Game.send_social(with, pid, str(b["name"]), "clash_end", {"you_won": not won})
 		_clash_finish(pid, b, won)
-	elif not bool(c["ref"]) and int(c["t"]) > Clash.TIME + 90:
+	elif int(c["t"]) - int(c.get("heard", 0)) > Clash.QUIET:
 		_clash_end(pid, b)      # (the other went quiet: it just ends)
 	return true
 
@@ -684,9 +698,9 @@ func _clash_finish(pid: int, b: Dictionary, won: bool) -> void:
 		clashes += 1
 	if not won:
 		var other = world._pos_of_pid(int(b.get("clash", {}).get("with", -1)))
-		var kx = (1.0 if other != null and float(other["x"]) < f.x else -1.0) * 8.0
+		var kb = Clash.knock(f.dir, Vector2(f.x, f.y), Vector2(float(other["x"]), float(other["y"])) if other != null else Vector2(f.x, f.y) + Rules.dir_vec(f.dir))
 		f.invuln = 0
-		f.take_hit(maxi(1, roundi(f.maxhp * Clash.HIT)), kx, 0.0)
+		f.take_hit(maxi(1, roundi(f.maxhp * Clash.HIT)), kb.x, kb.y)
 	_clash_end(pid, b)
 
 func _clash_end(_pid: int, b: Dictionary) -> void:
