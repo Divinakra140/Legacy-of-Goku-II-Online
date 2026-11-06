@@ -4,7 +4,7 @@
 The world's first ever online multiplayer Godot rebuild of **Legacy of Goku II** by **Puni Puni** and **Divinakra**
 (YouTube: [@PuniPuni2026](https://www.youtube.com/@PuniPuni2026), [@DivinakraCreations](https://www.youtube.com/@DivinakraCreations)),
 for **Android** (Handhelds and phones), **Windows** and **Mac** (Apple Silicon and Intel). All three play
-GLOBAL multiplayer together. Also known as "Legacy of Goku II - Co-op".
+GLOBAL multiplayer together. Also known as "Legacy of Goku II - Co-op". 
 
 **Improvements** LoG2 Online v44 has some exciting impovements to both the game on all three platforms and bundled map editor
  on PC and Mac:
@@ -49,4 +49,17 @@ Needs Godot 4.7.2 with its Android export templates, the Android SDK (build-tool
    keys/keystore_password.txt as password: ...).
 5. Point the scripts at your tools, then build - the signed APK lands in out/LoG2Coop.apk:
    export GODOT=/path/to/godot ANDROID_SDK=/path/to/android-sdk JAVA_HOME=/path/to/jdk-17 then tools/export.sh
-  
+
+## AI Use, Progenitor Credits, Backstory and Future Remarks
+This project was made with the help of AI. I first found out about Puni Puni's "Legacy of Goku II Coop" v42 from 
+his youtube video and contacted him to see if he would be ok with me developing it and helping to polish it,
+port it to android and mac ect.. since it was only on windows and was not polished at all and you could not even 
+walk over flowers and many areas of the map were thrown together by code in a way that was obviosuly never touched 
+by a human. To my surpise, Puni Puni wanted someone to "take over" the project. So I did! I have redrawn the entire 
+map by hand, corrected the collision and rendering by hand and even added some hand drawn animation frames and a whole 
+redesigned sprite sheet for Mecha Frieza. I added in public multiplayer, and begun the original story mode and made a 
+bunch of the game's characters playable with my own hand drawn special attacks. Puni Puni does not have a Github account 
+so I cannot add him as contributor but he is the progenitor of this project and it has been disclosed that AI was used in 
+much of it, so I figure I might as well make that clear on here. If anyone wants to continue the development of this game,
+please take this source code and do whatever you want with it. I will likely stop developing this unpaid passion project
+after v45 or v46 as I feel my desires for this game have been implemented. 
