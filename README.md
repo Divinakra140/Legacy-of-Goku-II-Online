@@ -1,4 +1,4 @@
-<img width="1920" height="1080" alt="release 4 4" src="https://github.com/user-attachments/assets/6eff3797-949f-471c-9ffb-90cb23c0606b" />
+<img width="7000" height="5650" alt="Legacy of Goku II Online - Updated Map" src="https://github.com/user-attachments/assets/bc7033e3-f9b0-47e8-bd6f-2845f2dd3cf0" />
  
 
 The world's first ever online multiplayer Godot rebuild of **Legacy of Goku II** by **Puni Puni** and **Divinakra**
