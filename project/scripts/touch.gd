@@ -21,7 +21,7 @@ func _ready() -> void:
 	pad.draw.connect(_draw_controls)
 	add_child(pad)
 	apply_mode()
-	for b in ["up", "down", "left", "right", "a", "b", "sp", "tr", "it", "nx", "mn", "run"]:
+	for b in ["up", "down", "left", "right", "a", "b", "sp", "tr", "it", "nx", "mn", "run", "fly", "runt"]:
 		keys[b] = false
 
 ## where the buttons are, in screen (viewport) coordinates - they follow the screen's shape
@@ -47,6 +47,8 @@ func _buttons() -> Dictionary:
 		"sp": [Vector2(r - 8, bt - 44), 15.0, "SP"],
 		"tr": [Vector2(r - 50, bt - 30), 13.0, "TR"],
 		"run": [Vector2(r - 88, bt + 18), 13.0, "RUN"],
+		"fly": [Vector2(r - 92, bt - 22), 13.0, "FLY"],      # L2 on a pad: fly / land
+		"runt": [Vector2(s.x - 40, 148), 11.0, "PVP"],     # R2 on a pad: PVP at a save point (elsewhere: sprint on / off)
 		# a small column under the minimap
 		"mn": [Vector2(s.x - 15, 88), 11.0, "MENU"],
 		"map": [Vector2(s.x - 15, 112), 11.0, "MAP"],
