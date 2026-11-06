@@ -4099,7 +4099,9 @@ static void export_breakables(const fs::path& data_dir, const fs::path& kit_dir)
             for (size_t q = 0; q < 256 && q < buf.size(); ++q) {
                 const uint32_t c = pal[buf[q]];
                 uint8_t* o = &it[((static_cast<size_t>(n - 11) * 16 + q / 16) * 32 + f * 16 + q % 16) * 4];
-                o[0] = (c >> 16) & 255u; o[1] = (c >> 8) & 255u; o[2] = c & 255u; o[3] = c >> 24;
+                // red and blue the other way round from the breakables above: pal[] has them swapped (the GBA keeps red
+                // in its low bits), which only these drops showed - blue meat. The breakables keep the look they have
+                o[0] = c & 255u; o[1] = (c >> 8) & 255u; o[2] = (c >> 16) & 255u; o[3] = c >> 24;
             }
         }
     romcat::save_png_rgba((kit_dir / "items.png").string(), it, 32, 96);
@@ -4477,7 +4479,7 @@ int main(int argc, char** argv) {
     progress("ui", 0, 1);
     export_ui(out / "ui");
     progress("done", 1, 1);
-    write_text(out / "version.txt", "38\n");      // = IMPORT_VERSION in project/scripts/assets.gd: raise both together, or the game asks for the game on every start
+    write_text(out / "version.txt", "39\n");      // = IMPORT_VERSION in project/scripts/assets.gd: raise both together, or the game asks for the game on every start
     std::fprintf(stderr, "[export] done: %s\n", out.string().c_str());
     return 0;
 }

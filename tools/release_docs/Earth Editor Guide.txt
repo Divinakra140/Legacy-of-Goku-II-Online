@@ -7,10 +7,11 @@ This is the game's own DEV TOOLS map editor (Puni Puni's). Open it from the main
 GETTING AROUND
 --------------
 
-- Move: drag with the right (or middle) mouse button, or use WASD / the arrow keys.
+- PAN: drag to move around. You can also drag with the right (or middle) mouse button with any tool, or use WASD / the arrow keys.
 - Zoom: mouse wheel. When you are zoomed far out, a left click zooms in on that spot.
 - WALLS button: shows where you cannot walk, in red.
 - GRID button: shows the 8×8 cells.
+- OVER HERO button: shows in blue every cell with something drawn over the hero, and in violet the HIGH GROUND.
 
 
 LAYERS
@@ -23,22 +24,7 @@ Each map cell has 5 layers. Press the number keys 0–4 to choose one.
   1–2     Things under the hero (trunks, fences, clothes)
   3–4     Things drawn over the hero (leaves, roof edges)
 
-TILE and ERASE work on the chosen layer. STAMP, COPY and PASTE work on all 5 layers at once, plus the wall.
-
-Moving a tile over or under the hero
-------------------------------------
-
-To make the hero walk behind something (a tree top, a roof edge), move its tile from layer 1–2 up to layer 3–4:
-
-1. Press 1 (or 2), the layer the tile is on now.
-2. Choose PICK and click the cell. PICK takes the tile from the layer you chose. It then switches you to STAMP, so carry on with the next steps.
-3. Choose ERASE and click the same cell. This removes the tile from that layer.
-4. Press 3, choose TILE, and click the cell. The tile is painted back, now over the hero.
-
-To put a tile back under the hero, do the same the other way round: start on layer 3 or 4 and paint it on 1 or 2.
-
-- If PICK takes the wrong tile (or none), you're on the wrong layer. Try another number and PICK again.
-- A tile over the hero doesn't stop them walking there. Walls are separate: use WALL and GROUND.
+ERASE works on the chosen layer. PICK's STAMP, COPY, PASTE and MOVE work on all 5 layers at once, plus the wall.
 
 
 UNDO AND SAVE
@@ -51,50 +37,81 @@ UNDO AND SAVE
 - Closing without saving throws away everything since your last save.
 
 
-COPYING A TREE, A SAVE POINT OR ANYTHING ELSE
----------------------------------------------
+PAINTING CELLS
+--------------
 
-This is the copy-and-paste you asked about:
+- PICK: click a cell to see what is in it (its tile on each layer, walkable or not).
+- STAMP (tick it on the right, in PICK): the cell you clicked is then stamped wherever you click or drag - all 5 layers and its wall.
+  Or choose a tile from the list on the right (this game's, or another game's from OTHER GAMES) and the LAYER under it: that tile is stamped onto that layer only.
+- ERASE: takes the tile away from the chosen layer.
+- SMART: PICK a ground first (water, sand, a path), then paint. When you let go, its edges are joined up the way the game's own maps join them.
+- EDGE (in SMART, on the right): brush along where water meets land and the game's own shore is built there, following its bends.
+  BEACH: sea against sand. LAKE: lake water against a cliff's foot. WATERFALL: a waterfall's sides. FOAM: where a waterfall falls into water. OFF: SMART's normal painting.
 
-1. Choose COPY and drag a box around the tree (or the Capsule Corp pad, a house, anything).
-2. Choose PASTE and click where you want it. The box's top-left corner lands at the mouse. Click again to place more copies.
+Brush size: STAMP, ERASE, WALL, GROUND and BIOME have a brush size box on the right (1 to 32 cells across). The white square under the mouse shows how much you will paint. Dragging paints a smooth line, even when you move the mouse fast.
+
+
+OVER AND UNDER THE HERO
+-----------------------
+
+- OVER: paints tiles over the hero. He walks behind them, like leaves or a roof edge.
+- UNDER: paints tiles under the hero. He is drawn over them.
+- The ground itself (layer 0) never moves.
+- Turn OVER HERO on in the top bar to see which cells are drawn over him.
+
+
+BIOME: NATURAL GROUND
+---------------------
+
+Choose BIOME, pick a ground on the right (grass, autumn grass, dirt, snow, desert and beach sand, crops, sea, lake water, waterfalls and their foam, Namek grass and water...), set the brush size and paint.
+Each patch is a piece of the real ground picked at random, so it never looks like one tile repeated. Water stays water, walls too.
+
+MAKE A BIOME FROM A BOX: drag a box round any good patch of the map to add it as your own biome. DELETE THIS BIOME removes one you made.
+
+
+COPY, PASTE AND MOVE
+--------------------
+
+1. Choose COPY and drag a box around a tree (or a Capsule Corp pad, a house, anything). Tick LASSO on the right to draw any shape instead of a box.
+2. Choose PASTE and click where you want it. The copy's top-left corner lands at the mouse. Click again to place more copies.
 
 Walls come along with the copy, so a pasted tree blocks only where the original did.
 
-Keep the ground there: tick KEEP THE GROUND THERE on the right (or press G) in PASTE or THINGS. The ground tiles round the edge of your copy are treated as background and left out: the ground already where you paste stays, and only the thing itself (a Capsule Corp pad, a tree, a house) is laid on it, with its walls. Copy with a little background showing on every side so it knows what to leave out.
+- Keep the ground there: tick KEEP THE GROUND THERE on the right (or press G) in PASTE or THINGS. The ground tiles round the edge of your copy are left out: the ground already where you paste stays, and only the thing itself is laid on it, with its walls. Copy with a little background showing on every side so it knows what to leave out.
+- Mirroring: after COPY, press X (MIRROR LEFT-RIGHT) or Y (MIRROR UPSIDE DOWN). Press again to turn it back.
 
-Mirroring: after COPY, press X (or the MIRROR LEFT-RIGHT button on the right) to flip the copy left-right, or Y (MIRROR UPSIDE DOWN) to flip it upside down. Then PASTE as usual. Press X again to turn it back.
-
-DRAWN OVER OR UNDER THE HERO (NEW): tick OVER HERO in the top bar - every cell with something drawn over the hero
-turns blue. The UNDER tool paints tiles under the hero (he is drawn over them); the OVER tool paints them over him (he
-walks behind them). Layer 0, the ground, never moves. Ctrl+Z undoes; SAVE keeps it.
-HIGH GROUND (in the GROUND tool, tick HIGH GROUND): tops of platforms and roofs a hero can land on after flying - violet
-with OVER HERO ticked. From the ground the cell stays as it was (walkable, or a wall: paint WALL over it).
-
-SAVE POINTS (NEW): they are in THINGS now, so you can drop one anywhere in a click.
-Choose THINGS and pick SAVE POINT from the list, then click the map. It is the game's own Capsule Corp pad with a see-through edge, so it sits on any ground (grass, sand, snow, paving). Standing anywhere on it: A saves and heals, R2 turns PvP on or off. SAVE the map to keep it.
-
-THINGS is a shortcut for whole objects. Press FIND THINGS IN VIEW, and it cuts out the houses, trees and fences you can see as one-click stamps.
+MOVE picks up a part of the map and puts it somewhere else, with everything on it: all layers and walls, foes, people, treasure, doors (and the doors leading in), zones, moods, event boxes, rocks, and the places' names and music.
+- Drag a box round any part (or tick LASSO and draw round it, any shape), then click where it goes. NEVER MIND drops it.
+- Or press on a place's name and drag to move that whole place.
+- SWAP on: what's already there goes where yours was. SWAP off: what's there is covered, and the ground round about fills the spot you left.
+- Then SAVE. Control+Z undoes the whole move.
+- RESIZE WHOLE MAP (in MOVE, on the right): makes the whole map bigger or smaller. Bigger adds room on the right and at the bottom (sea). Smaller cuts off the right and the bottom, land and all - not while places, foes, people, doors, treasure or zones are still there. Control+Z puts it back.
 
 
-PAINTING SINGLE CELLS
----------------------
+THINGS AND SAVE POINTS
+----------------------
 
-- PICK then STAMP: click a cell with PICK to take everything in it (all layers and its wall), then paint it elsewhere with STAMP.
-- TILE: paints one tile on the chosen layer. PICK also chooses the tile for it.
-- FILL, LINE, RECT: drag to fill a box, draw a line or draw a rectangle with your brush.
-- SMART: PICK a ground first (water, sand, a path), then paint. When you let go, its edges are joined up the way the game's own maps join them.
+THINGS sets down whole objects with one click.
+- FIND THINGS IN VIEW cuts the houses, trees and fences you can see into one-click stamps.
+- SAVE THIS THING keeps your current COPY as a thing of your own. DELETE THIS SAVED THING removes it.
+- SAVE POINT: pick it from the list and click the map. It is the game's own Capsule Corp pad with a see-through edge, so it sits on any ground. Standing on it: A saves and heals, R2 turns PvP on or off.
 
 
-WALLS
+ROCKS
 -----
+
+ROCK places rocks to smash (and the game's other breakables: crates, fences, pots). Choose one on the right, how many hits it takes (1–3) and what it drops (the game's own drop tables), then click to set it down.
+SELECT a rock (the game's own too) to change it, drag it or delete it. MOVE takes rocks along.
+
+
+WALLS AND HIGH GROUND
+---------------------
 
 - WALL: paint where you cannot walk.
 - GROUND: paint where you can walk.
+- HIGH GROUND (tick it in GROUND): tops of platforms and roofs a hero can land on after flying. From the ground below the cell stays as it was (walkable, or a wall: paint WALL over it).
 
 Turn WALLS on first to see what you are doing.
-
-Brush size: TILE, STAMP, ERASE, WALL and GROUND have a brush size box on the right (1 to 32 cells across). The white square under the mouse shows how much you will paint. Dragging paints a smooth line, even when you move the mouse fast.
 
 
 DOORS
@@ -102,20 +119,28 @@ DOORS
 
 - The yellow boxes are doors. Walking into one takes you through.
 - Move or resize a door: choose SELECT, click its yellow box, and change it on the right. Drag to move it, or press Delete (or Backspace) to remove it.
-- Where does a door lead? Choose SELECT and click its yellow box. A yellow line runs to a green dot marked ARRIVES HERE. The line stays on screen while you pan, or press J to jump straight there (J again jumps back). A door to another map shows "TO <map name>" above its box.
+- Where does a door lead? Choose SELECT and click its yellow box. A yellow line runs to a green dot marked ARRIVES HERE. Press J to jump straight there (J again jumps back). A door to another map shows "TO <map name>" above its box.
 - Make a new door: choose DOOR, drag its box, then click where it should take you. To arrive on another map, use GO TO MAP first.
+
+
+GUIDE: A PICTURE TO TRACE
+-------------------------
+
+GUIDE lays a picture of your own faintly over the map (the game's world map, say) to line things up with.
+CHOOSE A PICTURE on the right, then drag it into place. BIGGER / SMALLER resize it, FIT TO THE MAP stretches it over the whole map, SHOW IT turns it on and off, and the slider sets how strongly it shows. Only you see it, only in the editor.
 
 
 OTHER TOOLS
 -----------
 
   Tool     What it does
+  SELECT   Click a foe, person, treasure, door, rock or place name to change, drag or delete it
   FOE      Place a foe
   PERSON   Place a person who speaks
   ITEM     Place treasure
   ZONE     Drag a box where foes keep coming back
   MOOD     Drag a box to make the place dark, rainy, snowy or play its own music
-  EVENT    Drag a box that starts an event when you walk in
+  EVENT    Drag a box that starts an event when you walk in (see STORY MODE EDITOR GUIDE)
 
 
 WHEN YOU'RE DONE

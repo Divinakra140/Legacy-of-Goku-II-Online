@@ -57,9 +57,14 @@ Steps, grouped by what they're for:
               the map becomes walkable or a wall - a boulder smashed, a bridge built; this is kept after
               saving), save (a save point, right here), the_end (rolls your story's own CREDITS)
 
+  FORMS       unlock_form (give a transformation: from now on it is on the TRANSFORM button),
+              lock_form (take it away again), transform (transform right now, into any form, unlocked
+              or not - a story moment), revert (back to normal)
+
   BOSS FIGHTS boss_fight (kind, level, name, hp multiplier, where; a WIN label, a LOSE label, and
               phases like 0.5:half or 0.2:last - at that much health left, the fight pauses, jumps to
-              that label, says its lines, and FIGHT ON resumes it). The doors stay shut until it ends.
+              that label, says its lines, and a fight_on step resumes it). The doors stay shut until
+              it ends.
 
 "%s" in a line of text becomes the hero's own name; "{var:coins}" becomes a number you're tracking.
 A line too long for one box is flagged - SPLIT INTO BOXES THAT FIT cuts it up for you.
