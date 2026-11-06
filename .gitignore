@@ -23,6 +23,7 @@ templates/
 *.aab
 *.idsig
 importer/godot_export
+data/godot_export
 importer/android/
 importer/source/godot_export
 importer/source/build/
