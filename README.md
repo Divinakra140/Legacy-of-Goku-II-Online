@@ -54,8 +54,7 @@ Needs Godot 4.7.2 with its Android export templates, the Android SDK (build-tool
 This project was made with the help of AI. I first found out about Puni Puni's "Legacy of Goku II Coop" v42 from 
 his youtube video and contacted him to see if he would be ok with me developing it and helping to polish it,
 port it to android and mac ect.. since it was only on windows and was not polished at all and you could not even 
-walk over flowers and many areas of the map were thrown together by code in a way that was obviosuly never touched 
-by a human. To my surpise, Puni Puni wanted someone to "take over" the project. So I did! I have redrawn the entire 
+walk over flowers and many areas of the map were thrown together by code. To my surpise, Puni Puni wanted someone to "take over" the project. So I did! I have redrawn the entire 
 map by hand, corrected the collision and rendering by hand and even added some hand drawn animation frames and a whole 
 redesigned sprite sheet for Mecha Frieza. I added in public multiplayer, and begun the original story mode and made a 
 bunch of the game's characters playable with my own hand drawn special attacks. Puni Puni does not have a Github account 
