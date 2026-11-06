@@ -10,7 +10,9 @@
 // and it sends "S <state>\t<address>\t<message>" twice a second (state: starting, joining, ready, error).
 // It quits by itself when the game's control connection closes.
 #include <ZeroTierSockets.h>
+#include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -114,32 +116,63 @@ static bool write_all(int zfd, const char* b, int n) {
     return true;
 }
 
+// the game's side never blocks this loop: what comes from the other player waits here (`pend`) while the game is busy
+// (a slow PC loading the world for half a minute after joining). Handed over the moment it was read, a blocked send
+// stopped this end reading ZeroTier at all, the host's helper could not write for 20 s and closed the link - a
+// Windows PC joining was dropped once every time ("lost the host", reconnected, then fine)
+static void set_nonblocking(sock_t s) {
+#ifdef _WIN32
+    u_long on = 1; ioctlsocket(s, FIONBIO, &on);
+#else
+    fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK);
+#endif
+}
+static bool would_block() {
+#ifdef _WIN32
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+    return errno == EAGAIN || errno == EWOULDBLOCK;
+#endif
+}
+static const size_t PEND_MAX = 64u << 20;      // (a game that stops reading for good: let it go rather than fill memory)
+
 static void carry(sock_t local, int zfd, std::atomic<int>* gen, int mine) {
     int one = 1;
     setsockopt(local, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&one), sizeof one);
+    set_nonblocking(local);
     { std::lock_guard<std::mutex> g(ZT); zts_set_no_delay(zfd, 1); zts_set_blocking(zfd, 0); }
     std::vector<char> up(4096), down(32768);
+    std::string pend;
+    size_t pend_off = 0;
     while (gen->load() == mine) {
-        bool moved = false;
-        fd_set rs; FD_ZERO(&rs); FD_SET(local, &rs);
+        fd_set rs, ws; FD_ZERO(&rs); FD_ZERO(&ws); FD_SET(local, &rs);
+        if (pend_off < pend.size()) FD_SET(local, &ws);
         timeval tv{0, 1000};
-        int r = select(static_cast<int>(local) + 1, &rs, nullptr, nullptr, &tv);
-        if (r > 0) {
+        int r = select(static_cast<int>(local) + 1, &rs, &ws, nullptr, &tv);
+        if (r > 0 && FD_ISSET(local, &rs)) {
             int n = recv(local, up.data(), static_cast<int>(up.size()), 0);
-            if (n <= 0) break;                                   // the game closed its side
-            if (!write_all(zfd, up.data(), n)) break;
-            moved = true;
+            if (n == 0) break;                                   // the game closed its side
+            if (n < 0 && !would_block()) break;
+            if (n > 0 && !write_all(zfd, up.data(), n)) break;
         }
         int rerr = 0;
         int got = zt_read(zfd, down.data(), static_cast<int>(down.size()), &rerr);
         if (got > 0) {
-            int off = 0;
-            while (off < got) { int s = send(local, down.data() + off, got - off, 0); if (s <= 0) { off = -1; break; } off += s; }
-            if (off < 0) break;
-            moved = true;
+            if (pend.size() - pend_off + static_cast<size_t>(got) > PEND_MAX) { blog("link: the game stopped taking what arrives - closed"); break; }
+            pend.append(down.data(), static_cast<size_t>(got));
         } else if (got == 0) break;                              // the other player closed the connection
         else if (rerr != ZTS_EAGAIN) break;
-        (void)moved;
+        bool lost = false;
+        while (pend_off < pend.size()) {                         // to the game, as much as it takes now
+            int s = send(local, pend.data() + pend_off, static_cast<int>(std::min<size_t>(pend.size() - pend_off, 65536)), 0);
+            if (s > 0) { pend_off += static_cast<size_t>(s); continue; }
+            if (s < 0 && would_block()) break;
+            lost = true;
+            break;
+        }
+        if (lost) break;
+        if (pend_off == pend.size()) { pend.clear(); pend_off = 0; }
+        else if (pend_off > (1u << 20)) { pend.erase(0, pend_off); pend_off = 0; }
     }
     CLOSESOCK(local);
     zt_close(zfd);
