@@ -2786,10 +2786,14 @@ func _beam_sprite(n: Node2D, e: Array, look: String, tt: int) -> bool:
 	var tint: Color = lk[4]
 	var lanes = maxi(1, int(w / 10.0))     # a very wide beam (Solar Kamehameha): more rows of pieces side by side
 	var across = Vector2(-dv.y, dv.x)
+	# the game's end pieces: the beam joins them on one side, the splash is on the other - the body stops where the
+	# splash starts (it ran on under it and out past it), the splash's open side out where the beam hits
+	var red = look == "red"
+	var stop = L if red else maxf(0.0, L - 10.0 * sc)
 	for ln in lanes:
 		var off = across * (ln - (lanes - 1) * 0.5) * 6.0
 		var i = 0.0
-		while i < L:
+		while i < stop:
 			_efx_c(n, lk[0], body, o + dv * i + off, sc, tint)
 			i += step
 	if look == "red":
@@ -2805,7 +2809,11 @@ func _beam_sprite(n: Node2D, e: Array, look: String, tt: int) -> bool:
 	# the end bursts
 	var pair: int = 2 if horiz else 0
 	var bi: int = lk[2][pair + (tt / 3) % 2]
-	_efx_c(n, lk[0], bi, p, sc * 1.1, tint, d == 2, d == 0)
+	if red:
+		_efx_c(n, lk[0], bi, p, sc * 1.1, tint, d == 2, d == 0)
+	else:
+		# drawn for a beam going left (across) or down (up and down): mirrored for right / up
+		_efx_c(n, lk[0], bi, p - dv * 4.0 * sc, sc * 1.1, tint, d == 3, d == 1)
 	return true
 
 ## how strongly a ball's sphere of colour shows: always for a huge ball; for a smaller one only as it grows with
