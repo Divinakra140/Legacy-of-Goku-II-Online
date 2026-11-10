@@ -4279,16 +4279,16 @@ func _pvp_targets(L: Local, elist: Array) -> void:
 	for pid in Game.remote_states:      # HERO FOES (brawl.gd): fought by everyone, PVP or not
 		var fst: Dictionary = Game.remote_states[pid]
 		if fst.get("foe", false) and int(fst.get("node", -1)) == L.node_i and not _out_of_reach(L.fighter.on_high(), bool(fst.get("high", false))):
-			elist.append({"id": PVP_ID - int(pid), "x": float(fst.get("x", 0)), "y": float(fst.get("y", 0)), "alive": not bool(fst.get("down", false)), "big": false})
+			elist.append({"id": PVP_ID - int(pid), "x": float(fst.get("x", 0)), "y": float(fst.get("y", 0)), "alive": not bool(fst.get("down", false)), "big": false, "tall": true, "set": int(fst.get("set", -1))})
 	if not L.fighter.pvp:
 		return
 	for o in locals:
 		if o != L and o.node_i == L.node_i and o.fighter.pvp and not o.fighter.flying and not _out_of_reach(L.fighter.on_high(), o.fighter.on_high()) and not (_hvv_on() and _same_side(L.fighter.ch, o.fighter.ch)):
-			elist.append({"id": PVP_ID - _my_pid(o), "x": o.fighter.x, "y": o.fighter.y, "alive": o.fighter.state != "down", "big": false})
+			elist.append({"id": PVP_ID - _my_pid(o), "x": o.fighter.x, "y": o.fighter.y, "alive": o.fighter.state != "down", "big": false, "tall": true, "set": o.fighter.set_id})
 	for pid in Game.remote_states:
 		var st: Dictionary = Game.remote_states[pid]
 		if not st.get("foe", false) and int(st.get("node", -1)) == L.node_i and bool(st.get("pvp", false)) and not bool(st.get("fly", false)) and not _out_of_reach(L.fighter.on_high(), bool(st.get("high", false))) and not (_hvv_on() and _same_side(L.fighter.ch, int(st.get("ch", -1)))):
-			elist.append({"id": PVP_ID - int(pid), "x": float(st.get("x", 0)), "y": float(st.get("y", 0)), "alive": not bool(st.get("down", false)), "big": false})
+			elist.append({"id": PVP_ID - int(pid), "x": float(st.get("x", 0)), "y": float(st.get("y", 0)), "alive": not bool(st.get("down", false)), "big": false, "tall": true, "set": int(st.get("set", -1))})
 
 func _pvp_hit_out(L: Local, pid: int, ev: Dictionary) -> void:
 	if not L.fighter.pvp and not Game.remote_states.get(pid, {}).get("foe", false):

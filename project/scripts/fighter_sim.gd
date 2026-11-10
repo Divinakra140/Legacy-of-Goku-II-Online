@@ -969,7 +969,36 @@ func _fire(beam: bool) -> void:
 ## tall sprite flew clean over the hit box and only their legs (near the flat 10px mark) ever registered. Big foes
 ## now use their own standing height instead; small ones keep the old flat 10 so nothing else changes.
 var _hit_mid_cache = {}
+## how tall the thing hit stands: a big foe or a fighter (a player, a brawler, a hero foe - Cooler, Cell...) by its
+## own picture; anything else 20
+func _body_h(e: Dictionary) -> float:
+	var sid = int(e.get("set", -1))
+	if sid < 0 or not (e.get("big", false) or e.get("tall", false)):
+		return 20.0
+	if not _hit_h_cache.has(sid):
+		_hit_h_cache[sid] = Assets.body_size(sid).y
+	return maxf(20.0, float(_hit_h_cache[sid]))
+var _hit_h_cache = {}
+
+## how near a beam (a to b) comes to the body: its middle line from the feet to the head, not one point at the
+## knees (a beam from above stops at a tall fighter's head - that is a hit)
+func _beam_body_dist(e: Dictionary, a: Vector2, b: Vector2) -> float:
+	var h = _body_h(e)
+	var best = INF
+	var seg = b - a
+	var yy = 6.0
+	while true:
+		var q = Vector2(e["x"], e["y"] - minf(yy, h - 6.0))
+		var t = clampf((q - a).dot(seg) / maxf(1.0, seg.length_squared()), 0.0, 1.0)
+		best = minf(best, q.distance_to(a + seg * t))
+		if yy >= h - 6.0:
+			break
+		yy += 6.0
+	return best
+
 func _hit_mid_y(e: Dictionary) -> float:
+	if e.get("tall", false):
+		return maxf(10.0, _body_h(e) * 0.5)
 	if not e.get("big", false):
 		return 10.0
 	var sid = int(e.get("set", -1))
@@ -1045,16 +1074,13 @@ func _step_shots(enemies: Array) -> void:
 			var big: bool = e.get("big", false)
 			var rx = 18.0 if big else 11.0
 			var mid = _hit_mid_y(e)      # the enemy's own standing height, not a flat guess (a T-Rex or Cell stands much
-			var ry = maxf(13.0, mid * 0.75) if big else 13.0      # taller than the old flat "big" box ever reached)
+			var ry = maxf(13.0, mid * 0.75) if big or e.get("tall", false) else 13.0      # taller than the old flat "big" box ever reached)
 			var touch = false
 			if kind == 1:
 				# a beam: anything along it, from the hands to its head
 				var p0 = Vector2(s["ox"], s["oy"])
 				var p1 = Vector2(s["x"], s["y"])
-				var q = Vector2(e["x"], e["y"] - mid)
-				var seg = p1 - p0
-				var t = clampf((q - p0).dot(seg) / maxf(1.0, seg.length_squared()), 0.0, 1.0)
-				touch = q.distance_to(p0 + seg * t) < float(s["w"]) / 2.0 + rx
+				touch = _beam_body_dist(e, p0, p1) < float(s["w"]) / 2.0 + rx
 			else:
 				touch = absf(e["x"] - s["x"]) < rx + float(s.get("size", 0)) * 0.5 and absf((e["y"] - mid) - s["y"]) < ry + float(s.get("size", 0)) * 0.5
 			if touch:
@@ -1667,10 +1693,13 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 		for e in enemies:
 			if not e["alive"] or s["hit"].has(e["id"]):
 				continue
-			var q = Vector2(e["x"], e["y"] - _hit_mid_y(e))
-			var seg = e2 - a
-			var k = clampf((q - a).dot(seg) / maxf(1.0, seg.length_squared()), 0.0, 1.0)
-			if q.distance_to(a + seg * k) < (8.0 if not e.get("big", false) else 16.0) + 4.0:
+			var near = _beam_body_dist(e, a, e2) if e.get("tall", false) else -1.0
+			if near < 0.0:
+				var q = Vector2(e["x"], e["y"] - _hit_mid_y(e))
+				var seg = e2 - a
+				var k = clampf((q - a).dot(seg) / maxf(1.0, seg.length_squared()), 0.0, 1.0)
+				near = q.distance_to(a + seg * k)
+			if near < (8.0 if not e.get("big", false) else 16.0) + 4.0:
 				s["hit"][e["id"]] = true
 				var dmg = int(s["dmg"]) if not s.get("rehit", false) else maxi(1, int(s["dmg"]) / 3)
 				events.append({"type": "hit", "enemy": e["id"], "dmg": dmg, "crit": s["crit"], "kx": v.x * 3.0, "ky": v.y * 3.0, "stun": 10, "inflict": s.get("inf", {})})

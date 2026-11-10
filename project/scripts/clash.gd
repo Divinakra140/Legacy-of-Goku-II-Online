@@ -8,8 +8,11 @@
 extends RefCounted
 
 const ROWS = 24.0          # 3 tiles off the line, across it
-const LEAD = 12            # taps ahead that win it at once
+const LEAD = 9             # taps ahead that win it at once (12 was a long slog against a computer's steady pace)
 const HIT = 0.25           # the loser's health the winning beam takes
+## a clash eats ki half as fast as a held beam: the taps decide it, not who came in with more ki (a hero foe wakes
+## up full, a player has just spent theirs on the beam)
+const DRAIN_TICKS = 40
 const QUIET = 180          # ticks without a word from the other side: it is over (they left, their game stopped)
 
 ## facing each other on one line: the other is in front of `d` (side by side for left / right, above or below for
@@ -111,7 +114,7 @@ func step(L, raw: Dictionary) -> bool:
 	if int(c["t"]) % 6 == 0:
 		Game.send_social(int(c["with"]), world._my_pid(L), L.name, "clash_taps", {"n": int(c["mine"])})
 	# the beam is still being fed: ki goes as a held beam's does (the fighter is held, so its own drain stands still)
-	if int(c["t"]) % FighterSim.BEAM_DRAIN_TICKS == 0:
+	if int(c["t"]) % DRAIN_TICKS == 0:
 		f.ep = maxi(0, f.ep - 1)
 	if f.ep <= 0:      # out of ki: the beam gives out, theirs comes through
 		Game.send_social(int(c["with"]), world._my_pid(L), L.name, "clash_end", {"you_won": true})

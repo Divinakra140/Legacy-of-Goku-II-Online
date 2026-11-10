@@ -342,7 +342,7 @@ func _targets(pid: int, b: Dictionary, host) -> Array:
 		for q in rivals:      # (the hero foes: fought as fighters)
 			var rf = rivals[q]["f"]
 			if int(rivals[q]["node"]) == int(b["node"]) and Vector2(rf.x - host.fighter.x, rf.y - host.fighter.y).length() < NEAR:
-				out.append({"id": PVP_ID - q, "x": rf.x, "y": rf.y, "alive": rf.state != "down" and not rf.flying, "big": false})
+				out.append({"id": PVP_ID - q, "x": rf.x, "y": rf.y, "alive": rf.state != "down" and not rf.flying, "big": false, "tall": true, "set": rf.set_id})
 		return out
 	var side = Rules.is_villain(int(b["f"].ch))
 	for q in bots:
@@ -351,19 +351,19 @@ func _targets(pid: int, b: Dictionary, host) -> Array:
 		if hvv() and Rules.is_villain(int(bots[q]["f"].ch)) == side:
 			continue
 		var o = bots[q]["f"]
-		out.append({"id": PVP_ID - q, "x": o.x, "y": o.y, "alive": o.state != "down" and not o.flying, "big": false})      # (flying: nothing can reach it up there)
+		out.append({"id": PVP_ID - q, "x": o.x, "y": o.y, "alive": o.state != "down" and not o.flying, "big": false, "tall": true, "set": o.set_id})      # (flying: nothing can reach it up there)
 	for L in world.locals:
 		if hvv() and Rules.is_villain(int(L.fighter.ch)) == side:
 			continue
 		if L.node_i == int(b["node"]) and L.fighter.pvp:
-			out.append({"id": PVP_ID - Game.pid_of(1, L.k), "x": L.fighter.x, "y": L.fighter.y, "alive": L.fighter.state != "down" and not L.fighter.flying, "big": false})
+			out.append({"id": PVP_ID - Game.pid_of(1, L.k), "x": L.fighter.x, "y": L.fighter.y, "alive": L.fighter.state != "down" and not L.fighter.flying, "big": false, "tall": true, "set": L.fighter.set_id})
 	for q in Game.remote_states:
 		var st: Dictionary = Game.remote_states[q]
 		if st.get("bot", false) or int(st.get("node", -1)) != int(b["node"]) or not bool(st.get("pvp", false)) or bool(st.get("high", false)):
 			continue
 		if hvv() and Rules.is_villain(int(st.get("ch", -1))) == side:
 			continue
-		out.append({"id": PVP_ID - int(q), "x": float(st.get("x", 0)), "y": float(st.get("y", 0)), "alive": not bool(st.get("down", false)) and not bool(st.get("fly", false)), "big": false})
+		out.append({"id": PVP_ID - int(q), "x": float(st.get("x", 0)), "y": float(st.get("y", 0)), "alive": not bool(st.get("down", false)) and not bool(st.get("fly", false)), "big": false, "tall": true, "set": int(st.get("set", -1))})
 	return out
 
 ## a simple fighter's mind: pick the nearest one standing, go at them, punch close up, a ki blast from a little way
@@ -621,7 +621,7 @@ func _social_in(pid: int, from_pid: int, from_name: String, kind: String, data: 
 const Clash = preload("res://scripts/clash.gd")
 
 func _clash_start(pid: int, b: Dictionary, with: int) -> void:
-	b["clash"] = {"with": with, "t": 0, "mine": 0, "theirs": 0, "ref": pid < with, "rate": randf_range(0.095, 0.115)}      # a steady ~6 taps/second - a real fight, not a dice roll (was 0.08-0.17: anywhere from a crawl to faster than a human can mash)
+	b["clash"] = {"with": with, "t": 0, "mine": 0, "theirs": 0, "ref": pid < with, "rate": randf_range(0.075, 0.09)}      # a steady ~5 taps/second (was ~6: a fast masher barely got ahead) - a real fight, not a dice roll (was 0.08-0.17: anywhere from a crawl to faster than a human can mash)
 	b["hold"] = 0
 
 ## two brawlers' beams meeting (the players' games find their own): the clash starts for both
@@ -669,7 +669,7 @@ func _clash_step(pid: int, b: Dictionary, host) -> bool:
 	elif int(c["t"]) % 6 == 0:
 		Game.send_social(with, pid, str(b["name"]), "clash_taps", {"n": int(c["mine"])})
 	# no time limit: the beam eats ki as a held one does, and out of ki it gives out (clash.gd)
-	if int(c["t"]) % FighterSim.BEAM_DRAIN_TICKS == 0:
+	if int(c["t"]) % Clash.DRAIN_TICKS == 0:
 		f.ep = maxi(0, f.ep - 1)
 	if f.ep <= 0:
 		if bots.has(with):
