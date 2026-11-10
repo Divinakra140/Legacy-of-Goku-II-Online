@@ -7,8 +7,16 @@ set -e
 B="/Volumes/Gen2/Godot/Legacy of Goku/LoG2_Android_Build"
 [ -d /Volumes/PWBuild/godot ] || hdiutil attach /Volumes/Gen2/PokeWilds-Build.sparseimage >/dev/null
 cd "$B"; source tools/local.env
-V=v45; R="$B/release/$V"; W="$R/LoG2Online_${V}_Windows"; M="$R/LoG2Online_${V}_Mac"; T=/private/tmp/log2_build; NAME="LoG2 Online"
-mkdir -p "$T"
+V=v46; R="$B/release/$V"; W="$R/LoG2Online_${V}_Windows"; M="$R/LoG2Online_${V}_Mac"; T=/private/tmp/log2_build; NAME="LoG2 Online"
+mkdir -p "$T" "$R"
+# a new version's folders: copied from the newest older version's (they hold the helpers and sounds the build needs)
+for P in Windows Mac; do
+  if [ ! -d "$R/LoG2Online_${V}_$P" ]; then
+    OLD=$(ls -d "$B"/release/*/LoG2Online_*_$P 2>/dev/null | grep -v "_${V}_" | sort -V | tail -1)
+    [ -n "$OLD" ] || { echo "STOP: no older LoG2Online_*_$P folder to start $V from"; exit 1; }
+    echo "== new $P folder from $OLD"; ditto "$OLD" "$R/LoG2Online_${V}_$P"
+  fi
+done
 echo "== game data for Android"
 dot_clean -m data/mods data/builtin 2>/dev/null || true
 python3 -I tools/make_pack.py data project/bundle/gamedata.pack content modpacks music adventures builtin mods | tail -1
