@@ -412,11 +412,15 @@ func _add_local(k: int, ch: int, nm: String, pos: Vector2) -> void:
 		for ni in Game.planet.nodes.size():
 			if str(Game.planet.nodes[ni]["key"]) == str(sa["key"]):
 				n = ni
-				if sa.has("place"):
+				if sa.has("place") or sa.has("part"):
 					var pa = Assets.area(str(sa["key"]))
 					var best = Rect2()
 					var ph8 = 8.0 * float(pa.get("land", {}).get("info", {}).get("planet_h", 1 << 20))
 					for pt in pa.get("land", {}).get("parts", []):
+						if sa.has("part"):      # (one of the game's places by its own key: PLANET NAMEK - a room under the planet)
+							if pt.size() > 3 and str(pt[3]) == str(sa["part"]):
+								best = pt[0]
+							continue
 						if str(pt[1]).to_upper() == str(sa["place"]).to_upper() and (pt[0] as Rect2).position.y < ph8 and (pt[0] as Rect2).get_area() > best.get_area():
 							best = pt[0]
 					at = Game.planet.safe_point(ni, best.get_center()) if best.get_area() > 0 else Game.planet.start_point()

@@ -2167,6 +2167,7 @@ const G_MAPS = [["EARTH", "land:0", {"key": "land/0/0", "x": 13230, "y": 22972}]
 	["SOUTHERN CONTINENT", "land:0", {"key": "land/0/0", "place": "SOUTHERN CONTINENT"}], ["GINGERTOWN", "land:0", {"key": "land/0/0", "place": "GINGERTOWN"}],
 	["NORTHERN WASTELANDS", "land:0", {"key": "land/0/0", "place": "NORTHERN WASTELANDS"}], ["TROPICAL ISLANDS", "land:0", {"key": "land/0/0", "place": "TROPICAL ISLANDS"}],
 	["SNOWY HIGHLANDS", "land:0", {"key": "land/0/0", "place": "SNOWY HIGHLANDS"}], ["CAPSULE CORP", "land:0", {"key": "land/0/0", "place": "CAPSULE CORPORATION"}],
+	["PLANET NAMEK", "land:0", {"key": "land/0/0", "part": "6_60"}],      # (Namek's open land: one of the rooms under the planet - 6_61 is its cave)
 	["RANDOM PLANET", "random"]]
 var _map_then: Callable
 var _map_back: Callable
