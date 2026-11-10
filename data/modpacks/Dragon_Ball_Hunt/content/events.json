@@ -212,9 +212,6 @@
    "if": {
     "flags": [
      "db:sent"
-    ],
-    "not_flags": [
-     "db:cooler"
     ]
    },
    "steps": [
@@ -310,6 +307,11 @@
      "name": "won"
     },
     {
+     "do": "if_flag",
+     "name": "db:hero",
+     "goto": "rematch_won"
+    },
+    {
      "do": "flag",
      "name": "db:cooler"
     },
@@ -360,6 +362,27 @@
     },
     {
      "do": "the_end"
+    },
+    {
+     "do": "goto",
+     "label": "end"
+    },
+    {
+     "do": "label",
+     "name": "rematch_won"
+    },
+    {
+     "do": "say",
+     "who": "COOLER",
+     "portrait": 36,
+     "text": "Impossible... beaten again?! This isn't over!"
+    },
+    {
+     "do": "toast",
+     "text": "COOLER IS BEATEN AGAIN!"
+    },
+    {
+     "do": "save"
     },
     {
      "do": "label",
