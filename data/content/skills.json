@@ -888,7 +888,9 @@
    "color": "ffd640",
    "sfx": "beam",
    "look": "yellow",
-   "info": "The game's own golden beam with the pink edge, fired from the hand - hold the button to keep it out."
+   "info": "The game's own golden beam with the pink edge, fired from the hand - hold the button to keep it out.",
+   "anim": 19,
+   "from": "chest"
   },
   {
    "id": "tri_beam",
