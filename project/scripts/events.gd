@@ -344,9 +344,10 @@ func _run(L) -> void:
 				var pf = _foe_at(L.ev.get("held", []))
 				if not pf.is_empty():
 					pf["anim"] = int(st.get("anim", 11)); pf["frame"] = int(st.get("frame", 0)); pf["dir"] = int(st.get("dir", 0)); pf["state"] = "idle"
+					pf["pose"] = int(st.get("anim", 11))      # (a hero foe standing in for it takes the same pose)
 			"orb_up":      # a huge ball of energy grown over the held foe's head, then thrown up off the screen (a Supernova)
 				var of = _foe_at(L.ev.get("held", []))
-				var op = Vector2(float(of["x"]), float(of["y"])) if not of.is_empty() else Vector2(f.x, f.y)
+				var op = _foe_pos(L.ev.get("held", []), of) if not of.is_empty() else Vector2(f.x, f.y)
 				L.ev["orb"] = {"x": op.x, "y": op.y - 40.0, "t": 0, "col": str(st.get("color", "ff7a20"))}
 				Sfx.play("charge")
 			"big_text":      # big words in the middle of the screen (GAME OVER)
@@ -355,6 +356,8 @@ func _run(L) -> void:
 				var rf = _foe_at(L.ev.get("held", []))
 				if not rf.is_empty():
 					rf["hold"] = 0; rf["hp"] = rf["maxhp"]; rf["anim"] = 0; rf["state"] = "idle"
+					rf.erase("pose")
+					world.brawl.drop_rival(str(L.ev["held"][0]), int(rf["id"]))
 				for k2 in ["held", "down_hold", "orb", "big"]:
 					L.ev.erase(k2)
 				f.revive(float(st.get("x", f.x)), float(st.get("y", f.y)))
@@ -862,6 +865,10 @@ func _start_fight(L, st: Dictionary) -> bool:
 					e[k] = tmp[k]
 			e["hp"] = e["maxhp"]      # (a fresh fight: full health, whatever an earlier try left)
 			e["hold"] = 0
+			e.erase("pose")
+			if st.has("rival_hp"):
+				e["rival_hp"] = float(st["rival_hp"])
+				world.brawl.drop_rival(key, int(e["id"]))      # (one already up comes back in a moment, at the boss's strength)
 			var ai: Dictionary = Content.enemy_cfg.get("styles", {}).get("boss", {}).duplicate()
 			ai["style"] = "boss"
 			ai["own"] = Content.own_attack(t)
@@ -924,6 +931,7 @@ func _step_fight(L) -> String:
 	if float(fi.get("leash", 0)) > 0 and Vector2(f.x, f.y).distance_to(Vector2(float(fi["home"][0]), float(fi["home"][1]))) > float(fi["leash"]):
 		# walked away (back into the ship...): the fight is off, the boss as it was - full health, back at its post
 		e["hp"] = e["maxhp"]; e["x"] = float(fi["home"][0]); e["y"] = float(fi["home"][1]); e["state"] = "idle"; e["hold"] = 0
+		world.brawl.drop_rival(str(fi["key"]), int(fi["id"]))
 		L.ev = {}
 		return ""
 	if f.state == "down" and bool(fi.get("keep_down", false)):
@@ -1002,6 +1010,10 @@ func draw_boss(c: Control, L, vs: Vector2) -> void:
 	var x = (vs.x - w) / 2.0
 	var y = 34.0
 	var frac = clampf(float(e["hp"]) / maxf(1.0, float(e["maxhp"])), 0.0, 1.0)
+	if e.get("fighter", false):      # (a hero foe fights for it: its health is the fighter's)
+		var rv = world.brawl.rival_for(str(L.ev["fight"]["key"]), int(e["id"]))
+		if not rv.is_empty():
+			frac = clampf(float(rv["f"].hp) / maxf(1.0, float(rv["f"].maxhp)), 0.0, 1.0)
 	var nm = str(e.get("name", "")) if str(e.get("name", "")) != "" else "BOSS"
 	c.draw_string(font, Vector2(x, y - 4), nm, HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(1, 0.9, 0.85))
 	c.draw_rect(Rect2(x - 2, y - 2, w + 4, 14), Color(0, 0, 0, 0.8))
@@ -1041,19 +1053,23 @@ func _foe_at(ref) -> Dictionary:
 ## the scene's effects over the world: the Supernova thrown up, big words
 func draw_scene_fx(c: Control, L, i: int, vs: Vector2) -> void:
 	if L.ev.has("orb"):
+		# the Supernova: the artist's own picture (builtin/sprites/fx_supernova.png - its charge frames growing over the
+		# foe's head, then its flying frames thrown up off the screen)
 		var o: Dictionary = L.ev["orb"]
 		var t = int(o["t"])
-		var grow = clampf(t / 70.0, 0.05, 1.0)
 		var rise = maxf(0.0, t - 80.0) * 9.0
-		var p = world.hud_point(i, Vector2(float(o["x"]), float(o["y"]) - 20.0 * grow - rise))
-		var r = 46.0 * grow
-		var col = Color.from_string(str(o["col"]), Color(1, 0.5, 0.15))
-		var pulse = 1.0 + 0.06 * sin(t * 0.5)
-		c.draw_circle(p, r * 1.6 * pulse, Color(col.r, col.g, col.b, 0.18))
-		c.draw_circle(p, r * 1.25 * pulse, Color(col.r, col.g * 0.8, col.b, 0.45))
-		c.draw_circle(p, r, col)
-		c.draw_circle(p, r * 0.6, Color(1, 0.85, 0.5))
-		c.draw_circle(p - Vector2(r * 0.25, r * 0.25), r * 0.25, Color(1, 1, 0.9, 0.8))
+		var p = world.hud_point(i, Vector2(float(o["x"]), float(o["y"]) - 30.0 - rise))
+		var z = world.hud_zoom(i)
+		var tex = Assets.texture(Assets.builtin_dir().path_join("sprites/fx_supernova.png"))
+		if tex != null:
+			var row = 0; var fr = 0; var grow = 1.0
+			if t < 80:
+				fr = mini(2, t * 3 / 80)
+				grow = lerpf(0.25, 1.0, clampf(t / 80.0, 0.0, 1.0))
+			else:
+				row = 128; fr = (t / 4) % 4
+			var d = Vector2(128, 128) * grow * z
+			c.draw_texture_rect_region(tex, Rect2(p - d * 0.5, d), Rect2(fr * 128, row, 128, 128))
 		if t == 80:
 			Sfx.play("bomb")
 	if L.ev.has("big"):
@@ -1069,3 +1085,11 @@ func draw_scene_fx(c: Control, L, i: int, vs: Vector2) -> void:
 		for o2 in [Vector2(-2, 0), Vector2(2, 0), Vector2(0, -2), Vector2(0, 2)]:
 			c.draw_string(font, Vector2(0, y) + o2, txt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 32, Color(0, 0, 0, a))
 		c.draw_string(font, Vector2(0, y), txt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 32, Color(col2.r, col2.g, col2.b, a))
+
+## where a foe really is: the hero foe standing in for it (it moves), or the foe itself
+func _foe_pos(ref, e: Dictionary) -> Vector2:
+	if ref is Array and ref.size() >= 2:
+		var rv = world.brawl.rival_for(str(ref[0]), int(ref[1]))
+		if not rv.is_empty():
+			return Vector2(rv["f"].x, rv["f"].y)
+	return Vector2(float(e["x"]), float(e["y"]))

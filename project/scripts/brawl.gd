@@ -285,7 +285,7 @@ func _step_bot(pid: int, b: Dictionary, host) -> void:
 			f.area = keep_area
 			_place_near(f, host)
 	else:
-		inp = _think(b, f, targets, host)
+		inp = _unstick(b, f, _think(b, f, targets, host))
 	f.step(inp, targets)
 	for ev in f.events:
 		if str(ev.get("type", "")) == "hit" and int(ev["enemy"]) <= PVP_ID:
@@ -764,8 +764,8 @@ const FOE_LEASH = 450.0      # this far from its post it goes back
 var _rival_t = 0
 
 func _rivals_tick() -> void:
-	if Game.cfg.has("story"):
-		return
+	if Game.cfg.has("story") and not bool(Content.story.get("hero_foes", false)):
+		return      # (a story keeps its own scenes - unless it asks for hero foes: THE HERO OF EARTH's Cooler)
 	_rival_t += 1
 	if _rival_t % 30 == 0:
 		_rivals_wake()
@@ -822,6 +822,8 @@ func _rival_add(nd: int, key: String, sim, e: Dictionary, fh: Array) -> void:
 	f.pvp = true
 	f.area = sim.area
 	f.revive(float(e["x"]), float(e["y"]))
+	if e.has("rival_hp"):      # a story boss: tougher than a hero of its level (THE HERO OF EARTH's Cooler)
+		f.maxhp = roundi(f.maxhp * float(e["rival_hp"])); f.hp = f.maxhp
 	f.invuln = 0
 	e["fighter"] = true
 	rivals[pid] = {"f": f, "k": k, "name": str(fh[2]) if str(fh[2]) != "" else str(Mods.hero_entry(Assets.CHARACTERS[ch]).get("name", Assets.CHARACTERS[ch])), "node": nd, "rival": true, "key": key, "id": int(e["id"]),
@@ -854,6 +856,13 @@ func _step_rival(pid: int, b: Dictionary) -> void:
 		if int(b["down_t"]) > 90:
 			_rival_remove(pid)
 		return
+	if int(e.get("hold", 0)) > 0:
+		# held by a story scene (talking, standing over a beaten player): still, in its pose if the scene gave one
+		f.step({}, [])
+		if e.has("pose"):
+			f.anim = int(e["pose"]); f.frame = 0
+		_publish(pid, b)
+		return
 	# the players (and the friendly CPUs) here
 	var players: Array = _players_by_node().get(int(b["node"]), [])
 	var near = false
@@ -862,7 +871,7 @@ func _step_rival(pid: int, b: Dictionary) -> void:
 		var d = (pl[1] as Vector2).distance_to(Vector2(f.x, f.y))
 		near = near or d < FOE_SLEEP
 		if not pl[2] and not pl[3] and not pl[4]:      # not down, not out of reach on high ground, not flying
-			targets.append({"id": PVP_ID - int(pl[0]), "x": pl[1].x, "y": pl[1].y, "alive": true, "big": false})
+			targets.append({"id": PVP_ID - int(pl[0]), "x": pl[1].x, "y": pl[1].y, "alive": true, "big": false, "tall": true, "set": int(Game.remote_states.get(int(pl[0]), {}).get("set", -1))})
 	for q in bots:
 		if Game.remote_states.get(q, {}).get("ally", false) and int(bots[q]["node"]) == int(b["node"]):
 			var af = bots[q]["f"]
@@ -873,7 +882,7 @@ func _step_rival(pid: int, b: Dictionary) -> void:
 	if _clash_step(pid, b, world.locals[0]):
 		_publish(pid, b)
 		return
-	var inp = _rival_think(b, f, targets)
+	var inp = _unstick(b, f, _rival_think(b, f, targets))
 	f.step(inp, targets)
 	for ev in f.events:
 		if str(ev.get("type", "")) == "hit" and int(ev["enemy"]) <= PVP_ID:
@@ -912,3 +921,46 @@ func _rival_think(b: Dictionary, f, targets: Array) -> Dictionary:
 			_walk(inp, home - Vector2(f.x, f.y))
 		return inp
 	return _fight(b, f, tgt)
+
+## the hero foe standing in for this foe now ({} if none): {"pid", "f"}
+func rival_for(key: String, id: int) -> Dictionary:
+	for pid in rivals:
+		if str(rivals[pid]["key"]) == key and int(rivals[pid]["id"]) == id:
+			return {"pid": pid, "f": rivals[pid]["f"]}
+	return {}
+
+## a story is done with it: the hero foe goes (the foe stands at its post again, fresh next time)
+func drop_rival(key: String, id: int) -> void:
+	var r = rival_for(key, id)
+	if not r.is_empty():
+		_rival_remove(int(r["pid"]))
+
+## walking into a wall (a building, the space ship) over and over: once it has tried to walk a while without getting
+## anywhere, it steps aside - across the way it wanted - for a moment, then heads for its target again
+const STUCK_TICKS = 14
+const DETOUR_TICKS = 40
+func _unstick(b: Dictionary, f, inp: Dictionary) -> Dictionary:
+	var want = Vector2((1 if inp.get("right", false) else 0) - (1 if inp.get("left", false) else 0), (1 if inp.get("down", false) else 0) - (1 if inp.get("up", false) else 0))
+	var here = Vector2(f.x, f.y)
+	if int(b.get("detour", 0)) > 0:
+		b["detour"] = int(b["detour"]) - 1
+		var dv: Vector2 = b["detour_dir"]
+		var out = inp.duplicate()
+		out["left"] = dv.x < 0; out["right"] = dv.x > 0; out["up"] = dv.y < 0; out["down"] = dv.y > 0
+		b["last_pos"] = here
+		return out
+	if want == Vector2.ZERO or f.flying or f.state != "idle" and f.state != "walk" and f.state != "run":
+		b["stuck"] = 0
+		b["last_pos"] = here
+		return inp
+	var last: Vector2 = b.get("last_pos", here)
+	b["stuck"] = int(b.get("stuck", 0)) + 1 if here.distance_to(last) < 0.25 else 0
+	b["last_pos"] = here
+	if int(b["stuck"]) >= STUCK_TICKS:
+		b["stuck"] = 0
+		b["detour"] = DETOUR_TICKS
+		var side = Vector2(-want.y, want.x) if randf() < 0.5 else Vector2(want.y, -want.x)
+		if side == Vector2.ZERO:
+			side = Vector2(1, 0)
+		b["detour_dir"] = Vector2(signf(side.x), signf(side.y))
+	return inp

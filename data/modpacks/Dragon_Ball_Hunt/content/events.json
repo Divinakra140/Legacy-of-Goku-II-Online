@@ -243,13 +243,13 @@
      "x": 548,
      "y": 20244,
      "take": 400,
-     "match": 3,
      "name": "COOLER",
      "win": "won",
      "lose": "lost",
      "lock": false,
      "keep_down": true,
-     "leash": 500
+     "leash": 500,
+     "rival_hp": 2.0
     },
     {
      "do": "goto",

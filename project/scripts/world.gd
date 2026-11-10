@@ -1975,6 +1975,12 @@ func hud_point(i: int, p: Vector2) -> Vector2:
 		return q * (hud_draw.get_viewport_rect().size / vs)
 	return _side_centre(i)
 
+## how big one px of the world is on the HUD (the camera's zoom, the screen's own scale)
+func hud_zoom(i: int) -> float:
+	if i < cams.size() and i < svs.size():
+		return cams[i].zoom.x * hud_draw.get_viewport_rect().size.x / maxf(1.0, float(svs[i].size.x))
+	return 1.0
+
 func _light_centre(i: int) -> Vector2:
 	if locals.size() == 1 and i == 0 and not cams.is_empty():
 		var L: Local = locals[0]
@@ -3846,6 +3852,14 @@ func _draw_hud() -> void:
 		c.draw_rect(Rect2(4, vs.y - 44, 300, 40), Color(0, 0, 0, 0.7))
 		for k in pl.size():
 			_ds(c, font, Vector2(8, vs.y - 32 + k * 11), pl[k], HORIZONTAL_ALIGNMENT_LEFT, 296, 7, Color(0.6, 1, 0.6))
+	# the credits, the win box, a match's result: at the HUD's own scale (drawn at the window's raw size they were
+	# tiny on a big window or zoomed out)
+	var hk = _hud_scale(vs)
+	var vs_raw = vs
+	vs = vs / hk
+	_hs = hk
+	_txt_scale = hk
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(hk, hk))
 	if credits_t >= 0:
 		_draw_credits(c, vs)
 	if victory_t > 0:
@@ -3860,6 +3874,10 @@ func _draw_hud() -> void:
 		_ds(c, font, Vector2(vs.x / 2 - 130, vs.y / 2 + 20), "THE PLANET STAYS OPEN", HORIZONTAL_ALIGNMENT_CENTER, 260, 8, Color(0.6, 1, 0.6))
 	if not match_won_info.is_empty():
 		_draw_match_won(c, vs)
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_hs = 1.0
+	_txt_scale = 1.0
+	vs = vs_raw
 	for i in locals.size():
 		if not locals[i].menu.is_empty():
 			_draw_menu(c, locals[i], i)
