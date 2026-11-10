@@ -314,6 +314,11 @@
      "name": "session:moon_won"
     },
     {
+     "do": "hide_person",
+     "who": "COOLER",
+     "session": true
+    },
+    {
      "do": "if_flag",
      "name": "db:hero",
      "goto": "rematch_won"

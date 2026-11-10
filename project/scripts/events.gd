@@ -462,6 +462,8 @@ func _run(L) -> void:
 				var hp2 = _person(L, hw)
 				if not hp2.is_empty():
 					hp2["hidden"] = true
+				if bool(st.get("session", false)):
+					continue      # ("session": gone only until you leave the game - nothing saved: THE HERO OF EARTH's Cooler in the ship)
 				f.flags["hidden:%s:%s" % [_key(L), hw.to_upper()]] = [float(hp2["x"]), float(hp2["y"])] if not hp2.is_empty() else true
 				f.flags.erase("shown:%s:%s" % [_key(L), hw])
 			"emote":
