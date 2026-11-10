@@ -2808,8 +2808,9 @@ func _game_options_screen() -> void:
 		["ENEMY HEALTH BARS  " + ("ON" if bool(Game.cfg.get("foe_bars", false)) else "OFF"), func(): _opt_set(9)]]
 	if not OS.has_feature("mobile"):
 		rows.append(["FULLSCREEN  " + ("ON" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "OFF"), func(): _opt_set(8)])
-	var gap = 14 if rows.size() <= 8 else (13 if rows.size() == 9 else 12)      # (more rows than before: the words under them ran into the hint)
-	var out = _glist(rows, 28, gap, true)
+	# the smaller letters, the rows spread over the room there is (in the big heading letters ten rows ran into each other)
+	var gap = clampf(floorf((GH - 28.0 - 30.0) / rows.size()), 10.0, 14.0)
+	var out = _glist(rows, 28, gap, false)
 	out[clampi(_opt_row, 0, out.size() - 1)].grab_focus.call_deferred()
 	# what VIEW SIZE means, in plain numbers: your screen, and how much of the world fits on it
 	var ws = get_window().size
