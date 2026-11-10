@@ -28,7 +28,7 @@
      "do": "say",
      "who": "DENDE",
      "portrait": 38,
-     "text": "Please find all seven and bring them back here to me. You can fly - search everywhere! But you'll have to land to pick one up."
+     "text": "Please find all seven and bring them back here to me."
     },
     {
      "do": "dragonballs"
