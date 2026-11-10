@@ -1,5 +1,5 @@
 extends RefCounted
-## THE DRAGON BALL HUNT (a story: modpacks/Dragon_Ball_Hunt): the event step {"do": "dragonballs"} hides the 7 Dragon
+## THE HERO OF EARTH (a story: modpacks/Dragon_Ball_Hunt): the event step {"do": "dragonballs"} hides the 7 Dragon
 ## Balls round EARTH - each on plain open ground (walked on, not HIGH GROUND, nothing drawn over the hero, not the
 ## sea, not a wall, outdoors) and far apart. Walk up to one and it is yours: its big picture on the screen, the count
 ## in the top right corner (var "dragonballs"). The pictures are the game's own (the importer: kit/dragonballs.png).

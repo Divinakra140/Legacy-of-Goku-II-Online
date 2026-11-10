@@ -2400,15 +2400,30 @@ func _gload(f: Callable) -> void:
 	var fill = ColorRect.new(); fill.color = G_CYAN; fill.position = Vector2(62, 86); fill.size = Vector2(0, 8); gba.add_child(fill)
 	Music.preload_game_songs()        # every song of the game read now: no song is read while you play
 	Assets.prewarm_fx()        # every explosion/beam/spark picture read now too: none is read for the first time mid-fight
+	# every sprite set built now (in the background), then made ready to draw - the bar shows how far it really is
+	# (built the first time a foe came into view, each cost a stutter mid-game)
+	var ids = Assets.game_sets()
+	Assets.prewarm_sets(ids)
 	var t0 = Time.get_ticks_msec()
-	var k = 0
-	while (Music.preloading() or Assets.prewarming()) and Time.get_ticks_msec() - t0 < 8000:
-		k += 1
-		fill.size.x = 196.0 * minf(0.8, k / 120.0)
+	while Time.get_ticks_msec() - t0 < 60000:
+		var built = 0
+		for n in ids:
+			if Assets.is_built(n):
+				built += 1
+		fill.size.x = 196.0 * (0.05 + 0.6 * float(built) / maxf(1, ids.size()))
+		if (built >= ids.size() or not Assets.prewarming()) and not Music.preloading():
+			break
 		await get_tree().process_frame
-	for j in 4:
-		fill.size.x = 196.0 * (0.8 + 0.05 * (j + 1))
-		await get_tree().process_frame
+	var done = 0
+	for n in ids:
+		var tw = Time.get_ticks_usec()
+		Assets.sprite_set(n)      # (onto the graphics card: a few a frame, the bar moving)
+		done += 1
+		if Time.get_ticks_usec() - tw > 4000 or done % 6 == 0:
+			fill.size.x = 196.0 * (0.65 + 0.3 * float(done) / maxf(1, ids.size()))
+			await get_tree().process_frame
+	fill.size.x = 196.0
+	await get_tree().process_frame
 	f.call()
 
 # ---- STORY MODE: the stories in the mods, and the original story (still to come)
@@ -2418,7 +2433,7 @@ func _story_screen() -> void:
 	_gheading("Story Mode")
 	var items = []
 	var packs = Mods.installed_packs()
-	packs.sort_custom(func(a, b): return int(a.get("story_order", 0)) < int(b.get("story_order", 0)))      # (story_order in mod.json: THE DRAGON BALL HUNT under THE MISSING KEY CAPSULE)
+	packs.sort_custom(func(a, b): return int(a.get("story_order", 0)) < int(b.get("story_order", 0)))      # (story_order in mod.json: THE HERO OF EARTH under THE MISSING KEY CAPSULE)
 	for p in packs:
 		var sp = Mods.packs_dir().path_join(str(p["folder"])).path_join("content/story.json")
 		if not FileAccess.file_exists(sp):

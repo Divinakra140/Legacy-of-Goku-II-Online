@@ -109,9 +109,17 @@ var save_spot = {}      # the Capsule Corp pad saved at last this session: {key:
 func to_save() -> Dictionary:
 	return {"ch": ch, "maxhp": maxhp, "maxep": maxep, "str": str_v, "pwr": pwr_v, "end": end_v, "exp": exp, "level": level,
 		"inv": inv, "zeni": zeni, "skill": skill_i, "quick": quick, "equip": equip, "quests": quests, "qdone": qdone, "flags": flags,
-		"states": states.duplicate(), "where": where}
+		"states": states.duplicate(), "where": where, "honors": honors.duplicate()}
+
+## what this hero has earned (it goes with the hero to every map and mode, like the level): "halo" - THE HERO OF EARTH
+var honors = {}
+func has_halo() -> bool:
+	return honors.has("halo") or flags.get("db:hero", false)
 
 func from_save(d: Dictionary) -> void:
+	honors = (d.get("honors", {}) as Dictionary).duplicate() if d.get("honors") is Dictionary else {}
+	if d.get("flags") is Dictionary and bool(d["flags"].get("db:hero", false)):
+		honors["halo"] = true      # (earned before honors went with the hero: kept from the story's own flag)
 	maxhp = int(d.get("maxhp", maxhp)); hp = maxhp
 	maxep = int(d.get("maxep", maxep)); ep = maxep
 	str_v = float(d.get("str", str_v)); pwr_v = float(d.get("pwr", pwr_v)); end_v = float(d.get("end", end_v))
@@ -1543,7 +1551,7 @@ func snapshot() -> Dictionary:
 	for e in fx:
 		fxs.append(e.duplicate())
 	return {"ch": ch, "x": x, "y": y, "dir": dir, "anim": anim, "frame": frame, "hp": hp, "maxhp": maxhp, "ep": ep, "maxep": maxep,
-		"lvl": level, "shots": sh, "down": state == "down", "inv": invuln > 0 or flying or on_high(), "set": shape_set if shape_set >= 0 else set_id, "aura": aura(), "halo": flags.get("db:hero", false),
+		"lvl": level, "shots": sh, "down": state == "down", "inv": invuln > 0 or flying or on_high(), "set": shape_set if shape_set >= 0 else set_id, "aura": aura(), "halo": has_halo(),
 		"tint": (tint() * state_tint()).to_rgba32(), "sts": states.keys(), "scale": size_scale(), "dx": draw_dx, "fx": fxs, "form": str(form().get("name", "")), "fly": flying, "pvp": pvp, "high": on_high(), "hurt": state == "hurt", "beaming": beaming()}
 
 # ------------------------------------------------------------------ the heroes' own attacks, exactly as the game draws them

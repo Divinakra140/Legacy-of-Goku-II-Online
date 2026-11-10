@@ -18,7 +18,7 @@ var label_color = Color(1, 1, 1)
 var hp_frac = 1.0          # under 1: a small health bar over the head
 var bubble = ""            # a chat message over the head
 var aura = Color(0, 0, 0, 0)   # a transformation's aura (alpha 0: none)
-var halo = false               # THE HERO OF EARTH (THE DRAGON BALL HUNT): a golden halo over the head
+var halo = false               # THE HERO OF EARTH (THE HERO OF EARTH): a golden halo over the head
 var set_id = -1
 var hero = false           # a player's fighter: a villain hero shows the game's boss effects (red when hit, smoke when beaten)
 var _dead_ms = -1
@@ -97,8 +97,12 @@ func _draw() -> void:
 		# a golden-white ring floating over the head, bobbing a little, its glow pulsing
 		var hb = _opaque_box(f, frame % fr.size(), slot)
 		var tt2 = Engine.get_physics_frames()
-		var hc = Vector2(f["x"] + hb.position.x + hb.size.x * 0.5, f["y"] + hb.position.y - 4.0 - 1.0 * sin(tt2 * 0.08)) * size_scale
-		var hr = maxf(5.0, hb.size.x * 0.32) * size_scale
+		# over the head: the middle of the figure standing; lying flat (flying left / right) the head end, not the middle
+		var hx = hb.position.x + hb.size.x * 0.5
+		if hb.size.x > hb.size.y * 1.15:
+			hx = hb.position.x + 7.0 if dir == 2 else hb.end.x - 7.0
+		var hc = Vector2(f["x"] + hx, f["y"] + hb.position.y - 4.0 - 1.0 * sin(tt2 * 0.08)) * size_scale
+		var hr = 6.0 * size_scale      # (a head's width, whatever the pose: flying it grew to the whole body's)
 		draw_set_transform(hc, 0.0, Vector2(1.0, 0.32))
 		draw_arc(Vector2.ZERO, hr + 1.5, 0, TAU, 28, Color(1.0, 0.85, 0.3, 0.25 + 0.1 * sin(tt2 * 0.12) * c.a), 4.0)
 		draw_arc(Vector2.ZERO, hr, 0, TAU, 28, Color(1.0, 0.82, 0.25, c.a), 2.2)

@@ -254,21 +254,14 @@ var db_rt
 func _ready() -> void:
 	# every one of the game's sprite sets (foes, people) built in the background now: one built the first time it came
 	# into view cost 8-130 ms on the game's own thread - flying fast over new foes stuttered
-	var warm = []
-	for n in range(7, 157):
-		warm.append(n)
-	for ch in Assets.CHARACTERS.size():      # (the heroes and their outfits: brawlers, hero foes, other players)
-		warm.append(Assets.character_set(ch))
-		for o in Assets.outfits(ch):
-			if o is Dictionary and int(o.get("set", -1)) >= 0:
-				warm.append(int(o["set"]))
+	var warm = Assets.game_sets()      # (normally all ready already: the loading screen built them)
 	Assets.prewarm_sets(warm)
 	_warm_queue = warm
 	events_rt = preload("res://scripts/events.gd").new(self)
 	breakables = preload("res://scripts/breakables.gd").new(self)
 	brawl = preload("res://scripts/brawl.gd").new(self)
 	clash_rt = preload("res://scripts/clash.gd").new(self)
-	db_rt = preload("res://scripts/dragonballs.gd").new(self)      # THE DRAGON BALL HUNT (a story)
+	db_rt = preload("res://scripts/dragonballs.gd").new(self)      # THE HERO OF EARTH (a story)
 	touch = preload("res://scripts/touch.gd").new()
 	add_child(touch)
 	levels = Assets.data["levels"]
@@ -1305,7 +1298,7 @@ func _step_local(L: Local) -> void:
 		var home = Game.cfg.get("home_at")      # a map that starts in a room of its own (EARTH: Gohan's room at Goku's house)
 		if home is Dictionary and str(Game.planet.nodes[L.node_i]["key"]) == str(home.get("key", "")):
 			back = Vector2(float(home["x"]), float(home["y"]))
-		# a story: back where it starts (THE DRAGON BALL HUNT: beside Dende on the Lookout), not the map's own start -
+		# a story: back where it starts (THE HERO OF EARTH: beside Dende on the Lookout), not the map's own start -
 		# on the reshaped EARTH that is open sea
 		var story_back = Game.cfg.has("story") and str(Content.story.get("start_map", "")) == str(Game.planet.nodes[L.node_i]["key"]) and Content.story.has("x")
 		if story_back:
@@ -1746,7 +1739,7 @@ func _update_view(av: AreaView) -> void:
 			v.set_sprite_set(Assets.sprite_set(shown))
 		var au = f.aura()
 		v.aura = Color.hex(au) if au != 0 else Color(0, 0, 0, 0)
-		v.halo = f.flags.get("db:hero", false)
+		v.halo = f.has_halo()
 		v.tint = f.tint()
 		v.size_scale = f.size_scale()
 		v.label = ("P%d" % (L.k + 1)) if locals.size() > 1 else ""

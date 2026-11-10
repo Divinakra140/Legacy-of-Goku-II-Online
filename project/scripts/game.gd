@@ -1184,7 +1184,9 @@ var SHARED_SAVE: String:
 	get: return saves_dir() + "fighters_free.json"
 const WORLD_KEYS = ["where", "quests", "qdone", "flags"]
 func _shared_saves() -> bool:
-	return not cfg.has("dev_return") and not cfg.has("story")
+	# a story on the FREE PLAY map (THE HERO OF EARTH...) plays your own heroes, levels and all; a story with heroes of
+	# its own ("own_heroes" in its story.json: the ORIGINAL STORY) starts them fresh
+	return not cfg.has("dev_return") and not (cfg.has("story") and bool(Content.story.get("own_heroes", false)))
 
 static func _read_json_dict(path: String) -> Dictionary:
 	if FileAccess.file_exists(path):

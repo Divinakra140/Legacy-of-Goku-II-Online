@@ -2,7 +2,7 @@
  "events": [
   {
    "id": "db_intro",
-   "name": "THE DRAGON BALL HUNT: DENDE'S NEWS",
+   "name": "THE HERO OF EARTH: DENDE'S NEWS",
    "once": true,
    "if": {},
    "steps": [
@@ -41,7 +41,7 @@
   },
   {
    "id": "db_dende",
-   "name": "THE DRAGON BALL HUNT: TALKING TO DENDE",
+   "name": "THE HERO OF EARTH: TALKING TO DENDE",
    "once": false,
    "if": {
     "flags": [
@@ -172,6 +172,10 @@
      "name": "db:hero"
     },
     {
+     "do": "honor",
+     "name": "halo"
+    },
+    {
      "do": "toast",
      "text": "YOU ARE THE HERO OF EARTH!"
     },
@@ -203,7 +207,7 @@
   },
   {
    "id": "db_moon",
-   "name": "THE DRAGON BALL HUNT: COOLER ON THE MOON",
+   "name": "THE HERO OF EARTH: COOLER ON THE MOON",
    "once": false,
    "if": {
     "flags": [
@@ -342,6 +346,10 @@
     {
      "do": "flag",
      "name": "db:hero"
+    },
+    {
+     "do": "honor",
+     "name": "halo"
     },
     {
      "do": "toast",

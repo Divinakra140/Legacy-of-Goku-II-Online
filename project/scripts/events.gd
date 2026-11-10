@@ -333,6 +333,8 @@ func _run(L) -> void:
 			"music":
 				L.ev["music"] = str(st.get("name", "field"))      # (it stays while the event runs: world.gd _pick_music)
 				Music.play(L.ev["music"])
+			"honor":      # an honor the hero keeps in every mode ("halo": THE HERO OF EARTH)
+				f.honors[str(st.get("name", "halo"))] = true
 			"hold_foe":      # a placed foe held still while the scene talks (it can't walk, punch or shoot): kind, x, y, take
 				var hf = _take(L, st)
 				if not hf.is_empty():
@@ -361,7 +363,7 @@ func _run(L) -> void:
 					if str(Game.planet.nodes[ni]["key"]) == rkey:
 						world._warp(L, ni, Vector2(float(st.get("x", f.x)), float(st.get("y", f.y))))
 						break
-			"dragonballs":      # THE DRAGON BALL HUNT: the 7 hidden round EARTH (dragonballs.gd)
+			"dragonballs":      # THE HERO OF EARTH: the 7 hidden round EARTH (dragonballs.gd)
 				world.db_rt.scatter(f)
 			"toast":
 				world.toasts.append([_text(L, str(st.get("text", ""))), Color(1, 0.95, 0.7), 200])
@@ -847,7 +849,7 @@ func _start_fight(L, st: Dictionary) -> bool:
 	var p = Vector2(float(st.get("x", -1)), float(st.get("y", -1)))
 	if p.x < 0:
 		p = Vector2(f.x + 80, f.y)
-	# "take": a foe already standing there (one placed in the map - THE DRAGON BALL HUNT's Cooler on the Moon) becomes
+	# "take": a foe already standing there (one placed in the map - THE HERO OF EARTH's Cooler on the Moon) becomes
 	# the boss instead of a new one: the nearest of that kind within "take" px of x, y
 	var e = {}
 	if float(st.get("take", 0)) > 0:

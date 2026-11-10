@@ -649,6 +649,19 @@ func prewarm_sets(ids: Array) -> void:
 			lk.lock(); built[n] = r; lk.unlock())
 
 var _prewarm_task = -1
+## every sprite set a game uses (the game's own foes and people, the heroes and their outfits): built while the
+## loading screen shows, so none is built the first time it comes into view
+func game_sets() -> Array:
+	var ids = []
+	for n in range(7, 157):
+		ids.append(n)
+	for ch in CHARACTERS.size():
+		ids.append(character_set(ch))
+		for o in outfits(ch):
+			if o is Dictionary and int(o.get("set", -1)) >= 0 and not ids.has(int(o["set"])):
+				ids.append(int(o["set"]))
+	return ids
+
 ## a sprite set ready: in use already, or built in the background and waiting
 func is_built(n: int) -> bool:
 	if _sets.has(n):
