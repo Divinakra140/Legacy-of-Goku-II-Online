@@ -1,0 +1,20 @@
+{"events": [
+ {"id": "db_intro", "name": "THE DRAGON BALL HUNT: DENDE'S NEWS", "once": true, "if": {}, "steps": [
+  {"do": "say", "who": "DENDE", "face": 38, "text": "%s! I'm so glad you came!"},
+  {"do": "say", "who": "DENDE", "face": 38, "text": "Cooler has stolen all seven Dragon Balls and hidden them all around the world!"},
+  {"do": "say", "who": "DENDE", "face": 38, "text": "In the wrong hands their power could doom the Earth."},
+  {"do": "say", "who": "DENDE", "face": 38, "text": "Please find all seven and bring them back here to me. You can fly - search everywhere!"},
+  {"do": "dragonballs"},
+  {"do": "toast", "text": "FIND THE 7 DRAGON BALLS!"}
+ ]},
+ {"id": "db_dende", "name": "THE DRAGON BALL HUNT: BACK TO DENDE", "once": false, "if": {"flags": ["db:on"]}, "trigger": {"type": "talk", "person": "DENDE"}, "steps": [
+  {"do": "if_var", "name": "dragonballs", "cmp": ">=", "value": 7, "goto": "all"},
+  {"do": "say", "who": "DENDE", "face": 38, "text": "Keep looking, %s! The count is in the top right corner. Cooler hid them all over the world."},
+  {"do": "goto", "label": "end"},
+  {"do": "label", "name": "all"},
+  {"do": "say", "who": "DENDE", "face": 38, "text": "You've found all the Dragon Balls!"},
+  {"do": "say", "who": "DENDE", "face": 38, "text": "Thank you, %s. The Earth is safe again!"},
+  {"do": "the_end"},
+  {"do": "label", "name": "end"}
+ ]}
+]}

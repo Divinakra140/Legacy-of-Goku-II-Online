@@ -322,6 +322,8 @@ func _run(L) -> void:
 			"music":
 				L.ev["music"] = str(st.get("name", "field"))      # (it stays while the event runs: world.gd _pick_music)
 				Music.play(L.ev["music"])
+			"dragonballs":      # THE DRAGON BALL HUNT: the 7 hidden round EARTH (dragonballs.gd)
+				world.db_rt.scatter(f)
 			"toast":
 				world.toasts.append([_text(L, str(st.get("text", ""))), Color(1, 0.95, 0.7), 200])
 			"shake":      # a nearby blast (story scenes) - the same camera shake a crit uses, it decays on its own

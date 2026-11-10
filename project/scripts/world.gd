@@ -249,12 +249,14 @@ var events_rt
 var breakables      # the game's rocks to smash (breakables.gd)
 var brawl           # BRAWL: the fighters the computer plays (brawl.gd, the host)
 var clash_rt        # BEAM CLASHES between players (clash.gd)
+var db_rt
 
 func _ready() -> void:
 	events_rt = preload("res://scripts/events.gd").new(self)
 	breakables = preload("res://scripts/breakables.gd").new(self)
 	brawl = preload("res://scripts/brawl.gd").new(self)
 	clash_rt = preload("res://scripts/clash.gd").new(self)
+	db_rt = preload("res://scripts/dragonballs.gd").new(self)      # THE DRAGON BALL HUNT (a story)
 	touch = preload("res://scripts/touch.gd").new()
 	add_child(touch)
 	levels = Assets.data["levels"]
@@ -1124,10 +1126,13 @@ func _step_local(L: Local) -> void:
 		inp = inp.duplicate()
 		inp["run"] = true
 	L.mprev = real_raw.duplicate()
-	f.can_fly = not Game.cfg.has("story")      # flying is a FREE PLAY thing (stories keep their walls)
+	f.can_fly = not Game.cfg.has("story") or bool(Content.story.get("fly", false))      # flying is a FREE PLAY thing (stories keep their walls - unless the story says "fly")
 	if clash_rt.step(L, raw):
 		return      # in a beam clash: held in the pose, tapping (clash.gd)
 	f.step(inp, elist)
+	db_rt.step(L)
+	if L == locals[0]:
+		db_rt.sync()
 	_bump(L, elist)
 	_step_comps(L, elist)
 	if Engine.get_physics_frames() % 10 == L.k:
@@ -3595,6 +3600,7 @@ func _draw_hud() -> void:
 		if Lb.fighter.has_state_flag("blind"):
 			_draw_dark(c, _light_centre(i), 46.0, Color(0, 0, 0, 0.93), vs)
 	_draw_names(c)
+	db_rt.draw(c, vs)
 	# the HUD box (bars, special, EXP, minimap, partners) at the same size on the screen whatever the VIEW SIZE
 	var hs = _hud_scale(vs)
 	var vs_real = vs

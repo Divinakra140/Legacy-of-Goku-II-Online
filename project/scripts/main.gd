@@ -2417,7 +2417,9 @@ func _story_screen() -> void:
 	_global_back = _mp_kind if _mp_flow else _single_screen
 	_gheading("Story Mode")
 	var items = []
-	for p in Mods.installed_packs():
+	var packs = Mods.installed_packs()
+	packs.sort_custom(func(a, b): return int(a.get("story_order", 0)) < int(b.get("story_order", 0)))      # (story_order in mod.json: THE DRAGON BALL HUNT under THE MISSING KEY CAPSULE)
+	for p in packs:
 		var sp = Mods.packs_dir().path_join(str(p["folder"])).path_join("content/story.json")
 		if not FileAccess.file_exists(sp):
 			continue
