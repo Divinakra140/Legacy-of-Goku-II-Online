@@ -340,16 +340,18 @@ static func tile_color(cell: int) -> Color:
 	var col = Color(0.5, 0.5, 0.5)
 	var r = Assets.kit_cell(cell)
 	if not r.is_empty():
-		if not _src_img.has(r[2]):
-			var src = Assets.tileset().get_source(r[2]) as TileSetAtlasSource
-			_src_img[r[2]] = src.texture.get_image() if src and src.texture else null
-		var img: Image = _src_img[r[2]]
+		var src = Assets.tileset().get_source(r[2]) as TileSetAtlasSource
+		var tk = src.texture.get_rid().get_id() if src and src.texture else -1
+		if tk >= 0 and not _src_img.has(tk):
+			_src_img[tk] = src.texture.get_image()      # (the strips share big textures: one copy each)
+		var img: Image = _src_img.get(tk) if tk >= 0 else null
 		if img != null:
+			var mg: Vector2i = src.margins      # (each strip's tiles start at its margin in the shared texture)
 			var at: Vector2i = r[0]
 			var acc = Color(0, 0, 0, 0); var n = 0
 			for yy in range(1, 8, 3):
 				for xx in range(1, 8, 3):
-					var c = img.get_pixel(at.x * 8 + xx, at.y * 8 + yy)
+					var c = img.get_pixel(mg.x + at.x * 8 + xx, mg.y + at.y * 8 + yy)
 					if c.a > 0.5:
 						acc += c; n += 1
 			if n > 0:

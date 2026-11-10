@@ -1007,6 +1007,36 @@ func _beam_body_dist(e: Dictionary, a: Vector2, b: Vector2) -> float:
 		yy += 6.0
 	return best
 
+## where a thing can be hit: a rectangle from its feet point. A big foe (a T-Rex, the robot skull) or a fighter: the
+## seen part of its own picture where it is really drawn (a big foe's feet point is near the picture's LEFT edge - the
+## old test from that point missed a beam through a T-Rex's middle); anything else the small box it always had
+func _body_rect(e: Dictionary) -> Rect2:
+	if e.get("big", false) or e.get("tall", false):
+		var sid = int(e.get("set", -1))
+		if sid >= 0:
+			var r: Rect2 = Assets.body_rect(sid)
+			if r.size.x > 2.0 and r.size.y > 2.0:
+				return Rect2(Vector2(e["x"], e["y"]) + r.position, r.size).grow_individual(-r.size.x * 0.08, -r.size.y * 0.06, -r.size.x * 0.08, 0.0)
+	return Rect2(float(e["x"]) - 11.0, float(e["y"]) - 23.0, 22.0, 26.0)
+
+## how near a line (a beam, a to b) comes to a rectangle (0: it goes through it)
+static func _seg_rect_dist(a: Vector2, b: Vector2, r: Rect2) -> float:
+	if r.has_point(a) or r.has_point(b):
+		return 0.0
+	var corners = [r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]
+	for k in 4:
+		if Geometry2D.segment_intersects_segment(a, b, corners[k], corners[(k + 1) % 4]) != null:
+			return 0.0
+	var best = minf(_pt_rect_dist(a, r), _pt_rect_dist(b, r))
+	for cpt in corners:
+		best = minf(best, cpt.distance_to(Geometry2D.get_closest_point_to_segment(cpt, a, b)))
+	return best
+
+static func _pt_rect_dist(p: Vector2, r: Rect2) -> float:
+	var dx = maxf(maxf(r.position.x - p.x, 0.0), p.x - r.end.x)
+	var dy = maxf(maxf(r.position.y - p.y, 0.0), p.y - r.end.y)
+	return sqrt(dx * dx + dy * dy)
+
 func _hit_mid_y(e: Dictionary) -> float:
 	if e.get("tall", false):
 		return maxf(10.0, _body_h(e) * 0.5)
@@ -1082,25 +1112,20 @@ func _step_shots(enemies: Array) -> void:
 				break
 			if not e["alive"] or s["hit"].has(e["id"]):
 				continue
-			var big: bool = e.get("big", false)
-			var rx = 18.0 if big else 11.0
-			var mid = _hit_mid_y(e)      # the enemy's own standing height, not a flat guess (a T-Rex or Cell stands much
-			var ry = maxf(13.0, mid * 0.75) if big or e.get("tall", false) else 13.0      # taller than the old flat "big" box ever reached)
+			var body = _body_rect(e)
 			var touch = false
 			if kind == 1:
 				# a beam: anything along it, from the hands to its head
-				var p0 = Vector2(s["ox"], s["oy"])
-				var p1 = Vector2(s["x"], s["y"])
-				touch = _beam_body_dist(e, p0, p1) < float(s["w"]) / 2.0 + rx
+				touch = _seg_rect_dist(Vector2(s["ox"], s["oy"]), Vector2(s["x"], s["y"]), body) < float(s["w"]) / 2.0 + 1.0
 			else:
-				touch = absf(e["x"] - s["x"]) < rx + float(s.get("size", 0)) * 0.5 and absf((e["y"] - mid) - s["y"]) < ry + float(s.get("size", 0)) * 0.5
+				touch = body.grow(float(s.get("size", 0)) * 0.5 + 1.0).has_point(Vector2(s["x"], s["y"]))
 			if touch:
 				if kind == 2 and not s.get("pierce", false):
 					explode = true
 					break
 				s["hit"][e["id"]] = true
 				if kind == 2 and str(s.get("look", "")) != "":      # a ball that cuts on through (the Destructo Disk): its hit at each foe
-					fx.append(["xboom", e["x"], e["y"] - mid, 14.0, s["col"], 0, 16, str(s["look"]), int(s["dir"])])
+					fx.append(["xboom", body.get_center().x, body.get_center().y, 14.0, s["col"], 0, 16, str(s["look"]), int(s["dir"])])
 				var dv = Vector2(s["vx"], s["vy"]).normalized()
 				events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": dv.x * 3.0, "ky": dv.y * 3.0, "stun": int(s.get("stun", 0)), "inflict": s.get("inf", {}), "ki": kind == 0, "beam": kind == 1})      # (ki: the plain blast, B - its purple spark; beam: held, hits over and over)
 				if not s.get("pierce", false):
@@ -1108,7 +1133,7 @@ func _step_shots(enemies: Array) -> void:
 		if explode:
 			var r = float(s.get("radius", 40))
 			for e in enemies:
-				if e["alive"] and Vector2(e["x"] - s["x"], e["y"] - _hit_mid_y(e) - s["y"]).length() < r + (14.0 if e.get("big", false) else 0.0):
+				if e["alive"] and _pt_rect_dist(Vector2(s["x"], s["y"]), _body_rect(e)) < r:
 					var kv = Vector2(e["x"] - s["x"], e["y"] - s["y"]).normalized() * 7.0
 					events.append({"type": "hit", "enemy": e["id"], "dmg": roundi(s["dmg"] * rng.randf_range(0.9, 1.1)), "crit": s["crit"], "kx": kv.x, "ky": kv.y, "stun": 20, "inflict": s.get("inf", {})})
 			if str(s.get("look", "")) != "":
@@ -1707,13 +1732,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 		for e in enemies:
 			if not e["alive"] or s["hit"].has(e["id"]):
 				continue
-			var near = _beam_body_dist(e, a, e2) if e.get("tall", false) else -1.0
-			if near < 0.0:
-				var q = Vector2(e["x"], e["y"] - _hit_mid_y(e))
-				var seg = e2 - a
-				var k = clampf((q - a).dot(seg) / maxf(1.0, seg.length_squared()), 0.0, 1.0)
-				near = q.distance_to(a + seg * k)
-			if near < (8.0 if not e.get("big", false) else 16.0) + 4.0:
+			if _seg_rect_dist(a, e2, _body_rect(e)) < 6.0:      # (the game's own beam: about its half-width)
 				s["hit"][e["id"]] = true
 				var dmg = int(s["dmg"]) if not s.get("rehit", false) else maxi(1, int(s["dmg"]) / 3)
 				events.append({"type": "hit", "enemy": e["id"], "dmg": dmg, "crit": s["crit"], "kx": v.x * 3.0, "ky": v.y * 3.0, "stun": 10, "inflict": s.get("inf", {}), "beam": true})
@@ -1752,7 +1771,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 	for e in enemies:
 		if hit:
 			break
-		if e["alive"] and absf(e["x"] - c.x) < size * 0.5 + 6 and absf((e["y"] - _hit_mid_y(e)) - c.y) < size * 0.5 + 8:
+		if e["alive"] and _body_rect(e).grow(size * 0.5 + 2.0).has_point(c):
 			hit = true
 			events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": v.x * 4.0, "ky": v.y * 4.0, "stun": 16, "inflict": s.get("inf", {})})
 			s["hit"][e["id"]] = true
@@ -1762,7 +1781,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 		if R.has("radius"):      # Gohan's blast bursts: everything around is caught
 			_sfx("boom")
 			for e in enemies:
-				if e["alive"] and not s["hit"].has(e["id"]) and Vector2(e["x"] - c.x, e["y"] - _hit_mid_y(e) - c.y).length() < float(R["radius"]) * float(s.get("k", 1.0)):
+				if e["alive"] and not s["hit"].has(e["id"]) and _pt_rect_dist(c, _body_rect(e)) < float(R["radius"]) * float(s.get("k", 1.0)):
 					events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": 0.0, "ky": 0.0, "stun": 16, "inflict": s.get("inf", {})})
 	return true
 

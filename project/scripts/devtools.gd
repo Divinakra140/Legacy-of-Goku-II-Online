@@ -2166,17 +2166,20 @@ func _cell_image(v: int) -> Image:
 	if r.is_empty():
 		return null
 	var si = int(r[2])
-	if not _src_imgs.has(si):
-		var src = Assets.tileset().get_source(si) as TileSetAtlasSource
-		var si_img: Image = src.texture.get_image() if src != null and src.texture != null else null
+	var src = Assets.tileset().get_source(si) as TileSetAtlasSource
+	if src == null or src.texture == null:
+		return null
+	var tk = src.texture.get_rid().get_id()      # (the strips share big textures: one copy each, the strip's tiles at its margin)
+	if not _src_imgs.has(tk):
+		var si_img: Image = src.texture.get_image()
 		if si_img != null:
 			si_img.convert(Image.FORMAT_RGBA8)
-		_src_imgs[si] = si_img
-	var img: Image = _src_imgs[si]
+		_src_imgs[tk] = si_img
+	var img: Image = _src_imgs[tk]
 	if img == null:
 		return null
 	var at: Vector2i = r[0]
-	var t = img.get_region(Rect2i(at * 8, Vector2i(8, 8)))
+	var t = img.get_region(Rect2i(src.margins + at * 8, Vector2i(8, 8)))
 	if int(r[1]) & TileSetAtlasSource.TRANSFORM_TRANSPOSE:
 		var tt = Image.create_empty(8, 8, false, Image.FORMAT_RGBA8)
 		for yy in 8:

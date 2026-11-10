@@ -1054,6 +1054,25 @@ func efx(name: String) -> Dictionary:
 
 ## how big a set's fighter stands (its first standing frame's own pixels): for moves made for someone smaller or bigger
 var _body = {}
+## the seen part of a sprite set's standing picture, from its feet point (where the game draws it: the frame's own place
+## plus its used pixels) - what is hit (fighter_sim._body_rect)
+var _body_rects = {}
+func body_rect(set_id: int) -> Rect2:
+	if _body_rects.has(set_id):
+		return _body_rects[set_id]
+	var r = Rect2()
+	var d = sprite_set(set_id)
+	if not d.is_empty() and d["tex"] != null and d["slots"].size() > 0 and d["slots"][0].size() > 0:
+		var f: Dictionary = d["slots"][0][0]
+		var img = _set_image(set_id, d)
+		var c: int = d["cell"]
+		if img != null and img.get_height() >= c:
+			var u = img.get_region(Rect2i(0, 0, mini(c, int(f["w"])), mini(c, int(f["h"])))).get_used_rect()
+			if u.size.y > 0:
+				r = Rect2(Vector2(float(f["x"]), float(f["y"])) + Vector2(u.position), Vector2(u.size))
+	_body_rects[set_id] = r
+	return r
+
 func body_size(set_id: int) -> Vector2:
 	if _body.has(set_id):
 		return _body[set_id]
@@ -1599,7 +1618,7 @@ func _earth_base(bin_path: String) -> void:
 	# the minimap has a stamp of its own: a device whose picture missed a redraw (it was not there yet, an older Earth)
 	# is redrawn once with this Earth - after an update nobody keeps a minimap of an old Earth
 	var mini_stamp_path = bin_path.get_base_dir().path_join("0_mini.txt")
-	var mini_ok = FileAccess.file_exists(mini_stamp_path) and FileAccess.get_file_as_string(mini_stamp_path).strip_edges() == ver + "|walls"
+	var mini_ok = FileAccess.file_exists(mini_stamp_path) and FileAccess.get_file_as_string(mini_stamp_path).strip_edges() == ver + "|walls2"      # (walls2: redrawn once more - tile colours read at the wrong place for a while made the sea brown)
 	if mini_ok and FileAccess.file_exists(stamp_path) and FileAccess.get_file_as_string(stamp_path).strip_edges() == stamp:
 		return      # laid in already (a new import or a new Earth lays it again)
 	var body = FileAccess.get_file_as_bytes(src).decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
@@ -1640,7 +1659,7 @@ func _earth_base(bin_path: String) -> void:
 		_tex.erase(mini_path)
 		var ms = FileAccess.open(mini_stamp_path, FileAccess.WRITE)
 		if ms:
-			ms.store_string(ver + "|walls")      # (a redraw without the darker walls is done again)
+			ms.store_string(ver + "|walls2")      # (a redraw without the darker walls is done again)
 			ms.close()
 	var sf = FileAccess.open(stamp_path, FileAccess.WRITE)
 	if sf:
