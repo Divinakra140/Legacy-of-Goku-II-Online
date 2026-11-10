@@ -2738,6 +2738,10 @@ func _build_ui() -> void:
 	lg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; lg.custom_minimum_size = Vector2(16, 16); lg.tooltip_text = "LoG2 Online by Puni Puni"; tabs.add_child(lg)
 	var ytb = Button.new(); ytb.text = "YOUTUBE"; ytb.add_theme_font_size_override("font_size", 9); ytb.add_theme_color_override("font_color", Color(1, 0.45, 0.45))
 	ytb.tooltip_text = "Puni Puni on YouTube: @PuniPuni2026"; ytb.pressed.connect(func(): OS.shell_open("https://www.youtube.com/@PuniPuni2026")); tabs.add_child(ytb)
+	var lg2 = TextureRect.new(); lg2.texture = preload("res://art/divinakra_logo.png"); lg2.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	lg2.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; lg2.custom_minimum_size = Vector2(16, 16); lg2.tooltip_text = "Divinakra Creations"; tabs.add_child(lg2)
+	var ytb2 = Button.new(); ytb2.text = "YOUTUBE"; ytb2.add_theme_font_size_override("font_size", 9); ytb2.add_theme_color_override("font_color", Color(1, 0.45, 0.45))
+	ytb2.tooltip_text = "Divinakra Creations on YouTube: @DivinakraCreations"; ytb2.pressed.connect(func(): OS.shell_open("https://www.youtube.com/@DivinakraCreations")); tabs.add_child(ytb2)
 	var tg = Button.new(); tg.text = "TOGETHER"; tg.tooltip_text = "Edit the same world with friends over LAN or Hamachi"
 	tg.pressed.connect(_together_dialog); tabs.add_child(tg)
 	var hb = MenuButton.new(); hb.text = "HELP"; hb.flat = false; tabs.add_child(hb)
