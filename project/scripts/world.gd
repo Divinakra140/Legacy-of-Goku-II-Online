@@ -252,6 +252,18 @@ var clash_rt        # BEAM CLASHES between players (clash.gd)
 var db_rt
 
 func _ready() -> void:
+	# every one of the game's sprite sets (foes, people) built in the background now: one built the first time it came
+	# into view cost 8-130 ms on the game's own thread - flying fast over new foes stuttered
+	var warm = []
+	for n in range(7, 157):
+		warm.append(n)
+	for ch in Assets.CHARACTERS.size():      # (the heroes and their outfits: brawlers, hero foes, other players)
+		warm.append(Assets.character_set(ch))
+		for o in Assets.outfits(ch):
+			if o is Dictionary and int(o.get("set", -1)) >= 0:
+				warm.append(int(o["set"]))
+	Assets.prewarm_sets(warm)
+	_warm_queue = warm
 	events_rt = preload("res://scripts/events.gd").new(self)
 	breakables = preload("res://scripts/breakables.gd").new(self)
 	brawl = preload("res://scripts/brawl.gd").new(self)
@@ -932,15 +944,82 @@ func _process(_dt: float) -> void:
 	if _last_frame_us > 0 and now - _last_frame_us > 350000:
 		print("[freeze] %d ms between frames at %s (physics tick %d, %d brawlers, %d views)" % [(now - _last_frame_us) / 1000, Time.get_time_string_from_system(), Engine.get_physics_frames(), brawl.bots.size() if brawl != null else 0, views.size()])
 	_last_frame_us = now
+## PERFORMANCE PROBE (off unless asked): LOG2_PROF=1 prints, every 120 ticks, the average and worst time of each
+## part of a tick; LOG2_AUTOFLY=1 flies the first player east across the map at full speed (to measure flying over foes)
+var _prof_on = OS.get_environment("LOG2_PROF") != ""
+var _autofly = OS.get_environment("LOG2_AUTOFLY") != ""
+var _prof = {}
+func _pt(name: String, us: int) -> void:
+	if not _prof_on:
+		return
+	var r: Array = _prof.get(name, [0, 0, 0])
+	r[0] += us; r[1] = maxi(r[1], us); r[2] += 1
+	_prof[name] = r
+func _prof_report() -> void:
+	if not _prof_on or Engine.get_physics_frames() % 120 != 0:
+		return
+	var out = []
+	for k in _prof:
+		out.append("%s %.2f/%.1f" % [k, float(_prof[k][0]) / maxf(1, _prof[k][2]) / 1000.0, _prof[k][1] / 1000.0])
+	var awake = 0
+	for k in Game.sims:
+		awake += Game.sims[k].awake.size()
+	var nodes = 0
+	for n in views:
+		nodes += views[n].ents.get_child_count()
+	print("[prof] ms avg/max: ", ", ".join(out), " | awake foes %d, ents %d, fps %d" % [awake, nodes, Engine.get_frames_per_second()])
+	_prof = {}
+
 func _physics_process(_dt: float) -> void:
 	var _t0 = Time.get_ticks_usec()      # TEMPTIME
 	_tp = {}
+	if _autofly and not locals.is_empty():
+		var af: FighterSim = locals[0].fighter
+		af.flying = true
+		af.x += 6.0
+		if af.x > float(locals[0].area.get("w", 22400)) - 200:
+			af.x = 400.0; af.y += 900.0
 	_physics_inner()
 	var _el = Time.get_ticks_usec() - _t0
+	_pt("tick", _el)
+	_prof_report()
 	if _el > 60000:
 		print("[slow] tick %d took %d ms " % [Engine.get_physics_frames(), _el / 1000], _tp)
 
+## the parts of this place the players here can see (their camera's view and a margin): figures outside are hidden
+## - not drawn or sorted (EARTH has hundreds of people and foes; all of them redrew every tick)
+func _screen_rects(av: AreaView) -> Array:
+	var out = []
+	for i in locals.size():
+		var L: Local = locals[i]
+		if L.node_i != av.node_i or i >= svs.size() or i >= cams.size():
+			continue
+		var half = Vector2(svs[i].size) / maxf(0.1, cams[i].zoom.x) / 2.0 + Vector2(96, 96)
+		out.append(Rect2(L.cam - half, half * 2.0))
+	return out
+
+static func _seen(rects: Array, p: Vector2) -> bool:
+	if rects.is_empty():
+		return true
+	for r in rects:
+		if (r as Rect2).has_point(p):
+			return true
+	return false
+
+var _warm_queue = []
+## one prebuilt sprite set a tick made ready to draw (its picture onto the graphics card), while nothing needs it yet
+func _warm_one() -> void:
+	if _warm_queue.is_empty():
+		return
+	var n = int(_warm_queue[0])
+	if Assets.is_built(n):
+		_warm_queue.pop_front()
+		Assets.sprite_set(n)
+	elif not Assets.prewarming():
+		_warm_queue.pop_front()
+
 func _physics_inner() -> void:
+	_warm_one()
 	_chat_poll()
 	_touch_tick()
 	if Engine.get_physics_frames() % 600 == 0:
@@ -958,10 +1037,15 @@ func _physics_inner() -> void:
 	var states = []
 	for L in locals:
 		Game.local_levels[L.k] = L.fighter.level
+		var _ts = Time.get_ticks_usec()
 		_step_local(L)
+		_pt("local", Time.get_ticks_usec() - _ts)
 		states.append({"k": L.k, "node": L.node_i, "st": L.fighter.snapshot()})
 	if Game.is_host():
-		for e in Game.host_step(states):
+		var _th = Time.get_ticks_usec()
+		var _hs = Game.host_step(states)
+		_pt("host_step", Time.get_ticks_usec() - _th)
+		for e in _hs:
 			_on_hurt(int(e["k"]), e["atk"], e["kx"], e["ky"], str(e.get("st", "")))
 		var _tb = Time.get_ticks_usec(); brawl.tick(); _tp["brawl"] = (Time.get_ticks_usec() - _tb) / 1000      # TEMPTIME
 	for s in states:
@@ -972,10 +1056,14 @@ func _physics_inner() -> void:
 			Game.send_state(L.k, L.node_i, s["st"], L.name)
 	for n in views:
 		var av: AreaView = views[n]
+		var _tv = Time.get_ticks_usec()
 		_stream(av)
+		_pt("stream", Time.get_ticks_usec() - _tv); _tv = Time.get_ticks_usec()
 		for at in av.anim_layers:
 			at.tick()
+		_pt("anim", Time.get_ticks_usec() - _tv); _tv = Time.get_ticks_usec()
 		_update_view(av)
+		_pt("views", Time.get_ticks_usec() - _tv)
 		for pp in av.pops:
 			pp[2] -= 1
 			pp[1].y -= 0.4
@@ -1479,14 +1567,15 @@ func _update_people(av: AreaView) -> void:
 		v2.show_frame(0, 0, 0)
 		av.ents.add_child(v2)
 		av.npc_views.append(v2)
+	var rects = _screen_rects(av)
 	for i in av.npc_views.size():
 		var v: ActorView = av.npc_views[i]
 		if i >= people.size():
 			v.visible = false
 			continue
 		var pd: Dictionary = people[i]
-		v.visible = not pd.get("hidden", false)
 		var want = Vector2(roundf(float(pd["x"])), roundf(float(pd["y"])))
+		v.visible = not pd.get("hidden", false) and (_seen(rects, want) or pd.has("cut_dir") or pd.has("cut_pose") or pd.get("cut_walk", false) or pd.get("cut_fly", false))
 		if v.position != want:
 			v.position = want
 		if pd.has("cut_dir") or pd.has("cut_pose") or pd.get("cut_walk", false) or pd.get("cut_fly", false) or pd.has("emote"):
@@ -1654,6 +1743,7 @@ func _update_view(av: AreaView) -> void:
 			av.local_views[k].queue_free()
 			av.local_views.erase(k)
 	# the enemies (the host's picture)
+	var erects = _screen_rects(av)
 	var seen = {}
 	for e in snap:
 		var id = int(e[0])
@@ -1688,7 +1778,9 @@ func _update_view(av: AreaView) -> void:
 		v.robot = Rules.is_robot_set(int(e[6]))
 		v.label = str(e[10]) if flags & 2 else ""
 		v.hp_frac = float(e[7]) / maxf(1.0, float(e[8])) if bool(Game.cfg.get("foe_bars", false)) else 1.0      # (ENEMY HEALTH BARS: off, as the game has none)
-		v.queue_redraw()
+		v.visible = _seen(erects, target)
+		if v.visible:
+			v.queue_redraw()
 	for id in av.enemy_views.keys():
 		if not seen.has(id):
 			av.enemy_views[id].queue_free()

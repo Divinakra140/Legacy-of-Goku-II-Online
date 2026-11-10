@@ -108,7 +108,7 @@ func exe_dir() -> String:
 ## Android: no folder next to the program - the game's folders (content, modpacks, imported...) come packed in
 ## the APK (res://bundle/gamedata.pack, made by tools/make_pack.py) and are unpacked into the app's own folder
 ## on the first start: [8 bytes: index length][index JSON: [{"p", "s"}...]][the files, in that order]
-const BUNDLE_VERSION = "v45-8"
+const BUNDLE_VERSION = "v46-1"
 var _android_root = ""
 func _remove_tree(path: String) -> void:
 	if not DirAccess.dir_exists_absolute(path):
@@ -649,6 +649,14 @@ func prewarm_sets(ids: Array) -> void:
 			lk.lock(); built[n] = r; lk.unlock())
 
 var _prewarm_task = -1
+## a sprite set ready: in use already, or built in the background and waiting
+func is_built(n: int) -> bool:
+	if _sets.has(n):
+		return true
+	if _built_lock == null:
+		return false
+	_built_lock.lock(); var b = _built.has(n); _built_lock.unlock()
+	return b
 ## still warming hero sprite sets in the background (prewarm_sets, from the title screen on): the loading screen
 ## waits a little for this too, so a BRAWL game spawning every hero at once never hits one that is not ready yet
 func prewarming() -> bool:
@@ -673,7 +681,10 @@ func sprite_set(n: int) -> Dictionary:
 	_built.erase(n)
 	_built_lock.unlock()
 	if r.is_empty():
+		var _tb0 = Time.get_ticks_usec()
 		r = _build_set(n)
+		if OS.get_environment("LOG2_PROF") != "" and Time.get_ticks_usec() - _tb0 > 8000:
+			print("[prof] sprite set %d built on the game's thread: %d ms" % [n, (Time.get_ticks_usec() - _tb0) / 1000])
 	var d = {}
 	if r.has("j"):
 		var j: Dictionary = r["j"]
