@@ -58,6 +58,8 @@ func make_enemies(arrival: Vector2) -> void:
 			var lv = maxi(int(f.get("lv", 0)), int(spec.get("level", 1))) + rng.randi_range(-1, 1)
 			var elite = rng.randi_range(0, 99) < int(spec.get("elite", 4))
 			var fe = make_enemy(fid, int(f["type"]), int(f["set"]), p, maxi(1, lv + (3 if elite else 0)), elite, false)
+			if f.get("own_look", false):
+				fe["set"] = int(f["set"])      # (a look picked for this one foe in the FOE tool beats the kind's team-wide one)
 			if f.has("respawn_s"):
 				fe["zone_ms"] = int(f["respawn_s"]) * 1000      # a foe zone's own time to come back
 			enemies.append(fe)

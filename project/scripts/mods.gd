@@ -587,7 +587,7 @@ func apply_to_planet(pl) -> void:
 			if st < 0:
 				st = Rules.kind_to_type_set(t)[1]
 			var lv = int(e[4]) if e.size() > 4 else int(Assets.data["enemies"][clampi(t, 0, 127)]["lvl"])
-			fixed.append({"type": t, "set": st, "x": float(e[2]), "y": float(e[3]), "lv": lv})
+			fixed.append({"type": t, "set": st, "x": float(e[2]), "y": float(e[3]), "lv": lv, "own_look": int(e[1]) >= 0})
 		# foe zones (DEV TOOLS - ZONE): their foes spread over the box, coming back after their own time
 		var zr = RandomNumberGenerator.new()
 		for z in p["zones"]:
