@@ -223,7 +223,13 @@ func _run(L) -> void:
 		match str(st.get("do", "")):
 			"say":
 				L.ev["say"] = {"who": str(st.get("who", "")), "text": _text(L, str(st.get("text", ""))), "face": int(st.get("face", -1)), "portrait": int(st.get("portrait", -1)), "narrate": bool(st.get("narrate", false)), "black": bool(st.get("black", false)), "t0": Engine.get_physics_frames(), "mine": bool(st.get("mine", Story.box_style(int(st.get("speaker", 0)), f.ch) == 1)), "gface": Story.face_for(int(st.get("speaker", 0)), f.set_id), "speaker": int(st.get("speaker", 0)), "hero_ch": f.ch, "at": str(st.get("at", ""))}      # (the game's own face and box for the line's speaker)
-				var gba_box = str(L.ev.get("id", "")).begins_with("story:") and Assets.gba_font("font_talk") != null
+				# the game's own text box (Z): its scenes, and a story that asks for it ("gba_box" in its story.json - THE HERO
+				# OF EARTH); a line's "portrait" (the CAPSULE CORP computer's faces) is the face in it
+				var gba_box = (str(L.ev.get("id", "")).begins_with("story:") or (Game.cfg.has("story") and bool(Content.story.get("gba_box", false)))) and Assets.gba_font("font_talk") != null
+				if int(st.get("portrait", -1)) >= 0:
+					L.ev["say"]["gface"] = int(st["portrait"])
+				if gba_box and not st.has("speaker") and str(st.get("who", "")) != "" and not bool(st.get("mine", false)):
+					L.ev["say"]["speaker"] = 8      # (a story's own line by someone else: the game's box for the others, face on the right)
 				L.ev["say"]["gba"] = gba_box and not L.ev["say"]["narrate"]
 				if L.ev["say"]["gba"] and str(L.ev["say"]["who"]) != "":
 					L.ev["say"]["text"] = str(L.ev["say"]["who"]) + ": " + str(L.ev["say"]["text"])      # (the game writes the name in the line)
