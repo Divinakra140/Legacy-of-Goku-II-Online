@@ -1682,6 +1682,7 @@ func tileset() -> TileSet:
 		var h = mini(SRC_ROWS * 8, sheet.get_height() - y0)
 		var src = TileSetAtlasSource.new()
 		src.texture = _block_tex("kit", sheet, si)
+		src.use_texture_padding = false      # (padding made each strip its own padded copy of the texture: no shared batches)
 		src.margins = Vector2i(0, (si * SRC_ROWS) % BLOCK_ROWS * 8)
 		src.texture_region_size = Vector2i(8, 8)
 		var anim_rows_here = {}
@@ -1720,6 +1721,7 @@ func tileset() -> TileSet:
 			var lh = mini(SRC_ROWS * 8, lsheet.get_height() - ly0)
 			var ls = TileSetAtlasSource.new()
 			ls.texture = _block_tex(g, lsheet, li)
+			ls.use_texture_padding = false
 			ls.margins = Vector2i(0, (li * SRC_ROWS) % BLOCK_ROWS * 8)
 			ls.texture_region_size = Vector2i(8, 8)
 			for ly in lh / 8:

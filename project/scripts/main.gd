@@ -2511,7 +2511,10 @@ func _story_slots() -> void:
 			if t is Dictionary and not t.is_empty():
 				var d: Dictionary = t.values()[0]
 				saved = clampi(int(d.get("ch", 0)), 0, Assets.CHARACTERS.size() - 1)
-				txt = "%s  LV %d" % [Assets.CHARACTERS[saved], int(d.get("level", 1))]
+				var slv = int(d.get("level", 1))
+				if not bool(Content.story.get("own_heroes", false)):
+					slv = int(Game.shared_entry(str(saved)).get("level", slv))      # (the hero's own level: a story plays your Free Play heroes)
+				txt = "%s  LV %d" % [Assets.CHARACTERS[saved], slv]
 		var slot = i + 1
 		if _mp_flow:
 			items.append([txt, func(): _mp_story_slot = slot; _mp_choice()])

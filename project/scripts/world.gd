@@ -967,12 +967,15 @@ func _process(_dt: float) -> void:
 	var now = Time.get_ticks_usec()
 	if _last_frame_us > 0 and now - _last_frame_us > 350000:
 		print("[freeze] %d ms between frames at %s (physics tick %d, %d brawlers, %d views)" % [(now - _last_frame_us) / 1000, Time.get_time_string_from_system(), Engine.get_physics_frames(), brawl.bots.size() if brawl != null else 0, views.size()])
+	if _prof_on and _last_frame_us > 0:
+		_prof_worst_frame = maxi(_prof_worst_frame, now - _last_frame_us)
 	_last_frame_us = now
 ## PERFORMANCE PROBE (off unless asked): LOG2_PROF=1 prints, every 120 ticks, the average and worst time of each
 ## part of a tick; LOG2_AUTOFLY=1 flies the first player east across the map at full speed (to measure flying over foes)
 var _prof_on = OS.get_environment("LOG2_PROF") != ""
 var _autofly = OS.get_environment("LOG2_AUTOFLY") != ""
 var _prof = {}
+var _prof_worst_frame = 0
 func _pt(name: String, us: int) -> void:
 	if not _prof_on:
 		return
@@ -1003,6 +1006,8 @@ func _prof_report() -> void:
 			for ch in av2.root.get_children():
 				kinds[ch.get_class()] = int(kinds.get(ch.get_class(), 0)) + 1
 			print("[prof] view %d: tile cells per layer %s, chunks %d, quadrant %d, root children %s, cams zoom %s, screen %s" % [n, parts, av2.chunks.size(), av2.tiles[0].rendering_quadrant_size if not av2.tiles.is_empty() else 0, kinds, cams[0].zoom if not cams.is_empty() else Vector2.ZERO, svs[0].size if not svs.is_empty() else Vector2i.ZERO])
+	out.append("WORST FRAME %.1f" % (_prof_worst_frame / 1000.0))
+	_prof_worst_frame = 0
 	print("[prof] ms avg/max: ", ", ".join(out), " | awake foes %d, ents %d, fps %d, frame %.1f ms, draw calls %d, items %d" % [awake, nodes, Engine.get_frames_per_second(),
 		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
 	_prof = {}
@@ -1048,6 +1053,7 @@ static func _seen(rects: Array, p: Vector2) -> bool:
 	return false
 
 var _warm_queue = []
+var _fps_frames = []      # (the FPS COUNTER: when the last second's frames were drawn)
 ## one prebuilt sprite set a tick made ready to draw (its picture onto the graphics card), while nothing needs it yet
 func _warm_one() -> void:
 	if _warm_queue.is_empty():
@@ -3759,6 +3765,16 @@ func _draw_hud() -> void:
 			_draw_dark(c, _light_centre(i), 46.0, Color(0, 0, 0, 0.93), vs)
 	_draw_names(c)
 	db_rt.draw(c, vs)
+	if bool(Game.cfg.get("show_fps", false)):      # OPTIONS - FPS COUNTER: frames a second, and the slowest frame of the last second
+		_fps_frames.append(Time.get_ticks_usec())
+		while _fps_frames.size() > 1 and _fps_frames[-1] - _fps_frames[0] > 1000000:
+			_fps_frames.pop_front()
+		var worst = 0
+		for j in range(1, _fps_frames.size()):
+			worst = maxi(worst, _fps_frames[j] - _fps_frames[j - 1])
+		var ftxt = "%d FPS  (SLOWEST %d MS)" % [Engine.get_frames_per_second(), worst / 1000]
+		c.draw_rect(Rect2(vs.x / 2.0 - 70, 2, 140, 12), Color(0, 0, 0, 0.6))
+		c.draw_string(ThemeDB.fallback_font, Vector2(vs.x / 2.0 - 70, 11), ftxt, HORIZONTAL_ALIGNMENT_CENTER, 140, 9, Color(0.6, 1, 0.6) if Engine.get_frames_per_second() >= 58 else Color(1, 0.8, 0.4))
 	if not locals.is_empty():
 		events_rt.draw_boss(c, locals[0], vs)
 		events_rt.draw_scene_fx(c, locals[0], 0, vs)
@@ -4031,7 +4047,7 @@ func _menu_rows(L: Local) -> Array:
 		"SAY":
 			return PHRASES
 		"OPTIONS":
-			return ["MUSIC", "SOUND", "FULLSCREEN", "VIEW SIZE", "HUD / MINIMAP", "MUSIC TEST", "SOUND TEST", "SHOW CONTROLS", "ON-SCREEN BUTTONS", "A/B BUTTONS", "WORDS ON SCREEN", "ENEMY HEALTH BARS", "QUIT TO TITLE AND SAVE GAME"]
+			return ["MUSIC", "SOUND", "FULLSCREEN", "VIEW SIZE", "HUD / MINIMAP", "MUSIC TEST", "SOUND TEST", "SHOW CONTROLS", "ON-SCREEN BUTTONS", "A/B BUTTONS", "WORDS ON SCREEN", "ENEMY HEALTH BARS", "FPS COUNTER", "QUIT TO TITLE AND SAVE GAME"]
 	return []
 
 func _menu_step(L: Local, raw: Dictionary) -> void:
@@ -4221,7 +4237,10 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 				11:     # the little health bars over the foes' heads (the game has none: off at first)
 					Game.cfg["foe_bars"] = not bool(Game.cfg.get("foe_bars", false))
 					Game.save_options()
-				12:
+				12:     # frames a second, in the top left corner (how smooth the game really runs)
+					Game.cfg["show_fps"] = not bool(Game.cfg.get("show_fps", false))
+					Game.save_options()
+				13:
 					_option_pick_quit()
 
 ## QUIT TO TITLE AND SAVE GAME: everything saved, back to the start menu (the app stays open)
@@ -4963,7 +4982,7 @@ func _draw_menu_at(c: Control, L: Local, i: int) -> void:
 				("SAMPLE %d  (A: NEXT)" % sound_test) if sound_test >= 0 else "(A: PLAY THE GAME'S SOUNDS)", "ON" if show_controls else "OFF",
 				{"auto": "AUTO (HIDDEN WITH A PAD)", "on": "ON", "off": "OFF"}.get(str(Game.cfg.get("touch_mode", "auto")), "AUTO"),
 				"NINTENDO / RETROID (A ON THE RIGHT)" if Game.pad_layout() == "nintendo" else "XBOX (A AT THE BOTTOM)",
-				"ON" if words_on else "OFF  (ONLY SPEECH AND CHAT)", "ON" if bool(Game.cfg.get("foe_bars", false)) else "OFF", ""]
+				"ON" if words_on else "OFF  (ONLY SPEECH AND CHAT)", "ON" if bool(Game.cfg.get("foe_bars", false)) else "OFF", "ON" if bool(Game.cfg.get("show_fps", false)) else "OFF", ""]
 			for j in rows.size():
 				line.call("%s   %s" % [rows[j], vals[j]], Color(1, 1, 1), j == row, 7, j)
 			Y[0] += 4

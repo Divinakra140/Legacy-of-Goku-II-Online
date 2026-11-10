@@ -18,7 +18,13 @@ var label_color = Color(1, 1, 1)
 var hp_frac = 1.0          # under 1: a small health bar over the head
 var bubble = ""            # a chat message over the head
 var aura = Color(0, 0, 0, 0)   # a transformation's aura (alpha 0: none)
-var halo = false               # THE HERO OF EARTH (THE HERO OF EARTH): a golden halo over the head
+var halo = false:              # THE HERO OF EARTH: a golden halo over the head
+	set(v):
+		if v and not halo and not set_data.is_empty():
+			for a2 in [0, 12]:      # (its spots found now, as it appears - not the first time it dives mid-flight)
+				for d2 in 4:
+					_halo_spot(a2, d2)
+		halo = v
 var set_id = -1
 var hero = false           # a player's fighter: a villain hero shows the game's boss effects (red when hit, smoke when beaten)
 var _dead_ms = -1
@@ -221,12 +227,15 @@ func _opaque_box(f: Dictionary, fi: int, slot: int) -> Rect2:
 	return r
 
 ## where a halo sits for a pose (12 FLYING, else the standing pose 0) facing a way: from the feet, in the picture's px.
-## The head: the middle of the topmost rows of the figure (where a head is - a tail or a cape is lower or to the side);
-## flying left / right: the front end, at the head's own height there; flying down: the heavier end (Cooler dives head
-## first, his tail up - Goku's head stays on top)
-var _halo_spots = {}
+## Standing facing you / away: over the middle of the feet (hair swept to one side, a tail or a cape never pull it);
+## standing side on: the middle of the very top of the head. Flying left / right: the front end, at the head's height
+## there. Flying up: the top. Diving (flying down): wherever the hero's own head is in the picture - found by matching the
+## top of the standing front pose's head (hair, helmet, turban: its exact colours) - Cooler and Cell dive head first,
+## Tao and Tien with their feet up behind, Goku's head stays on top. Found once per hero (shared by every view)
+static var _halo_spots = {}
 func _halo_spot(a: int, d: int) -> Vector2:
-	var key = "%d:%d:%d" % [(set_data["tex"] as Texture2D).get_rid().get_id() if set_data.get("tex") != null else set_id, a, d]
+	var tex: Texture2D = set_data.get("tex")
+	var key = "%d:%d:%d" % [tex.get_rid().get_id() if tex != null else set_id, a, d]
 	if _halo_spots.has(key):
 		return _halo_spots[key]
 	var res = Vector2(8, -30)
@@ -235,10 +244,53 @@ func _halo_spot(a: int, d: int) -> Vector2:
 		res = _halo_spot(0, d)
 		_halo_spots[key] = res
 		return res
-	var tex: Texture2D = set_data.get("tex")
-	if fr.is_empty() or tex == null:
+	var pic = _halo_pixels(a, d)
+	if pic.is_empty():
 		_halo_spots[key] = res
 		return res
+	var f: Dictionary = fr[0]
+	var rows: Array = pic["rows"]
+	var top: int = pic["top"]; var bot: int = pic["bot"]
+	var med = func(y0: int, y1: int, xa: int, xb: int) -> float:
+		var xs = []
+		for y in range(maxi(0, y0), mini(rows.size(), y1 + 1)):
+			for x in rows[y]:
+				if x >= xa and x <= xb:
+					xs.append(x)
+		if xs.is_empty():
+			return float(pic["xmin"] + pic["xmax"]) / 2.0
+		xs.sort()
+		return float(xs[xs.size() / 2])
+	if a == 12 and d >= 2:
+		var xa = int(pic["xmin"]) if d == 2 else int(pic["xmax"]) - 12
+		var xb = int(pic["xmin"]) + 12 if d == 2 else int(pic["xmax"])
+		var ht = -1
+		for y in rows.size():
+			for x in rows[y]:
+				if x >= xa and x <= xb:
+					ht = y
+					break
+			if ht >= 0:
+				break
+		res = Vector2(f["x"] + med.call(ht, ht + 4, xa, xb), f["y"] + maxi(0, ht))
+	elif a == 12 and d == 0:
+		var hm = _head_match(pic)
+		res = Vector2(f["x"] + hm.x, f["y"] + hm.y) if hm.x > -900 else Vector2(f["x"] + med.call(top, top + 5, 0, 999), f["y"] + top)
+	elif a == 12:
+		res = Vector2(f["x"] + med.call(top, top + 5, 0, 999), f["y"] + top)
+	elif d < 2:
+		res = Vector2(f["x"] + med.call(bot - 5, bot, 0, 999), f["y"] + top)      # (over the feet)
+	else:
+		res = Vector2(f["x"] + med.call(top, top + 3, 0, 999), f["y"] + top)
+	_halo_spots[key] = res
+	return res
+
+## a pose's first frame: its opaque x's per row, their colours, the figure's top / bottom / sides
+func _halo_pixels(a: int, d: int) -> Dictionary:
+	var fr = frames_of(a, d)
+	var tex: Texture2D = set_data.get("tex")
+	if fr.is_empty() or tex == null:
+		return {}
 	var f: Dictionary = fr[0]
 	var cell: int = set_data["cell"]
 	var ik = tex.get_rid().get_id()
@@ -246,17 +298,18 @@ func _halo_spot(a: int, d: int) -> Vector2:
 		_imgs[ik] = tex.get_image()
 	var img: Image = _imgs[ik]
 	if img == null:
-		_halo_spots[key] = res
-		return res
+		return {}
 	var slot = a * 4 + d
 	var w = int(f["w"]); var h = int(f["h"])
-	var rows = []      # per row: the opaque x's
+	var rows = []; var cols = {}
 	var top = -1; var bot = -1; var xmin = 999; var xmax = -1
 	for y in h:
 		var xs = []
 		for x in w:
-			if img.get_pixel(x, slot * cell + y).a > 0.1:
+			var c = img.get_pixel(x, slot * cell + y)
+			if c.a > 0.1:
 				xs.append(x)
+				cols[Vector2i(x, y)] = c.to_rgba32()
 				xmin = mini(xmin, x); xmax = maxi(xmax, x)
 		rows.append(xs)
 		if not xs.is_empty():
@@ -264,47 +317,33 @@ func _halo_spot(a: int, d: int) -> Vector2:
 				top = y
 			bot = y
 	if top < 0:
-		_halo_spots[key] = res
-		return res
-	# the middle of a band of rows (from y0 one way, until about a head's worth of pixels), only x's in [xa, xb]
-	var band = func(y0: int, step: int, xa: int, xb: int) -> Vector3:
-		var sx = 0.0; var n = 0; var y = y0; var last = y0
-		while y >= 0 and y < h and n < 16 and absi(y - y0) < 8:
-			for x in rows[y]:
-				if x >= xa and x <= xb:
-					sx += x; n += 1
-			if n > 0:
-				last = y
-			y += step
-		return Vector3(sx / maxf(1, n), float(last), float(n))
-	if a == 12 and d >= 2:
-		var xa = xmin if d == 2 else xmax - 12
-		var xb = xmin + 12 if d == 2 else xmax
-		var ht = -1
-		for y in h:
-			for x in rows[y]:
-				if x >= xa and x <= xb:
-					ht = y
-					break
-			if ht >= 0:
-				break
-		var b = band.call(maxi(0, ht), 1, xa, xb)
-		res = Vector2(f["x"] + b.x, f["y"] + ht)
-	elif a == 12 and d == 0:
-		var bt = band.call(top, 1, 0, w)
-		var bb = band.call(bot, -1, 0, w)
-		var mt = 0; var mb = 0      # (how much figure each end has: its 6 rows, all of them)
-		for k in 6:
-			if top + k < h:
-				mt += rows[top + k].size()
-			if bot - k >= 0:
-				mb += rows[bot - k].size()
-		if mb > mt * 1.4:
-			res = Vector2(f["x"] + bb.x, f["y"] + bot + 6)      # (diving head first: the head is at the bottom - the ring just past its crown)
-		else:
-			res = Vector2(f["x"] + bt.x, f["y"] + top)
-	else:
-		var b2 = band.call(top, 1, 0, w)
-		res = Vector2(f["x"] + b2.x, f["y"] + top)
-	_halo_spots[key] = res
-	return res
+		return {}
+	return {"rows": rows, "cols": cols, "top": top, "bot": bot, "xmin": xmin, "xmax": xmax, "w": w, "h": h}
+
+## where the standing front pose's head top (its first 9 rows, exact colours) best fits in this picture: the middle of
+## that head's top, in the picture's px ((-999, -999): no good fit)
+func _head_match(pic: Dictionary) -> Vector2:
+	var st = _halo_pixels(0, 0)
+	if st.is_empty():
+		return Vector2(-999, -999)
+	var tmpl = []
+	var tx0 = 999; var tx1 = -1
+	for y in range(st["top"], mini(st["top"] + 9, st["rows"].size())):
+		for x in st["rows"][y]:
+			tmpl.append([x, y - int(st["top"]), int(st["cols"][Vector2i(x, y)])])
+			tx0 = mini(tx0, x); tx1 = maxi(tx1, x)
+	if tmpl.size() < 6:
+		return Vector2(-999, -999)
+	var cols: Dictionary = pic["cols"]
+	var best = 0; var bx = 0; var by = 0
+	for oy in range(-2, int(pic["h"])):
+		for ox in range(-tx1, int(pic["w"]) - tx0):
+			var n = 0
+			for t in tmpl:
+				if int(cols.get(Vector2i(int(t[0]) + ox, int(t[1]) + oy), 0)) == int(t[2]):
+					n += 1
+			if n > best:
+				best = n; bx = ox; by = oy
+	if best < tmpl.size() * 0.3:
+		return Vector2(-999, -999)
+	return Vector2((tx0 + tx1) / 2.0 + bx, float(by))
