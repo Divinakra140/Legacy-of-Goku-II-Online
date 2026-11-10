@@ -142,10 +142,16 @@ func draw(c: Control, vs: Vector2) -> void:
 	if not on(f):
 		return
 	var font = ThemeDB.fallback_font
-	var at = Vector2(vs.x - 70, 6)
-	c.draw_rect(Rect2(at, Vector2(64, 22)), Color(0, 0, 0, 0.55))
-	c.draw_texture_rect(tex[mini(N - 1, maxi(0, count(f) - 1))], Rect2(at + Vector2(4, 3), Vector2(16, 16)), false)
-	c.draw_string(font, at + Vector2(26, 16), "%d / %d" % [count(f), N], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 0.85, 0.35))
+	# (the HUD's own scale: the minimap's box starts at y 20 in it - the count sits on top of it, right-aligned)
+	var at = Vector2(vs.x - 58, 4)
+	c.draw_rect(Rect2(at, Vector2(52, 15)), Color(0, 0, 0, 0.6))
+	c.draw_texture_rect(tex[mini(N - 1, maxi(0, count(f) - 1))], Rect2(at + Vector2(2, 1), Vector2(13, 13)), false)
+	c.draw_string(font, at + Vector2(18, 11), "%d / %d" % [count(f), N], HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(1, 0.85, 0.35))
+
+## the big picture of the ball just found, in the middle of the screen (drawn at the screen's own size)
+func draw_big(c: Control, vs: Vector2) -> void:
+	if world.locals.is_empty() or tex.is_empty() or big_t <= 0:
+		return
 	if big_t > 0:
 		big_t -= 1
 		var a = clampf(big_t / 30.0, 0.0, 1.0)

@@ -994,7 +994,7 @@ func _process(_dt: float) -> void:
 		get_tree().root.get_texture().get_image().save_png(OS.get_environment("LOG2_SHOT"))
 ## PERFORMANCE PROBE (off unless asked): LOG2_PROF=1 prints, every 120 ticks, the average and worst time of each
 ## part of a tick; LOG2_AUTOFLY=1 flies the first player east across the map at full speed (to measure flying over foes)
-var _prof_on = OS.get_environment("LOG2_PROF") != ""
+var _prof_on = OS.get_environment("LOG2_PROF") != "" or bool(Game.cfg.get("show_fps", false))      # (OPTIONS - FPS COUNTER on: the timings go to the log too - a phone's, read over USB)
 var _autofly = OS.get_environment("LOG2_AUTOFLY") != ""
 var _prof = {}
 var _prof_worst_frame = 0
@@ -1039,7 +1039,7 @@ func _prof_report() -> void:
 	out.append("WORST FRAME %.1f" % (_prof_worst_frame / 1000.0))
 	_prof_worst_frame = 0
 	print("[prof] ms avg/max: ", ", ".join(out), " | awake foes %d, ents %d, fps %d, frame %.1f ms, draw calls %d, items %d" % [awake, nodes, Engine.get_frames_per_second(),
-		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
+		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)], " | at ", Vector2i(int(locals[0].fighter.x), int(locals[0].fighter.y)) if not locals.is_empty() else Vector2i.ZERO, " view ", get_viewport().get_visible_rect().size)
 	_prof = {}
 
 ## a freeze written down for good (logs/freeze_report.txt in the game's save folder - never rotated away): when, how
@@ -3960,7 +3960,7 @@ func _draw_hud() -> void:
 		if Lb.fighter.has_state_flag("blind"):
 			_draw_dark(c, _light_centre(i), 46.0, Color(0, 0, 0, 0.93), vs)
 	_draw_names(c)
-	db_rt.draw(c, vs)
+	db_rt.draw_big(c, vs)
 	if bool(Game.cfg.get("show_fps", false)):      # OPTIONS - FPS COUNTER: frames a second, and the slowest frame of the last second
 		_fps_frames.append(Time.get_ticks_usec())
 		while _fps_frames.size() > 1 and _fps_frames[-1] - _fps_frames[0] > 1000000:
@@ -3988,6 +3988,8 @@ func _draw_hud() -> void:
 			_player_hud(c, locals[i], i == 1)
 		if minimap_on and not in_story:
 			_minimap(c, locals[i], i)
+		if i == 0:
+			db_rt.draw(c, vs)      # (THE HERO OF EARTH's count: in the HUD's own scale, just above the minimap - any zoom)
 		# the states on you, under your bars
 		var Ls: Local = locals[i]
 		if hud_on and not Ls.fighter.states.is_empty():
@@ -4000,8 +4002,6 @@ func _draw_hud() -> void:
 				c.draw_rect(Rect2(sx - 1, 51, tw, 9), Color(0, 0, 0, 0.6))
 				_ds(c, font, Vector2(sx + 2, 58), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Content.color(stt.get("color", "ffffff")))
 				sx += tw + 2
-	if locals.size() == 1 and hud_on and words_on:
-		_ds(c, font, Vector2(vs.x - 190, 10), Game.planet.title, HORIZONTAL_ALIGNMENT_RIGHT, 184, 8, Color(1, 0.9, 0.5))
 	# partners online
 	var py = 64 if not (minimap_on and locals.size() > 1) else 124
 	for pid in (Game.remote_states if hud_on and words_on and not _brawl_game() and not _bots_here() else {}):      # (BRAWL, CPUS: no list - the names are over the heads)
@@ -4437,6 +4437,7 @@ func _menu_step(L: Local, raw: Dictionary) -> void:
 					Game.save_options()
 				12:     # frames a second, in the top left corner (how smooth the game really runs)
 					Game.cfg["show_fps"] = not bool(Game.cfg.get("show_fps", false))
+					_prof_on = OS.get_environment("LOG2_PROF") != "" or bool(Game.cfg["show_fps"])
 					Game.save_options()
 				13:
 					_option_pick_quit()
