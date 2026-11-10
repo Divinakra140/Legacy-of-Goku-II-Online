@@ -489,6 +489,10 @@ func _view_for(n: int) -> AreaView:
 			tl.tile_set = ts
 			tl.z_index = [-50, -45, -40, 70, 72][k]
 			tl.rendering_quadrant_size = 32
+			if OS.get_environment("LOG2_QUAD") != "":
+				tl.rendering_quadrant_size = int(OS.get_environment("LOG2_QUAD"))
+			if OS.get_environment("LOG2_HIDE_L") != "" and int(OS.get_environment("LOG2_HIDE_L")) == k:
+				tl.visible = false
 			av.root.add_child(tl)
 			av.tiles.append(tl)
 		# places the GBA draws with a layer added on at half strength (the fire picture: its flames' glow over them)
@@ -585,13 +589,21 @@ func _stream(av: AreaView, all_now: bool = false) -> void:
 					need.append(q)
 		if need.size() > 1:
 			need.sort_custom(func(a, b): return (a - c).length_squared() < (b - c).length_squared())
+	# a time budget, not a count: flying fast crosses into new map every few ticks, and 6 pieces at once (up to 13 ms)
+	# pushed a tick past its 16 ms - at least one piece a tick, then more while under 3 ms
 	var budget = 9999 if all_now else 6
+	var _t_stream = Time.get_ticks_usec()
 	for q in need:
-		if budget <= 0:
+		if budget <= 0 or (not all_now and budget < 6 and Time.get_ticks_usec() - _t_stream > 3000):
 			break
 		budget -= 1
+		var _tc = Time.get_ticks_usec()
 		_fill_chunk(av, q, true)
 		av.chunks[q] = true
+		if _prof_on:
+			for tl in av.tiles:
+				tl.update_internals()      # (the tile map's own rebuild, timed here instead of later in the frame)
+			_pt("chunk", Time.get_ticks_usec() - _tc)
 	var drop = 9999 if all_now else 3
 	for q in av.chunks.keys():
 		if drop <= 0:
@@ -967,7 +979,20 @@ func _prof_report() -> void:
 	var nodes = 0
 	for n in views:
 		nodes += views[n].ents.get_child_count()
-	print("[prof] ms avg/max: ", ", ".join(out), " | awake foes %d, ents %d, fps %d" % [awake, nodes, Engine.get_frames_per_second()])
+	if Engine.get_physics_frames() == 480 and OS.get_environment("LOG2_SHOT") != "":
+		get_viewport().get_texture().get_image().save_png(OS.get_environment("LOG2_SHOT"))
+	if Engine.get_physics_frames() == 600:
+		for n in views:
+			var av2: AreaView = views[n]
+			var parts = []
+			for tl in av2.tiles:
+				parts.append(tl.get_used_cells().size())
+			var kinds = {}
+			for ch in av2.root.get_children():
+				kinds[ch.get_class()] = int(kinds.get(ch.get_class(), 0)) + 1
+			print("[prof] view %d: tile cells per layer %s, chunks %d, quadrant %d, root children %s, cams zoom %s, screen %s" % [n, parts, av2.chunks.size(), av2.tiles[0].rendering_quadrant_size if not av2.tiles.is_empty() else 0, kinds, cams[0].zoom if not cams.is_empty() else Vector2.ZERO, svs[0].size if not svs.is_empty() else Vector2i.ZERO])
+	print("[prof] ms avg/max: ", ", ".join(out), " | awake foes %d, ents %d, fps %d, frame %.1f ms, draw calls %d, items %d" % [awake, nodes, Engine.get_frames_per_second(),
+		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
 	_prof = {}
 
 func _physics_process(_dt: float) -> void:
@@ -976,7 +1001,9 @@ func _physics_process(_dt: float) -> void:
 	if _autofly and not locals.is_empty():
 		var af: FighterSim = locals[0].fighter
 		af.flying = true
-		af.x += 6.0
+		if Engine.get_physics_frames() == 2 and OS.get_environment("LOG2_AUTOFLY_Y") != "":
+			af.x = 300.0; af.y = float(OS.get_environment("LOG2_AUTOFLY_Y"))
+		af.x += float(OS.get_environment("LOG2_AUTOFLY_DX")) if OS.get_environment("LOG2_AUTOFLY_DX") != "" else 6.0
 		if af.x > float(locals[0].area.get("w", 22400)) - 200:
 			af.x = 400.0; af.y += 900.0
 	_physics_inner()

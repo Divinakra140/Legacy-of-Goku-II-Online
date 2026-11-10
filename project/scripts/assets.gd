@@ -1632,7 +1632,7 @@ func _earth_base(bin_path: String) -> void:
 	print("[assets] Earth laid in: ", ver)
 
 ## every tile of the game in one TileSet (tiles are made the first time a map uses them)
-const SRC_ROWS = 16      # the tile sheet cut in strips of 64 x 16 tiles: one atlas each
+const SRC_ROWS = 512     # the tile sheet cut in strips of 64 x 512 tiles (4096 px: within every phone's texture limit), one atlas each - strips of 16 made ~96 textures, and a map whose neighbouring tiles came from different strips broke every draw batch (the sea: 9000 draw calls, 25 fps)
 
 func tileset() -> TileSet:
 	if _tileset != null:
@@ -1671,7 +1671,7 @@ func tileset() -> TileSet:
 			var a: Dictionary = e[1]
 			var n = int(a["frames"])
 			src.create_tile(at)
-			if n > 1:
+			if n > 1 and OS.get_environment("LOG2_NOANIM") == "":      # (LOG2_NOANIM: still water - a performance test)
 				src.set_tile_animation_columns(at, 0)
 				src.set_tile_animation_frames_count(at, n)
 				for f in n:
