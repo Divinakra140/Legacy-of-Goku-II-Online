@@ -53622,7 +53622,19 @@
      }
     ]
    },
-   "overlay": "overlay_general_tao.png"
+   "overlay": "overlay_general_tao.png",
+   "hands": {
+    "19": {
+     "0": [
+      -1.5,
+      -6.0
+     ],
+     "1": [
+      0.5,
+      -15.0
+     ]
+    }
+   }
   }
  },
  "tiles": {

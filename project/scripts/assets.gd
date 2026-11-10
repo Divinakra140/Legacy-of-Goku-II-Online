@@ -1051,11 +1051,21 @@ func _set_image(set_id: int, d: Dictionary) -> Image:
 ## read from the fighter's own sprite (so a blast leaves exactly from the hand, for every fighter and form)
 var _hands = {}
 var _imgs = {}
+func has_hand(set_id: int, anim: int, dir: int) -> bool:
+	var hs = colors.get("sets", {}).get(str(set_id), {}).get("hands", {}).get(str(anim), {}).get(str(dir), [])
+	return hs is Array and hs.size() == 2
+
 func hand_point(set_id: int, anim: int, dir: int) -> Vector2:
 	var key = "%d_%d_%d" % [set_id, anim, dir]
 	if _hands.has(key):
 		return _hands[key]
 	var fallback = [Vector2(0, -12), Vector2(0, -22), Vector2(-12, -16), Vector2(12, -16)][clampi(dir, 0, 3)]
+	# a hand placed by hand (colors.json - sets - "hands": {anim: {dir: [x, y]}} from the feet): a pose where the
+	# hand is not simply the part furthest forward (General Tao's Dodonpa facing up / down: his outstretched left hand)
+	var hs = colors.get("sets", {}).get(str(set_id), {}).get("hands", {}).get(str(anim), {}).get(str(dir), [])
+	if hs is Array and hs.size() == 2:
+		_hands[key] = Vector2(float(hs[0]), float(hs[1]))
+		return _hands[key]
 	var d = sprite_set(set_id)
 	var res = fallback
 	if not d.is_empty():

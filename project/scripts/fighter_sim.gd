@@ -453,7 +453,7 @@ func _chest_or_hand(_sk: Dictionary, a: int) -> Vector2:
 
 func hand(a: int) -> Vector2:
 	var h = Assets.hand_point(set_id, a, dir) * size_scale()
-	if dir < 2:      # facing up or down: from the middle of the body (the sprite is not drawn centred on x)
+	if dir < 2 and not Assets.has_hand(set_id, a, dir):      # facing up or down: from the middle of the body (the sprite is not drawn centred on x)
 		h.x = Assets.body_mid_x(set_id, a, dir) * size_scale()
 	return h
 
