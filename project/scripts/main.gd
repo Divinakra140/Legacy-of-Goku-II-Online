@@ -163,8 +163,6 @@ func _import_screen() -> void:
 	_clear()
 	var v = _box()
 	_label(v, "LEGACY OF GOKU 2 ONLINE", 12, Color(1, 0.85, 0.3))
-	if Assets.base_dir != "" and Assets.import_version() < Assets.IMPORT_VERSION:
-		_label(v, "NEW IN v44: EARTH comes ready made, the same for everybody. Your game is read once more (a minute or so - longer on a slow computer). Your fighters and settings are kept.", 8, Color(0.6, 1, 0.8))
 	_label(v, "First start: choose your own Legacy of Goku II (USA) .gba file. Its pictures, maps and enemies are read from it once (about a minute) - nothing of the game comes with this download.", 8)
 	_button(v, "CHOOSE MY GAME...", _pick_rom)
 	status = _label(v, "", 8, Color(0.7, 1, 0.7))
@@ -2381,6 +2379,16 @@ func _shoulder_icon(left: bool) -> ImageTexture:
 		for y in 5:
 			for x in 3:
 				if letter_r[y][x] == "k":
+					img.set_pixel(13 + x, 3 + y, c["k"])
+	# Windows and Mac: the keys Q / E on the buttons instead of L / R
+	if OS.get_name() == "Windows" or OS.get_name() == "macOS":
+		var letter = ["kkk", "k.k", "k.k", "kkk", "..k"] if left else ["kkk", "k..", "kk.", "k..", "kkk"]
+		for y in range(3, 8):
+			for x in range(11, 17):
+				img.set_pixel(x, y, c["g"])
+		for y in 5:
+			for x in 3:
+				if letter[y][x] == "k":
 					img.set_pixel(13 + x, 3 + y, c["k"])
 	return ImageTexture.create_from_image(img)
 
