@@ -2414,13 +2414,16 @@ func _gload(f: Callable) -> void:
 		if (built >= ids.size() or not Assets.prewarming()) and not Music.preloading():
 			break
 		await get_tree().process_frame
+	Assets.tileset()      # (the map's tiles: about a second - before the world opens, not after the bar is full)
+	fill.size.x = 196.0 * 0.7
+	await get_tree().process_frame
 	var done = 0
 	for n in ids:
 		var tw = Time.get_ticks_usec()
 		Assets.sprite_set(n)      # (onto the graphics card: a few a frame, the bar moving)
 		done += 1
 		if Time.get_ticks_usec() - tw > 4000 or done % 6 == 0:
-			fill.size.x = 196.0 * (0.65 + 0.3 * float(done) / maxf(1, ids.size()))
+			fill.size.x = 196.0 * (0.7 + 0.25 * float(done) / maxf(1, ids.size()))
 			await get_tree().process_frame
 	fill.size.x = 196.0
 	await get_tree().process_frame

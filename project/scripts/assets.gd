@@ -564,6 +564,7 @@ func import_library(force: bool = false) -> String:
 	if roms.is_empty():
 		said.append("No Buu's Fury or Legacy of Goku game found (put the .gba or .zip next to the game or in a \"games\" folder)")
 	_tileset = null
+	_blocks.clear()
 	_sets.clear()
 	_json.clear()
 	return "\n".join(PackedStringArray(said))
@@ -808,6 +809,7 @@ func load_colors() -> void:
 	_sheets.clear()
 	_imgs.clear()
 	_tileset = null
+	_blocks.clear()
 
 func variant(n: int) -> Dictionary:
 	for v in colors["variants"]:
@@ -1645,7 +1647,10 @@ func _earth_base(bin_path: String) -> void:
 	print("[assets] Earth laid in: ", ver)
 
 ## every tile of the game in one TileSet (tiles are made the first time a map uses them)
-const SRC_ROWS = 512     # the tile sheet cut in strips of 64 x 512 tiles (4096 px: within every phone's texture limit), one atlas each - strips of 16 made ~96 textures, and a map whose neighbouring tiles came from different strips broke every draw batch (the sea: 9000 draw calls, 25 fps)
+const SRC_ROWS = 16      # the tile sheet cut in strips of 64 x 16 tiles: one atlas each (a big strip takes Godot far longer to fill: 512 rows - 43 s)
+const BLOCK_ROWS = 512   # ...but the strips share a few big textures (4096 px: within every phone's limit), each strip its own part of
+                         # one (margins): neighbouring tiles from different strips drawn in one batch (one texture a strip broke every
+                         # batch - the sea: 9000 draw calls, 25 fps)
 
 func tileset() -> TileSet:
 	if _tileset != null:
@@ -1676,7 +1681,8 @@ func tileset() -> TileSet:
 		var y0 = si * SRC_ROWS * 8
 		var h = mini(SRC_ROWS * 8, sheet.get_height() - y0)
 		var src = TileSetAtlasSource.new()
-		src.texture = ImageTexture.create_from_image(sheet.get_region(Rect2i(0, y0, sheet.get_width(), h)))
+		src.texture = _block_tex("kit", sheet, si)
+		src.margins = Vector2i(0, (si * SRC_ROWS) % BLOCK_ROWS * 8)
 		src.texture_region_size = Vector2i(8, 8)
 		var anim_rows_here = {}
 		for e in anim_at.get(si, []):
@@ -1713,7 +1719,8 @@ func tileset() -> TileSet:
 			var ly0 = li * SRC_ROWS * 8
 			var lh = mini(SRC_ROWS * 8, lsheet.get_height() - ly0)
 			var ls = TileSetAtlasSource.new()
-			ls.texture = ImageTexture.create_from_image(lsheet.get_region(Rect2i(0, ly0, lsheet.get_width(), lh)))
+			ls.texture = _block_tex(g, lsheet, li)
+			ls.margins = Vector2i(0, (li * SRC_ROWS) % BLOCK_ROWS * 8)
 			ls.texture_region_size = Vector2i(8, 8)
 			for ly in lh / 8:
 				for lx in 64:
@@ -1723,6 +1730,16 @@ func tileset() -> TileSet:
 			_tileset.add_source(ls, next_src + li)
 		next_src += int(ceil(lrows / float(SRC_ROWS)))
 	return _tileset
+
+## the big texture a strip of a sheet lies in (BLOCK_ROWS rows of tiles each, made once)
+var _blocks = {}
+func _block_tex(key: String, sheet: Image, si: int) -> Texture2D:
+	var b = (si * SRC_ROWS) / BLOCK_ROWS
+	var k = "%s:%d" % [key, b]
+	if not _blocks.has(k):
+		var y0 = b * BLOCK_ROWS * 8
+		_blocks[k] = ImageTexture.create_from_image(sheet.get_region(Rect2i(0, y0, sheet.get_width(), mini(BLOCK_ROWS * 8, sheet.get_height() - y0))))
+	return _blocks[k]
 
 ## the other games the DEV TOOLS can take pieces from: folder -> number in a cell (bits 21-23)
 const LIB_GAMES = {"bf": 1, "log1": 2}
