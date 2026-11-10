@@ -2249,6 +2249,7 @@ func _char_screen(back: Callable, then: Callable, who: int = 1) -> void:
 		b.add_child(tr)
 		cells[i] = [name_l, b, tr]
 		b.focus_entered.connect(func(): _char_focus = i; _char_page.call_deferred(at))
+		b.mouse_entered.connect(func(): if not b.has_focus(): b.grab_focus())      # (the mouse over a hero picks it too: Q / E change its outfit)
 		var lv = "NEW"
 		if levels.has(str(i)) and levels[str(i)] is Dictionary:
 			lv = "LV %d" % int(levels[str(i)].get("level", 1))
@@ -2382,14 +2383,14 @@ func _shoulder_icon(left: bool) -> ImageTexture:
 					img.set_pixel(13 + x, 3 + y, c["k"])
 	# Windows and Mac: the keys Q / E on the buttons instead of L / R
 	if OS.get_name() == "Windows" or OS.get_name() == "macOS":
-		var letter = ["kkk", "k.k", "k.k", "kkk", "..k"] if left else ["kkk", "k..", "kk.", "k..", "kkk"]
+		var letter = [".kk.", "k..k", "k..k", "k.kk", ".kkk"] if left else ["kkk.", "k...", "kk..", "k...", "kkk."]      # (a capital Q, its tail out at the bottom right)
 		for y in range(3, 8):
 			for x in range(11, 17):
 				img.set_pixel(x, y, c["g"])
 		for y in 5:
-			for x in 3:
+			for x in 4:
 				if letter[y][x] == "k":
-					img.set_pixel(13 + x, 3 + y, c["k"])
+					img.set_pixel(12 + x, 3 + y, c["k"])
 	return ImageTexture.create_from_image(img)
 
 # ---- the loading screen: shown while the world is built (the game is busy for a moment)
@@ -2425,6 +2426,33 @@ func _gload(f: Callable) -> void:
 		if Time.get_ticks_usec() - tw > 4000 or done % 6 == 0:
 			fill.size.x = 196.0 * (0.7 + 0.25 * float(done) / maxf(1, ids.size()))
 			await get_tree().process_frame
+	# the land you start in, built now too (its places, people and foes; then the whole map): it was built after the
+	# bar was full - 6 more seconds with nothing moving
+	var lk = ""
+	var adv = str(Game.cfg.get("adventure", ""))
+	if adv.begins_with("land:"):
+		lk = "land/%s/0" % adv.substr(5)
+	elif str(Content.story.get("start_map", "")).begins_with("land/"):
+		lk = str(Content.story["start_map"])
+	if lk != "":
+		var note = _gtext(gba, "BUILDING THE WORLD...", Vector2(60, 100))
+		note.size = Vector2(200, 10)
+		fill.size.x = 196.0 * 0.96
+		await get_tree().process_frame
+		await get_tree().process_frame
+		Assets.land(int(lk.split("/")[1]))
+		# the map itself (about 6 s for EARTH) on a thread of its own: the bar keeps creeping and the window answers
+		# (the game's own thread busy that long, a Mac shows its spinning wheel)
+		var th = Thread.new()
+		if th.start(func(): Assets.area(lk)) == OK:
+			var k2 = 0.0
+			while th.is_alive():
+				k2 += 1.0
+				fill.size.x = 196.0 * (0.96 + 0.035 * (1.0 - exp(-k2 / 150.0)))
+				await get_tree().process_frame
+			th.wait_to_finish()
+		else:
+			Assets.area(lk)
 	fill.size.x = 196.0
 	await get_tree().process_frame
 	f.call()

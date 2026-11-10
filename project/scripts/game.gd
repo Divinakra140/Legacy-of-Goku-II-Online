@@ -492,11 +492,17 @@ func start_game(c: Dictionary) -> void:
 			cfg[k] = mine[k]
 		else:
 			cfg.erase(k)
+	var _pf = OS.get_environment("LOG2_PROF") != ""
+	var _tb = Time.get_ticks_msec()
 	Assets.load_data()
+	if _pf: print("[prof] begin: load_data %d ms" % (Time.get_ticks_msec() - _tb))
+	_tb = Time.get_ticks_msec()
 	planet = Planet.new()
 	var adv: String = cfg["adventure"]
 	if adv.begins_with("land:"):
-		if not planet.build_land(int(adv.substr(5)), int(cfg["seed"])):
+		var _bl = planet.build_land(int(adv.substr(5)), int(cfg["seed"]))
+		if _pf: print("[prof] begin: build_land %d ms" % (Time.get_ticks_msec() - _tb))
+		if not _bl:
 			planet = Planet.new()
 			planet.build_random(int(cfg["seed"]))
 	elif adv == "random" or not planet.build_adventure(adv, int(cfg["seed"])):

@@ -1648,6 +1648,9 @@ func _step_rom(enemies: Array) -> void:
 			sh["max"] = mx; sh["sp"] = float(R.get("speed", 3)) * sqrt(mx / float(R.get("max", 56)))
 		else:
 			sh["kind"] = 6; sh["burst"] = -1; sh["bt"] = 0
+			# how far the game's own ball flies (VEGETA's GALICK GUN, Gohan's MASENKO...): its own range when learned, up to
+			# twice that as the hero grows - as the beams grow longer (it stopped at 150 px at level 50)
+			sh["range"] = float(R.get("range", 150)) * (1.0 + skill_growth(cur))
 			sh["tl"] = R["path"][d][0] if R.has("path") else R["start"][d]
 			# bigger with the levels: the game's ball in a glow of its colour that grows around it
 			sh["k"] = ball_scale(cur, float(R.get("size", 16)))
@@ -1735,7 +1738,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 		var st: Array = R["start"][d]
 		var dist = floorf(float(R.get("speed", 2.0)) * maxf(0.0, t - 1))
 		tl = Vector2(st[0], st[1]) + v * dist
-		end = dist >= float(R.get("range", 150))
+		end = dist >= float(s.get("range", R.get("range", 150)))
 		if end:
 			return false
 	s["tl"] = [tl.x, tl.y]

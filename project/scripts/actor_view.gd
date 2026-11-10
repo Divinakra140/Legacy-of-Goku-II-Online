@@ -95,13 +95,11 @@ func _draw() -> void:
 		draw_texture_rect_region(set_data["tex"], dst, src, c)
 	if halo and c.a > 0.0:
 		# a golden-white ring floating over the head, bobbing a little, its glow pulsing
-		var hb = _opaque_box(f, frame % fr.size(), slot)
 		var tt2 = Engine.get_physics_frames()
-		# over the head: the middle of the figure standing; lying flat (flying left / right) the head end, not the middle
-		var hx = hb.position.x + hb.size.x * 0.5
-		if hb.size.x > hb.size.y * 1.15:
-			hx = hb.position.x + 7.0 if dir == 2 else hb.end.x - 7.0
-		var hc = Vector2(f["x"] + hx, f["y"] + hb.position.y - 4.0 - 1.0 * sin(tt2 * 0.08)) * size_scale
+		# over the head - found once per pose and way (no hopping frame to frame): on the ground always the standing
+		# pose's head (a tail, a cape or wings never pull it off), flying the head end of the flying pose (_halo_spot)
+		var spot = _halo_spot(12 if a == 12 else 0, dir)
+		var hc = (spot + Vector2(0, -4.0 - 1.0 * sin(tt2 * 0.08))) * size_scale
 		var hr = 6.0 * size_scale      # (a head's width, whatever the pose: flying it grew to the whole body's)
 		draw_set_transform(hc, 0.0, Vector2(1.0, 0.32))
 		draw_arc(Vector2.ZERO, hr + 1.5, 0, TAU, 28, Color(1.0, 0.85, 0.3, 0.25 + 0.1 * sin(tt2 * 0.12) * c.a), 4.0)
@@ -221,3 +219,92 @@ func _opaque_box(f: Dictionary, fi: int, slot: int) -> Rect2:
 			r = Rect2(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
 	_boxes[key] = r
 	return r
+
+## where a halo sits for a pose (12 FLYING, else the standing pose 0) facing a way: from the feet, in the picture's px.
+## The head: the middle of the topmost rows of the figure (where a head is - a tail or a cape is lower or to the side);
+## flying left / right: the front end, at the head's own height there; flying down: the heavier end (Cooler dives head
+## first, his tail up - Goku's head stays on top)
+var _halo_spots = {}
+func _halo_spot(a: int, d: int) -> Vector2:
+	var key = "%d:%d:%d" % [(set_data["tex"] as Texture2D).get_rid().get_id() if set_data.get("tex") != null else set_id, a, d]
+	if _halo_spots.has(key):
+		return _halo_spots[key]
+	var res = Vector2(8, -30)
+	var fr = frames_of(a, d)
+	if fr.is_empty() and a != 0:
+		res = _halo_spot(0, d)
+		_halo_spots[key] = res
+		return res
+	var tex: Texture2D = set_data.get("tex")
+	if fr.is_empty() or tex == null:
+		_halo_spots[key] = res
+		return res
+	var f: Dictionary = fr[0]
+	var cell: int = set_data["cell"]
+	var ik = tex.get_rid().get_id()
+	if not _imgs.has(ik):
+		_imgs[ik] = tex.get_image()
+	var img: Image = _imgs[ik]
+	if img == null:
+		_halo_spots[key] = res
+		return res
+	var slot = a * 4 + d
+	var w = int(f["w"]); var h = int(f["h"])
+	var rows = []      # per row: the opaque x's
+	var top = -1; var bot = -1; var xmin = 999; var xmax = -1
+	for y in h:
+		var xs = []
+		for x in w:
+			if img.get_pixel(x, slot * cell + y).a > 0.1:
+				xs.append(x)
+				xmin = mini(xmin, x); xmax = maxi(xmax, x)
+		rows.append(xs)
+		if not xs.is_empty():
+			if top < 0:
+				top = y
+			bot = y
+	if top < 0:
+		_halo_spots[key] = res
+		return res
+	# the middle of a band of rows (from y0 one way, until about a head's worth of pixels), only x's in [xa, xb]
+	var band = func(y0: int, step: int, xa: int, xb: int) -> Vector3:
+		var sx = 0.0; var n = 0; var y = y0; var last = y0
+		while y >= 0 and y < h and n < 16 and absi(y - y0) < 8:
+			for x in rows[y]:
+				if x >= xa and x <= xb:
+					sx += x; n += 1
+			if n > 0:
+				last = y
+			y += step
+		return Vector3(sx / maxf(1, n), float(last), float(n))
+	if a == 12 and d >= 2:
+		var xa = xmin if d == 2 else xmax - 12
+		var xb = xmin + 12 if d == 2 else xmax
+		var ht = -1
+		for y in h:
+			for x in rows[y]:
+				if x >= xa and x <= xb:
+					ht = y
+					break
+			if ht >= 0:
+				break
+		var b = band.call(maxi(0, ht), 1, xa, xb)
+		res = Vector2(f["x"] + b.x, f["y"] + ht)
+	elif a == 12 and d == 0:
+		var bt = band.call(top, 1, 0, w)
+		var bb = band.call(bot, -1, 0, w)
+		var mt = 0; var mb = 0      # (how much figure each end has: its 6 rows, all of them)
+		for k in 6:
+			if top + k < h:
+				mt += rows[top + k].size()
+			if bot - k >= 0:
+				mb += rows[bot - k].size()
+		if mb > mt * 1.4:
+			res = Vector2(f["x"] + bb.x, f["y"] + bot + 6)      # (diving head first: the head is at the bottom - the ring just past its crown)
+		else:
+			res = Vector2(f["x"] + bt.x, f["y"] + top)
+	else:
+		var b2 = band.call(top, 1, 0, w)
+		res = Vector2(f["x"] + b2.x, f["y"] + top)
+	_halo_spots[key] = res
+	return res

@@ -252,6 +252,8 @@ var clash_rt        # BEAM CLASHES between players (clash.gd)
 var db_rt
 
 func _ready() -> void:
+	if _prof_on:
+		print("[prof] world _ready starts at %d ms" % Time.get_ticks_msec())
 	# every one of the game's sprite sets (foes, people) built in the background now: one built the first time it came
 	# into view cost 8-130 ms on the game's own thread - flying fast over new foes stuttered
 	var warm = Assets.game_sets()      # (normally all ready already: the loading screen built them)
@@ -317,7 +319,10 @@ func _ready() -> void:
 	Game.revived.connect(_on_revived)
 	get_viewport().size_changed.connect(_on_resize)
 	var p = Game.planet
+	var _tl = Time.get_ticks_msec()
 	_add_local(0, int(Game.cfg["character"]), str(Game.cfg["name"]), p.start_point())
+	if _prof_on:
+		print("[prof] _add_local %d ms" % (Time.get_ticks_msec() - _tl))
 	if int(Game.cfg.get("local_players", 1)) >= 2:
 		_add_local(1, int(Game.cfg.get("character2", 0)), str(Game.cfg.get("name2", "PLAYER 2")), p.start_point() + Vector2(18, 0))
 	toasts.append([p.title, Color(1, 0.85, 0.3), 300])
@@ -369,15 +374,21 @@ func _on_resize() -> void:
 
 # ------------------------------------------------------------------ local players
 func _add_local(k: int, ch: int, nm: String, pos: Vector2) -> void:
+	var _tn = Time.get_ticks_msec()
 	var L = Local.new()
+	if _prof_on: print("[prof] Local.new %d ms" % (Time.get_ticks_msec() - _tn))
 	L.k = k
 	L.name = nm
+	var _tq = Time.get_ticks_msec()
 	L.fighter.setup(ch, levels)
 	Game.load_fighter(L.fighter, k)
+	if _prof_on: print("[prof] fighter %d ms" % (Time.get_ticks_msec() - _tq))
 	locals.append(L)
+	_tq = Time.get_ticks_msec()
 	if svs.size() < locals.size():
 		_make_viewport()
 		_on_resize()
+	if _prof_on: print("[prof] viewport %d ms" % (Time.get_ticks_msec() - _tq))
 	var n = Game.planet.start if locals.size() == 1 else locals[0].node_i
 	var at = pos if locals.size() == 1 else Vector2(locals[0].fighter.x + 18, locals[0].fighter.y)
 	# back after a dropped connection: where you were; joining a running world: next to a friend
@@ -400,13 +411,21 @@ func _add_local(k: int, ch: int, nm: String, pos: Vector2) -> void:
 				break
 	if n < 0 or n >= Game.planet.nodes.size():
 		n = Game.planet.start; at = Game.planet.start_point()
+	var _ta = Time.get_ticks_msec()
 	var a = Assets.area(Game.planet.nodes[n]["key"])
+	if _prof_on:
+		print("[prof] area %s %d ms" % [Game.planet.nodes[n]["key"], Time.get_ticks_msec() - _ta])
+	_ta = Time.get_ticks_msec()
 	if not Assets.walkable(a, at.x, at.y):
 		if sa != null and k == 0:
 			at = Game.planet.safe_point(n, at)
 		else:
 			at = at - Vector2(16, 0) if Assets.walkable(a, at.x - 16, at.y) else Game.planet.arrival(n, 0)
+	if _prof_on: print("[prof] spot %d ms at %s" % [Time.get_ticks_msec() - _ta, at])
+	_ta = Time.get_ticks_msec()
 	_enter(L, n, at)
+	if _prof_on:
+		print("[prof] _enter %d ms" % (Time.get_ticks_msec() - _ta))
 	if Game.cfg.has("dev_return") and k == 0:
 		var pt: Dictionary = Game.cfg.get("playtest", {})
 		var want = int(pt.get("level", 0))
@@ -1002,6 +1021,8 @@ func _physics_process(_dt: float) -> void:
 	_physics_inner()
 	var _el = Time.get_ticks_usec() - _t0
 	_pt("tick", _el)
+	if _prof_on and Engine.get_physics_frames() <= 3:
+		print("[prof] tick %d at %d ms (took %d ms)" % [Engine.get_physics_frames(), Time.get_ticks_msec(), _el / 1000])
 	_prof_report()
 	if _el > 60000:
 		print("[slow] tick %d took %d ms " % [Engine.get_physics_frames(), _el / 1000], _tp)

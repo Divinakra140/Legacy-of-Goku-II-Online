@@ -596,9 +596,24 @@ func apply_to_planet(pl) -> void:
 		var p = merged(key, false)
 		var spec: Dictionary = nd["spec"]
 		var fixed: Array = spec.get("fixed", [])
-		for d in p["enemies_del"]:
-			var q = Vector2(float(d[0]), float(d[1]))
-			fixed = fixed.filter(func(f): return Vector2(float(f["x"]), float(f["y"])).distance_to(q) > 8.0)
+		# the game's foes taken away (within 8 px of a deletion): the deletions put in a grid of 16 px first - each one
+		# filtering the whole list again was thousands x thousands (EARTH: 4900 deletions, 3.7 s at every start)
+		if not p["enemies_del"].is_empty():
+			var grid = {}
+			for d in p["enemies_del"]:
+				var gk = Vector2i(int(floor(float(d[0]) / 16.0)), int(floor(float(d[1]) / 16.0)))
+				if not grid.has(gk):
+					grid[gk] = []
+				grid[gk].append(Vector2(float(d[0]), float(d[1])))
+			fixed = fixed.filter(func(f):
+				var fp = Vector2(float(f["x"]), float(f["y"]))
+				var c = Vector2i(int(floor(fp.x / 16.0)), int(floor(fp.y / 16.0)))
+				for gy in range(c.y - 1, c.y + 2):
+					for gx in range(c.x - 1, c.x + 2):
+						for q in grid.get(Vector2i(gx, gy), []):
+							if fp.distance_to(q) <= 8.0:
+								return false
+				return true)
 		for e in p["enemies_add"]:
 			var t = int(e[0])
 			var st = int(e[1])
