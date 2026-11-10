@@ -407,10 +407,23 @@ func _add_local(k: int, ch: int, nm: String, pos: Vector2) -> void:
 	if Game.cfg.has("story") and k == 0 and not ready_done and fw.has("key"):
 		sa = {"key": fw["key"], "x": fw.get("x", 0), "y": fw.get("y", 0)}       # (a story: back where you saved)
 	if sa != null and k == 0 and not ready_done:
-		# PLAY HERE (DEV TOOLS): right where the editor was
+		# PLAY HERE (DEV TOOLS): right where the editor was; a place by its name (SELECT MAP: GINGERTOWN...) - its
+		# biggest part on the planet, on ground you can stand on; beaten, you come back there too
 		for ni in Game.planet.nodes.size():
 			if str(Game.planet.nodes[ni]["key"]) == str(sa["key"]):
-				n = ni; at = Vector2(float(sa["x"]), float(sa["y"]))
+				n = ni
+				if sa.has("place"):
+					var pa = Assets.area(str(sa["key"]))
+					var best = Rect2()
+					var ph8 = 8.0 * float(pa.get("land", {}).get("info", {}).get("planet_h", 1 << 20))
+					for pt in pa.get("land", {}).get("parts", []):
+						if str(pt[1]).to_upper() == str(sa["place"]).to_upper() and (pt[0] as Rect2).position.y < ph8 and (pt[0] as Rect2).get_area() > best.get_area():
+							best = pt[0]
+					at = Game.planet.safe_point(ni, best.get_center()) if best.get_area() > 0 else Game.planet.start_point()
+					Game.cfg["start_at"] = {"key": str(sa["key"]), "x": at.x, "y": at.y}
+					Game.cfg["home_at"] = Game.cfg["start_at"]
+				else:
+					at = Vector2(float(sa["x"]), float(sa["y"]))
 				break
 	if n < 0 or n >= Game.planet.nodes.size():
 		n = Game.planet.start; at = Game.planet.start_point()

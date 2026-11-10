@@ -2161,9 +2161,13 @@ func _brawl_count(back: Callable, then: Callable) -> void:
 		["MORE", func(): Game.cfg["brawl_places"] = mini(16, int(Game.cfg["brawl_places"]) + step); show.call()]], 80, 22, true)
 
 # ---- SELECT MAP: the planets and the game's own lands; difficulty on the last line
-const G_MAPS = [["EARTH", "land:0", {"key": "land/0/0", "x": 13230, "y": 22972}], ["PLANET GATORRA", "gatorra"], ["PLANET DUNARA", "dunara"], ["WEST CITY & TRICERATOPS JUNGLE", "land:4"], ["NORTHERN MOUNTAINS", "land:8"],
-	["SOUTHERN CONTINENT", "land:7"], ["GINGERTOWN", "land:10"], ["NORTHERN WASTELANDS", "land:3"], ["TROPICAL ISLANDS", "land:12"],
-	["SNOWY HIGHLANDS", "land:13"], ["CAPSULE CORP & NEW NAMEK", "land:6"], ["RANDOM PLANET", "random"]]
+## the game's own Earth lands are places on EARTH now (one world, every edit in it): choosing one starts EARTH there
+const G_MAPS = [["EARTH", "land:0", {"key": "land/0/0", "x": 13230, "y": 22972}], ["PLANET GATORRA", "gatorra"], ["PLANET DUNARA", "dunara"],
+	["WEST CITY & TRICERATOPS JUNGLE", "land:0", {"key": "land/0/0", "place": "WEST CITY"}], ["NORTHERN MOUNTAINS", "land:0", {"key": "land/0/0", "place": "NORTHERN MOUNTAINS"}],
+	["SOUTHERN CONTINENT", "land:0", {"key": "land/0/0", "place": "SOUTHERN CONTINENT"}], ["GINGERTOWN", "land:0", {"key": "land/0/0", "place": "GINGERTOWN"}],
+	["NORTHERN WASTELANDS", "land:0", {"key": "land/0/0", "place": "NORTHERN WASTELANDS"}], ["TROPICAL ISLANDS", "land:0", {"key": "land/0/0", "place": "TROPICAL ISLANDS"}],
+	["SNOWY HIGHLANDS", "land:0", {"key": "land/0/0", "place": "SNOWY HIGHLANDS"}], ["CAPSULE CORP", "land:0", {"key": "land/0/0", "place": "CAPSULE CORPORATION"}],
+	["RANDOM PLANET", "random"]]
 var _map_then: Callable
 var _map_back: Callable
 func _map_screen(back: Callable, then: Callable) -> void:
