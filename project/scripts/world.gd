@@ -809,10 +809,14 @@ func _touch_tick() -> void:
 		var key = -1
 		if tapped_map or edge.call("b") or edge.call("mn"):
 			key = KEY_TAB
-		elif edge.call("left") or edge.call("up"):
+		elif edge.call("left"):
 			key = KEY_LEFT
-		elif edge.call("right") or edge.call("down"):
+		elif edge.call("up"):
+			key = KEY_UP
+		elif edge.call("right"):
 			key = KEY_RIGHT
+		elif edge.call("down"):
+			key = KEY_DOWN
 		elif edge.call("a"):
 			key = KEY_ENTER
 		if key != -1:
@@ -970,6 +974,9 @@ func _process(_dt: float) -> void:
 	if _prof_on and _last_frame_us > 0:
 		_prof_worst_frame = maxi(_prof_worst_frame, now - _last_frame_us)
 	_last_frame_us = now
+	if _shot_at > 0 and Engine.get_process_frames() >= _shot_at:
+		_shot_at = -1
+		get_tree().root.get_texture().get_image().save_png(OS.get_environment("LOG2_SHOT"))
 ## PERFORMANCE PROBE (off unless asked): LOG2_PROF=1 prints, every 120 ticks, the average and worst time of each
 ## part of a tick; LOG2_AUTOFLY=1 flies the first player east across the map at full speed (to measure flying over foes)
 var _prof_on = OS.get_environment("LOG2_PROF") != ""
@@ -982,6 +989,10 @@ func _pt(name: String, us: int) -> void:
 	var r: Array = _prof.get(name, [0, 0, 0])
 	r[0] += us; r[1] = maxi(r[1], us); r[2] += 1
 	_prof[name] = r
+var _shot_at = -1
+func _shot() -> void:
+	_shot_at = Engine.get_process_frames() + 5      # (a few drawn frames on: taken in _process, from the window's own picture)
+
 func _prof_report() -> void:
 	if not _prof_on or Engine.get_physics_frames() % 120 != 0:
 		return
@@ -994,8 +1005,10 @@ func _prof_report() -> void:
 	var nodes = 0
 	for n in views:
 		nodes += views[n].ents.get_child_count()
+	if Engine.get_physics_frames() == 360 and OS.get_environment("LOG2_MAPOPEN") != "":
+		map_open = true
 	if Engine.get_physics_frames() == 480 and OS.get_environment("LOG2_SHOT") != "":
-		get_viewport().get_texture().get_image().save_png(OS.get_environment("LOG2_SHOT"))
+		_shot.call_deferred()
 	if Engine.get_physics_frames() == 600:
 		for n in views:
 			var av2: AreaView = views[n]
@@ -2373,8 +2386,19 @@ func _others() -> Array:
 		out.append([locals[i].name, locals[i].node_i, Vector2(locals[i].fighter.x, locals[i].fighter.y)])
 	return out
 
-## where the world map can take you: friends first, then every outdoor place of this world (fast travel)
+## where the world map can take you: friends first, then every outdoor place of this world (fast travel) - kept for
+## half a second (each place's safe landing spot is looked for: every frame was too much)
+var _mt_cache = []
+var _mt_t = -100
 func _map_targets() -> Array:
+	var nowf = Engine.get_physics_frames()
+	if nowf - _mt_t < 30 and not _mt_cache.is_empty():
+		return _mt_cache
+	_mt_cache = _map_targets_now()
+	_mt_t = nowf
+	return _mt_cache
+
+func _map_targets_now() -> Array:
 	var out = _others()
 	var nodes: Array = Game.planet.nodes
 	for i in nodes.size():
@@ -2405,11 +2429,32 @@ func _map_input(ev: InputEvent) -> bool:
 		key = ev.keycode
 	elif ev is InputEventJoypadButton and ev.pressed:
 		key = {JOY_BUTTON_DPAD_LEFT: KEY_LEFT, JOY_BUTTON_DPAD_RIGHT: KEY_RIGHT, Game.pad_btn("a"): KEY_ENTER, JOY_BUTTON_BACK: KEY_TAB, Game.pad_btn("b"): KEY_ESCAPE}.get(ev.button_index, -1)
+	if ev is InputEventJoypadButton and ev.pressed and ev.button_index in [JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN]:
+		key = KEY_UP if ev.button_index == JOY_BUTTON_DPAD_UP else KEY_DOWN
 	if key in [KEY_TAB, KEY_M, KEY_ESCAPE]:
 		map_open = false
 		return true
 	if o.is_empty():
 		return key != -1 and key != KEY_F2 and key != KEY_F11
+	if _land_map_on() and not _wm.is_empty():
+		# the picture map: the arrows jump to the nearest place that way, the mouse points, a click travels
+		if ev is InputEventMouseMotion or (ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT):
+			var mp = ev.position / float(_wm.get("hk", 1.0))
+			var best = -1; var bd = 14.0
+			for pt in _wm["pts"]:
+				var dd = (pt[1] as Vector2).distance_to(mp)
+				if dd < bd:
+					bd = dd; best = int(pt[0])
+			if best >= 0:
+				map_pick = best
+				if ev is InputEventMouseButton:
+					key = KEY_ENTER
+			if key != KEY_ENTER:
+				return true
+		var dirs = {KEY_LEFT: Vector2.LEFT, KEY_A: Vector2.LEFT, KEY_RIGHT: Vector2.RIGHT, KEY_D: Vector2.RIGHT, KEY_UP: Vector2.UP, KEY_W: Vector2.UP, KEY_DOWN: Vector2.DOWN, KEY_S: Vector2.DOWN}
+		if dirs.has(key):
+			_map_step(dirs[key])
+			return true
 	if key in [KEY_LEFT, KEY_A, KEY_UP, KEY_W]:
 		map_pick = (map_pick - 1 + o.size()) % o.size()
 		return true
@@ -2455,7 +2500,118 @@ func _database_input(ev: InputEvent) -> bool:
 		return true
 	return key != -1
 
+## the world map (SELECT): a land (EARTH) shows its own picture with every place you can fly to on it - pick one by
+## pointing (the arrows jump to the nearest place that way; a mouse points), A / a click: travel there
+var _wm = {}      # the picture map's layout as last drawn: {"org", "sc", "node", "pts": [[target index, screen point]]}
+func _land_map_on() -> bool:
+	if locals.is_empty() or locals[0].node_i < 0:
+		return false
+	var a: Dictionary = locals[0].area
+	return a.has("land") and a.get("mini") != null and int(Game.planet.nodes[locals[0].node_i].get("kind", 1)) == 0
+
+func _draw_world_map(c: Control) -> void:
+	var font = ThemeDB.fallback_font
+	var hk = _hud_scale(c.get_viewport_rect().size)
+	var vs = c.get_viewport_rect().size / hk
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(hk, hk))
+	var L: Local = locals[0]
+	var a: Dictionary = L.area
+	var tw = float(a["tw"]); var th = float(a["th"])
+	var ph = minf(th, float(a.get("land", {}).get("info", {}).get("planet_h", th)))      # (the planet: not the rooms packed under it)
+	c.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.01, 0.02, 0.06, 0.92))
+	_ds(c, font, Vector2(0, 14), Game.planet.title + " - THE WORLD MAP", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 10, Color(1, 0.85, 0.3))
+	var box = Vector2(vs.x - 24, vs.y - 64)
+	var sc = minf(box.x / tw, box.y / ph)
+	var size = Vector2(tw, ph) * sc
+	var org = Vector2((vs.x - size.x) / 2.0, 22 + (box.y - size.y) / 2.0)
+	c.draw_texture_rect_region(a["mini"], Rect2(org, size), Rect2(0, 0, tw, ph))
+	c.draw_rect(Rect2(org, size), Color(1, 1, 1, 0.4), false, 1.0)
+	var to_scr = func(p: Vector2) -> Vector2: return org + p / 8.0 * sc
+	var o = _map_targets()
+	var pts = []
+	for i in o.size():
+		var t: Array = o[i]
+		if int(t[1]) != L.node_i:
+			continue
+		var wp: Vector2 = t[2]
+		if wp.y / 8.0 >= ph:
+			continue      # (a room under the planet: not on the picture)
+		pts.append([i, to_scr.call(wp)])
+	_wm = {"org": org, "sc": sc, "node": L.node_i, "pts": pts, "hk": hk}
+	var on_pic = false
+	for pt in pts:
+		on_pic = on_pic or int(pt[0]) == map_pick
+	if not on_pic and not pts.is_empty():      # (just opened: the place nearest you picked)
+		var bd2 = 1e18
+		var mep = to_scr.call(Vector2(L.fighter.x, L.fighter.y))
+		for pt in pts:
+			var d2 = (pt[1] as Vector2).distance_squared_to(mep)
+			if d2 < bd2:
+				bd2 = d2; map_pick = int(pt[0])
+	var sel = clampi(map_pick, 0, maxi(0, o.size() - 1))
+	for pt in pts:
+		var q: Vector2 = pt[1]
+		var friend = o[int(pt[0])].size() <= 3
+		var colm = Color(0.5, 0.9, 1) if friend else Color(1, 0.9, 0.35)
+		c.draw_circle(q, 2.5, Color(0, 0, 0, 0.8))
+		c.draw_circle(q, 1.8, colm)
+	# you
+	var me = to_scr.call(Vector2(L.fighter.x, L.fighter.y))
+	if L.fighter.y / 8.0 < ph:
+		var blink = 0.6 + 0.4 * sin(Engine.get_physics_frames() * 0.2)
+		c.draw_circle(me, 3.5, Color(1, 0.3, 0.3, blink))
+		c.draw_arc(me, 3.5, 0, TAU, 14, Color(1, 1, 1), 1.0)
+	# the place picked
+	for pt in pts:
+		if int(pt[0]) == sel:
+			var q2: Vector2 = pt[1]
+			c.draw_arc(q2, 6.0, 0, TAU, 20, Color(1, 1, 1), 1.5)
+			var nm = str(o[sel][0])
+			var tw2 = font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x + 8
+			var lp = Vector2(clampf(q2.x - tw2 / 2.0, 2, vs.x - tw2 - 2), q2.y - 18 if q2.y > org.y + 20 else q2.y + 8)
+			c.draw_rect(Rect2(lp, Vector2(tw2, 11)), Color(0, 0, 0, 0.75))
+			_ds(c, font, lp + Vector2(4, 9), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color(1, 0.95, 0.6))
+	var y = vs.y - 30
+	if pts.is_empty():
+		_ds(c, font, Vector2(0, y), "NOWHERE ELSE TO GO", HORIZONTAL_ALIGNMENT_CENTER, vs.x, 8, Color(0.8, 0.8, 0.9))
+	else:
+		_ds(c, font, Vector2(0, y), "FLY TO " + str(o[sel][0]), HORIZONTAL_ALIGNMENT_CENTER, vs.x, 9, Color(0.6, 1, 0.8))
+		_ds(c, font, Vector2(0, y + 12), Game.keys("ARROWS / MOUSE: PICK A PLACE    A / CLICK: TRAVEL THERE    B / SELECT: CLOSE"), HORIZONTAL_ALIGNMENT_CENTER, vs.x, 7, Color(0.75, 0.8, 0.9))
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+## the place on the picture map nearest the way pressed from the one picked (dir: a unit vector)
+func _map_step(dir: Vector2) -> void:
+	var pts: Array = _wm.get("pts", [])
+	if pts.is_empty():
+		return
+	var cur = Vector2.ZERO
+	var have = false
+	for pt in pts:
+		if int(pt[0]) == map_pick:
+			cur = pt[1]; have = true
+	if not have:
+		map_pick = int(pts[0][0])
+		return
+	var best = -1; var bs = 1e18
+	for pt in pts:
+		var dv: Vector2 = pt[1] - cur
+		if int(pt[0]) == map_pick or dv.length() < 0.5:
+			continue
+		var along = dv.dot(dir)
+		if along <= 0.0:
+			continue
+		var side = absf(dv.cross(dir))
+		var score = along + side * 2.5
+		if score < bs:
+			bs = score; best = int(pt[0])
+	if best >= 0:
+		map_pick = best
+		Sfx.play("move", 0.5)
+
 func _draw_map(c: Control) -> void:
+	if _land_map_on():
+		_draw_world_map(c)
+		return
 	var font = ThemeDB.fallback_font
 	var vs = c.get_viewport_rect().size
 	var nodes: Array = Game.planet.nodes
