@@ -821,6 +821,12 @@ func _rival_add(nd: int, key: String, sim, e: Dictionary, fh: Array) -> void:
 	_set_level(f, ch)
 	if int(fh[1]) > 0 and not Assets.sprite_set(int(fh[1])).is_empty():
 		f.set_id = int(fh[1]); f.base_set = int(fh[1])      # (in the outfit the foe wears: SEMI CELL...)
+	else:
+		# the hero's own look - never the outfit YOU last picked for that hero on the character screen (every Cell in
+		# the world turned into Imperfect Cell when you played as him in that outfit)
+		var hs = int(Mods.hero_entry(Assets.CHARACTERS[ch]).get("set", -1))
+		if hs >= 0 and not Assets.sprite_set(hs).is_empty():
+			f.set_id = hs; f.base_set = hs
 	f.pvp = true
 	f.area = sim.area
 	f.revive(float(e["x"]), float(e["y"]))
