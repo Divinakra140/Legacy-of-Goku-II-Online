@@ -53621,7 +53621,8 @@
       "h": 64
      }
     ]
-   }
+   },
+   "overlay": "overlay_general_tao.png"
   }
  },
  "tiles": {
