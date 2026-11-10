@@ -252,6 +252,9 @@ var clash_rt        # BEAM CLASHES between players (clash.gd)
 var db_rt
 
 func _ready() -> void:
+	if OS.has_feature("mobile"):
+		# a slow frame on a phone: at most 3 ticks run to catch up (8 made each late frame later still - 10 frames a second)
+		Engine.max_physics_steps_per_frame = 3
 	if _prof_on:
 		print("[prof] world _ready starts at %d ms" % Time.get_ticks_msec())
 	# every one of the game's sprite sets (foes, people) built in the background now: one built the first time it came
@@ -603,7 +606,7 @@ func _stream(av: AreaView, all_now: bool = false) -> void:
 			need.sort_custom(func(a, b): return (a - c).length_squared() < (b - c).length_squared())
 	# a time budget, not a count: flying fast crosses into new map every few ticks, and 6 pieces at once (up to 13 ms)
 	# pushed a tick past its 16 ms - at least one piece a tick, then more while under 3 ms
-	var budget = 9999 if all_now else 6
+	var budget = 9999 if all_now else (1 if OS.has_feature("mobile") else 6)      # (a phone: one piece a tick - each is 2-4 ms there; flying needs one about every third tick)
 	var _t_stream = Time.get_ticks_usec()
 	for q in need:
 		if budget <= 0 or (not all_now and budget < 6 and Time.get_ticks_usec() - _t_stream > 3000):
@@ -1678,6 +1681,8 @@ func _update_people(av: AreaView) -> void:
 		v.visible = not pd.get("hidden", false) and (_seen(rects, want) or pd.has("cut_dir") or pd.has("cut_pose") or pd.get("cut_walk", false) or pd.get("cut_fly", false))
 		if v.position != want:
 			v.position = want
+		if not v.visible:
+			continue      # (off the screen: nothing more to work out - a phone spent 3 ms a tick on EARTH's 228 people)
 		if pd.has("cut_dir") or pd.has("cut_pose") or pd.get("cut_walk", false) or pd.get("cut_fly", false) or pd.has("emote"):
 			# a story scene moves this person: its own facing, walk, pose and emotion
 			var cd = int(pd.get("cut_dir", 0))

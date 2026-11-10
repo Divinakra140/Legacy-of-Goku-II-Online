@@ -841,6 +841,11 @@ func alive_count() -> int:
 ## again 3 times a second (foes far from everyone rest - no stutter however big the world)
 var awake = []
 var _awake_t = 0
+## how far round a player a big land's foes are awake (moving, seen): a little past the widest screen (it was 1000 x 800 -
+## twelve screens of foes run every tick: a phone slowed to 12 frames a second over the Northern Mountains). Foes only
+## notice you within 150 px, so nothing seen behaves any differently
+const AWAKE_X = 720.0
+const AWAKE_Y = 460.0
 func _refresh_awake(fighters: Array) -> void:
 	_awake_t = 20
 	if enemies.size() < 250:
@@ -849,7 +854,7 @@ func _refresh_awake(fighters: Array) -> void:
 	var out = []
 	for e in enemies:
 		for f in fighters:
-			if absf(f["x"] - e["x"]) < 1000.0 and absf(f["y"] - e["y"]) < 800.0:
+			if absf(f["x"] - e["x"]) < AWAKE_X and absf(f["y"] - e["y"]) < AWAKE_Y:
 				out.append(e)
 				break
 	awake = out
