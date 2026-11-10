@@ -808,15 +808,37 @@ func _start_fight(L, st: Dictionary) -> bool:
 	var p = Vector2(float(st.get("x", -1)), float(st.get("y", -1)))
 	if p.x < 0:
 		p = Vector2(f.x + 80, f.y)
-	var e = sim.make_enemy(sim.enemies.size(), t, Assets.set_for_type(t), sim._open_near(p), maxi(1, int(st.get("level", f.level))), false, true)
-	e["respawn_ms"] = 1 << 40
-	e["minion"] = true
+	# "take": a foe already standing there (one placed in the map - THE DRAGON BALL HUNT's Cooler on the Moon) becomes
+	# the boss instead of a new one: the nearest of that kind within "take" px of x, y
+	var e = {}
+	if float(st.get("take", 0)) > 0:
+		var best = float(st["take"])
+		for c in sim.enemies:
+			if c["alive"] and c["state"] != "dying" and int(c["type"]) == t and Vector2(float(c["x"]), float(c["y"])).distance_to(p) <= best:
+				best = Vector2(float(c["x"]), float(c["y"])).distance_to(p)
+				e = c
+		if not e.is_empty():
+			var ai: Dictionary = Content.enemy_cfg.get("styles", {}).get("boss", {}).duplicate()
+			ai["style"] = "boss"
+			ai["own"] = Content.own_attack(t)
+			e["ai"] = ai
+			e["boss"] = true
+			e["big"] = true
+			e["respawn_ms"] = 1 << 40      # (a one-time boss: gone for this visit once beaten)
+			if not sim.awake.has(e):
+				sim.awake.append(e)
+	var made = e.is_empty()
+	if made:
+		e = sim.make_enemy(sim.enemies.size(), t, Assets.set_for_type(t), sim._open_near(p), maxi(1, int(st.get("level", f.level))), false, true)
+		e["respawn_ms"] = 1 << 40
+		e["minion"] = true
 	if str(st.get("name", "")) != "":
 		e["name"] = str(st["name"])
 	if float(st.get("hp", 0)) > 0:
 		e["hp"] = maxi(1, roundi(e["hp"] * float(st["hp"]))); e["maxhp"] = e["hp"]
-	sim.enemies.append(e)
-	sim.awake.append(e)
+	if made:
+		sim.enemies.append(e)
+		sim.awake.append(e)
 	var phases = []
 	var ph = st.get("phases", "")
 	if ph is String:
@@ -907,3 +929,23 @@ static func _attack_in(f, r: Array) -> bool:
 		if blow.intersects(rr):
 			return true
 	return false
+
+## a story boss fight: the boss's name and a big red health bar across the top of the screen
+func draw_boss(c: Control, L, vs: Vector2) -> void:
+	if not L.ev.has("fight"):
+		return
+	var e = _fight_foe(L)
+	if e.is_empty() or not e["alive"]:
+		return
+	var font = ThemeDB.fallback_font
+	var w = minf(vs.x * 0.6, 420.0)
+	var x = (vs.x - w) / 2.0
+	var y = 34.0
+	var frac = clampf(float(e["hp"]) / maxf(1.0, float(e["maxhp"])), 0.0, 1.0)
+	var nm = str(e.get("name", "")) if str(e.get("name", "")) != "" else "BOSS"
+	c.draw_string(font, Vector2(x, y - 4), nm, HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(1, 0.9, 0.85))
+	c.draw_rect(Rect2(x - 2, y - 2, w + 4, 14), Color(0, 0, 0, 0.8))
+	c.draw_rect(Rect2(x, y, w, 10), Color(0.25, 0.04, 0.04))
+	c.draw_rect(Rect2(x, y, w * frac, 10), Color(0.9, 0.12, 0.1))
+	c.draw_rect(Rect2(x, y, w * frac, 3), Color(1, 0.5, 0.45, 0.8))
+	c.draw_rect(Rect2(x - 2, y - 2, w + 4, 14), Color(1, 0.85, 0.5, 0.9), false, 1.0)

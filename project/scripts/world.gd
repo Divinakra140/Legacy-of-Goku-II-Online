@@ -3608,6 +3608,8 @@ func _draw_hud() -> void:
 			_draw_dark(c, _light_centre(i), 46.0, Color(0, 0, 0, 0.93), vs)
 	_draw_names(c)
 	db_rt.draw(c, vs)
+	if not locals.is_empty():
+		events_rt.draw_boss(c, locals[0], vs)
 	# the HUD box (bars, special, EXP, minimap, partners) at the same size on the screen whatever the VIEW SIZE
 	var hs = _hud_scale(vs)
 	var vs_real = vs
