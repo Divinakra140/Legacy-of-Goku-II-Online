@@ -45,6 +45,24 @@ func patch(key: String) -> Dictionary:
 		if t is Dictionary:
 			p = t
 	_fill_patch(p)
+	# EARTH: its foes, people, doors, rocks, treasure, zones... baked into the game (builtin/earth/earth_land.json,
+	# tools/bake_earth.py) are part of this list, so every tool edits them as its own; your edits since the bake are
+	# laid over them. Saved, the file holds the whole list ("has_base"): it is not laid over the base again
+	if key == "land/0/0" and not bool(p.get("has_base", false)):
+		var bf = Assets.builtin_dir().path_join("earth/earth_land.json")
+		var b = read_json(bf) if FileAccess.file_exists(bf) else null
+		if b is Dictionary:
+			_fill_patch(b)
+			for k in PATCH_KEYS:
+				if k == "cells" or k == "places":
+					b[k].merge(p[k], true)
+				elif k == "size":
+					if not p[k].is_empty():
+						b[k] = p[k]
+				else:
+					b[k] = b[k] + p[k]
+			p = b
+			p["has_base"] = true
 	_patches[key] = p
 	return p
 

@@ -9,8 +9,8 @@ everybody walks the same Earth (the importer's grown country is not quite the sa
 
 Also written: earth_changed.gz (the cells the edits touched: the minimap is redrawn there),
 earth_enemies.json (the roaming foes, the same for everybody) and version.txt.
-The tile changes are then taken out of the edits file (a copy is kept in data/backups); doors, foes,
-people and treasure stay in it.
+Everything else in the edits file (doors, foes, people, rocks, treasure, zones, triggers...) goes into
+earth_land.json, and the edits file is left empty (a copy is kept in data/backups).
 
 usage: python3 -I tools/bake_earth.py [FULL]   (from the project folder; the editor must be closed)
   FULL: the whole Earth as the game built it (LKR2 header + 5 layers + walls) - for an Earth RESIZED in the editor
@@ -100,7 +100,27 @@ def main() -> int:
     os.makedirs(os.path.join(DATA, "backups"), exist_ok=True)
     shutil.copy2(EDITS, os.path.join(DATA, "backups", "land_0_0_before_bake_%s.json" % ver))
     edits["cells"] = {}
-    json.dump(edits, open(EDITS, "w"))
+    # everything else the edits hold (foes, people, doors, rocks, treasure, zones, triggers, moods, moved places,
+    # size) goes into the game too: builtin/earth/earth_land.json. The edits file is left empty ({}: nothing laid
+    # over the base - an older copy unzipped over it is replaced)
+    land_f = os.path.join(OUT, "earth_land.json")
+    if edits.get("has_base"):
+        land = edits      # (saved by the editor after a bake: already the whole list)
+    else:
+        land = json.load(open(land_f)) if os.path.exists(land_f) else {}
+        for k, v in edits.items():
+            if k == "cells":
+                continue
+            if isinstance(v, dict):
+                land.setdefault(k, {}).update(v)
+            elif k == "size":
+                if v:
+                    land[k] = v
+            elif isinstance(v, list):
+                land[k] = land.get(k, []) + v
+    land = {k: v for k, v in land.items() if k not in ("cells", "has_base")}
+    json.dump(land, open(land_f, "w"))
+    json.dump({}, open(EDITS, "w"))
     print("baked Earth %s: %d changed cells, %d KB, %d foes" % (
         ver, len(changed), os.path.getsize(os.path.join(OUT, "earth_base.gz")) // 1024, len(reg.get("enemies", []))))
     return 0
