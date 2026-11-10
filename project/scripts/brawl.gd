@@ -720,7 +720,8 @@ func _any(pid: int) -> Dictionary:
 # every player there, PVP or not, levelled to the players. It is still the foe: beaten, it is killed (EXP and loot to
 # the players there) and comes back as foes do. Nobody near: it stands at its post again, a foe as before. Not in a
 # story (its scenes keep their own)
-const FOE_HEROES = {9: "ANDROID 17", 11: "ANDROID 18", 30: "CELL", 34: "COOLER", 48: "FRIEZA"}      # the game's own sets
+const FOE_HEROES = {9: "ANDROID 17", 11: "ANDROID 18", 30: "CELL", 34: "COOLER", 48: "FRIEZA",
+	76: "KRILLIN", 121: "TIEN", 156: "YAMCHA"}      # the game's own sets (Krillin, Tien and Yamcha: when placed as foes)
 ## a foe's sprite set -> [hero, set, name] (or []): the game's own sets above (the hero in its usual looks), or a
 ## villain's own set or one of its outfits (SEMI CELL...: worn as it is)
 var _foe_heroes = {}

@@ -3630,7 +3630,7 @@ func _update_foe_previews() -> void:
 func _boss_name(s: int) -> String:
 	if s < 0:
 		return ""
-	var fh = {9: "ANDROID 17", 11: "ANDROID 18", 30: "CELL", 34: "COOLER", 48: "FRIEZA"}
+	var fh = {9: "ANDROID 17", 11: "ANDROID 18", 30: "CELL", 34: "COOLER", 48: "FRIEZA", 76: "KRILLIN", 121: "TIEN", 156: "YAMCHA"}
 	if fh.has(s):
 		return "FIGHTS AS %s (BEAMS, SPECIALS)" % fh[s]
 	for ch in Assets.CHARACTERS.size():
