@@ -3159,7 +3159,7 @@ func _refresh_side() -> void:
 			_lab("Takes the tile away from LAYER %d." % layer)
 			_spin(side, "brush size", 1, 32, paint_size, func(v): paint_size = int(v); overlay.queue_redraw())
 		"FOE":
-			_lab("Choose the foe (weakest at the top): its look, its moves and its own strength. Then its level (0 = its own) and, if you like, another look (a sprite set; Frieza is 48).")
+			_lab("KIND is how a foe fights (its moves and strength); LOOK is the sprite set it wears. Pick a kind from the list (weakest at the top), set its level (0 = its own) and, if you like, another look: the two pictures below show the kind's own look and the one you picked, and which kinds normally wear it.")
 			# every foe of the game with a picture, weakest first: the original level and health on each line
 			var fl = ItemList.new(); fl.custom_minimum_size = Vector2(230, 240); fl.fixed_icon_size = Vector2i(40, 40)
 			fl.max_columns = 1
@@ -3176,7 +3176,7 @@ func _refresh_side() -> void:
 					var at = AtlasTexture.new(); at.atlas = ss["tex"]
 					at.region = Rect2(0, 0, int(ss.get("cell", 64)), int(ss.get("cell", 64)))
 					icon = at
-				fl.add_item("LV %d   %d HP" % [int(tab["lvl"]), int(tab["hp"])], icon)
+				fl.add_item("KIND %d · SET %d   LV %d   %d HP" % [k, _kind_set(k), int(tab["lvl"]), int(tab["hp"])], icon)
 				fl.set_item_metadata(fl.item_count - 1, k)
 				if k == foe_type:
 					fl.select(fl.item_count - 1)
@@ -3184,12 +3184,12 @@ func _refresh_side() -> void:
 			side.add_child(fl)
 			if fl.get_selected_items().size() > 0:
 				fl.ensure_current_is_visible.call_deferred()
-			var sp = _spin(side, "kind", 0, 127, foe_type, func(v): foe_type = int(v); _update_preview())
-			fl.item_selected.connect(func(j): sp.set_value_no_signal(int(fl.get_item_metadata(j))))      # (the number follows the picture)
+			var sp = _spin(side, "kind", 0, 127, foe_type, func(v): foe_type = int(v); _update_foe_previews())
+			fl.item_selected.connect(func(j): sp.set_value_no_signal(int(fl.get_item_metadata(j))); _update_foe_previews())      # (the number follows the picture)
 			_spin(side, "level", 0, 99, foe_lv, func(v): foe_lv = int(v))
-			_spin(side, "look (set)", 0, 3999, foe_look, func(v): foe_look = int(v); _update_preview())
-			_preview_box()
-			_update_preview()
+			_spin(side, "look (set)", 0, 3999, foe_look, func(v): foe_look = int(v); _update_foe_previews())
+			_foe_previews()
+			_update_foe_previews()
 		"PERSON":
 			_line(side, "name", person_name, func(t): person_name = t.to_upper())
 			_spin(side, "sprite set", 0, 3999, person_set, func(v): person_set = int(v); _update_preview())
@@ -3585,6 +3585,53 @@ func _preview_box() -> void:
 	preview.position = Vector2(115, 90)
 	preview.scale = Vector2(2, 2)
 	holder.add_child(preview)
+
+## FOE: the kind's own look and the look picked, side by side - each with what it is (which kinds normally wear a set)
+var foe_prev_kind: ActorView
+var foe_prev_look: ActorView
+var foe_lab_kind: Label
+var foe_lab_look: Label
+func _foe_previews() -> void:
+	preview = null
+	var row = HBoxContainer.new(); side.add_child(row)
+	var made = []
+	for i in 2:
+		var col = VBoxContainer.new(); col.custom_minimum_size = Vector2(115, 0); row.add_child(col)
+		var holder = Control.new(); holder.custom_minimum_size = Vector2(115, 100); col.add_child(holder)
+		var av = ActorView.new(); av.position = Vector2(57, 84); av.scale = Vector2(2, 2); holder.add_child(av)
+		var lb = Label.new(); lb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; lb.custom_minimum_size = Vector2(110, 0)
+		lb.add_theme_font_size_override("font_size", 10); col.add_child(lb)
+		made.append([av, lb])
+	foe_prev_kind = made[0][0]; foe_lab_kind = made[0][1]
+	foe_prev_look = made[1][0]; foe_lab_look = made[1][1]
+
+func _update_foe_previews() -> void:
+	if foe_prev_kind == null or not is_instance_valid(foe_prev_kind):
+		return
+	var ks = _kind_set(foe_type)
+	foe_prev_kind.set_sprite_set(Assets.sprite_set(ks)); foe_prev_kind.show_frame(1, 0, 0)
+	foe_lab_kind.text = "KIND %d\nITS OWN LOOK: SET %d" % [foe_type, ks]
+	var ls = foe_look if foe_look > 0 else ks
+	foe_prev_look.set_sprite_set(Assets.sprite_set(ls)); foe_prev_look.show_frame(1, 0, 0)
+	if foe_look <= 0:
+		foe_lab_look.text = "LOOK 0\nTHE KIND'S OWN"
+	else:
+		var users = _kinds_for_set(foe_look)
+		foe_lab_look.text = "LOOK: SET %d\n%s" % [foe_look, ("NORMALLY USED BY KIND " + ", ".join(PackedStringArray(users.map(func(x): return str(x))))) if not users.is_empty() else "NO FOE'S OWN LOOK (A HERO OR A PERSON)"]
+
+## the look a kind wears in the game: your team's (DEV TOOLS - ENEMIES) or the game's own
+func _kind_set(k: int) -> int:
+	var t: Dictionary = Content.enemy_types.get(k, {})
+	if t.has("set") and int(t["set"]) >= 0:
+		return int(t["set"])
+	return int(Rules.kind_to_type_set(k)[1])
+
+func _kinds_for_set(s: int) -> Array:
+	var out = []
+	for k in 128:
+		if _kind_set(k) == s:
+			out.append(k)
+	return out
 
 func _update_preview() -> void:
 	if preview == null:
