@@ -971,6 +971,7 @@ func _process(_dt: float) -> void:
 	var now = Time.get_ticks_usec()
 	if _last_frame_us > 0 and now - _last_frame_us > 350000:
 		print("[freeze] %d ms between frames at %s (physics tick %d, %d brawlers, %d views)" % [(now - _last_frame_us) / 1000, Time.get_time_string_from_system(), Engine.get_physics_frames(), brawl.bots.size() if brawl != null else 0, views.size()])
+		_freeze_note("FREEZE %d ms between frames (physics tick %d)" % [(now - _last_frame_us) / 1000, Engine.get_physics_frames()])
 	if _prof_on and _last_frame_us > 0:
 		_prof_worst_frame = maxi(_prof_worst_frame, now - _last_frame_us)
 	_last_frame_us = now
@@ -984,6 +985,8 @@ var _autofly = OS.get_environment("LOG2_AUTOFLY") != ""
 var _prof = {}
 var _prof_worst_frame = 0
 func _pt(name: String, us: int) -> void:
+	if us > 5000:
+		_tp[name] = int(_tp.get(name, 0)) + us / 1000      # (a part that took a while: named in a slow tick's line)
 	if not _prof_on:
 		return
 	var r: Array = _prof.get(name, [0, 0, 0])
@@ -1025,6 +1028,27 @@ func _prof_report() -> void:
 		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
 	_prof = {}
 
+## a freeze written down for good (logs/freeze_report.txt in the game's save folder - never rotated away): when, how
+## long, and what was going on. A SLOW TICK line with it: the game's own work (its parts in ms); a FREEZE alone: the
+## drawing (a shader made the first time something is drawn...) or the computer itself
+var _world_t0 = Time.get_ticks_msec()
+func _freeze_note(what: String) -> void:
+	var path = OS.get_user_data_dir().path_join("logs/freeze_report.txt")
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var f = FileAccess.open(path, FileAccess.READ_WRITE) if FileAccess.file_exists(path) else FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return
+	f.seek_end()
+	var L: Local = locals[0] if not locals.is_empty() else null
+	var awake = 0
+	for k in Game.sims:
+		awake += Game.sims[k].awake.size()
+	f.store_line("%s  %ds in  %s | at %s, %d foes awake, %d views, %d brawlers, flying %s, event %s, map %s, menu %s, fps %d" % [
+		Time.get_datetime_string_from_system(), (Time.get_ticks_msec() - _world_t0) / 1000, what,
+		str(Vector2i(int(L.fighter.x), int(L.fighter.y))) if L else "-", awake, views.size(), brawl.bots.size() if brawl != null else 0,
+		str(L.fighter.flying) if L else "-", str(L.ev.get("id", "")) if L else "-", str(map_open), str(_any_menu()), Engine.get_frames_per_second()])
+	f.close()
+
 func _physics_process(_dt: float) -> void:
 	var _t0 = Time.get_ticks_usec()      # TEMPTIME
 	_tp = {}
@@ -1044,6 +1068,8 @@ func _physics_process(_dt: float) -> void:
 	_prof_report()
 	if _el > 60000:
 		print("[slow] tick %d took %d ms " % [Engine.get_physics_frames(), _el / 1000], _tp)
+		if Engine.get_physics_frames() > 120:      # (the first ticks build the world: expected)
+			_freeze_note("SLOW TICK %d ms - the game's own work: %s" % [_el / 1000, str(_tp)])
 
 ## the parts of this place the players here can see (their camera's view and a margin): figures outside are hidden
 ## - not drawn or sorted (EARTH has hundreds of people and foes; all of them redrew every tick)

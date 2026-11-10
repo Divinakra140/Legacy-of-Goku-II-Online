@@ -935,10 +935,11 @@ func drop_rival(key: String, id: int) -> void:
 	if not r.is_empty():
 		_rival_remove(int(r["pid"]))
 
-## walking into a wall (a building, the space ship) over and over: once it has tried to walk a while without getting
-## anywhere, it steps aside - across the way it wanted - for a moment, then heads for its target again
-const STUCK_TICKS = 14
-const DETOUR_TICKS = 40
+## walking into a wall (a building, the space ship) over and over: if half a second of trying to walk got it less than
+## 8 px (sliding along the wall counts as stuck), it steps aside - across the way it wanted - for almost a second, then
+## heads for its target again; stuck again, it tries the other side
+const STUCK_WINDOW = 30
+const DETOUR_TICKS = 50
 func _unstick(b: Dictionary, f, inp: Dictionary) -> Dictionary:
 	var want = Vector2((1 if inp.get("right", false) else 0) - (1 if inp.get("left", false) else 0), (1 if inp.get("down", false) else 0) - (1 if inp.get("up", false) else 0))
 	var here = Vector2(f.x, f.y)
@@ -947,20 +948,23 @@ func _unstick(b: Dictionary, f, inp: Dictionary) -> Dictionary:
 		var dv: Vector2 = b["detour_dir"]
 		var out = inp.duplicate()
 		out["left"] = dv.x < 0; out["right"] = dv.x > 0; out["up"] = dv.y < 0; out["down"] = dv.y > 0
-		b["last_pos"] = here
+		b["win_t"] = 0
 		return out
-	if want == Vector2.ZERO or f.flying or f.state != "idle" and f.state != "walk" and f.state != "run":
-		b["stuck"] = 0
-		b["last_pos"] = here
+	if want == Vector2.ZERO or f.flying or not (f.state in ["idle", "walk", "run"]):
+		b["win_t"] = 0
 		return inp
-	var last: Vector2 = b.get("last_pos", here)
-	b["stuck"] = int(b.get("stuck", 0)) + 1 if here.distance_to(last) < 0.25 else 0
-	b["last_pos"] = here
-	if int(b["stuck"]) >= STUCK_TICKS:
-		b["stuck"] = 0
-		b["detour"] = DETOUR_TICKS
-		var side = Vector2(-want.y, want.x) if randf() < 0.5 else Vector2(want.y, -want.x)
-		if side == Vector2.ZERO:
-			side = Vector2(1, 0)
-		b["detour_dir"] = Vector2(signf(side.x), signf(side.y))
+	if int(b.get("win_t", 0)) == 0:
+		b["win_from"] = here
+		b["last_want"] = want
+	b["win_t"] = int(b.get("win_t", 0)) + 1
+	if int(b["win_t"]) >= STUCK_WINDOW:
+		b["win_t"] = 0
+		if here.distance_to(b.get("win_from", here)) < 8.0:
+			var sgn = -float(b.get("side_sgn", 1.0))      # (the other side from last time)
+			b["side_sgn"] = sgn
+			var side = Vector2(-want.y, want.x) * sgn
+			if side == Vector2.ZERO:
+				side = Vector2(sgn, 0)
+			b["detour_dir"] = Vector2(signf(side.x), signf(side.y))
+			b["detour"] = DETOUR_TICKS
 	return inp
