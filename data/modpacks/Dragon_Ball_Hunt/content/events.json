@@ -1,20 +1,54 @@
 {"events": [
  {"id": "db_intro", "name": "THE DRAGON BALL HUNT: DENDE'S NEWS", "once": true, "if": {}, "steps": [
-  {"do": "say", "who": "DENDE", "face": 38, "text": "%s! I'm so glad you came!"},
-  {"do": "say", "who": "DENDE", "face": 38, "text": "Cooler has stolen all seven Dragon Balls and hidden them all around the world!"},
-  {"do": "say", "who": "DENDE", "face": 38, "text": "In the wrong hands their power could doom the Earth."},
-  {"do": "say", "who": "DENDE", "face": 38, "text": "Please find all seven and bring them back here to me. You can fly - search everywhere!"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "%s! I'm so glad you came!"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "Cooler has stolen all seven Dragon Balls and hidden them all around the world!"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "In the wrong hands their power could doom the Earth."},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "Please find all seven and bring them back here to me. You can fly - search everywhere! But you'll have to land to pick one up."},
   {"do": "dragonballs"},
   {"do": "toast", "text": "FIND THE 7 DRAGON BALLS!"}
  ]},
- {"id": "db_dende", "name": "THE DRAGON BALL HUNT: BACK TO DENDE", "once": false, "if": {"flags": ["db:on"]}, "trigger": {"type": "talk", "person": "DENDE"}, "steps": [
+ {"id": "db_dende", "name": "THE DRAGON BALL HUNT: TALKING TO DENDE", "once": false, "if": {"flags": ["db:on"]}, "trigger": {"type": "talk", "person": "DENDE"}, "steps": [
+  {"do": "if_flag", "name": "db:hero", "goto": "hero"},
+  {"do": "if_flag", "name": "db:cooler", "goto": "won"},
+  {"do": "if_flag", "name": "db:sent", "goto": "hurry"},
   {"do": "if_var", "name": "dragonballs", "cmp": ">=", "value": 7, "goto": "all"},
-  {"do": "say", "who": "DENDE", "face": 38, "text": "Keep looking, %s! The count is in the top right corner. Cooler hid them all over the world."},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "Keep looking, %s! The count is in the top right corner. Cooler hid them all over the world."},
   {"do": "goto", "label": "end"},
   {"do": "label", "name": "all"},
-  {"do": "say", "who": "DENDE", "face": 38, "text": "You've found all the Dragon Balls!"},
-  {"do": "say", "who": "DENDE", "face": 38, "text": "Thank you, %s. The Earth is safe again!"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "You've found all the Dragon Balls!"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "But there's no time to celebrate. There's a spaceship on the southern tip of Amenbo Island."},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "If you get in, it will take you to the Moon, where Cooler is hiding while he plans his secret attack: to destroy the Earth with a Supernova!"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "He's furious that you took the Dragon Balls back, and he wants revenge."},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "Please, %s, go and stop him before he destroys us all. Hurry!"},
+  {"do": "flag", "name": "db:sent"},
+  {"do": "toast", "text": "FIND THE SPACESHIP ON THE SOUTHERN TIP OF AMENBO ISLAND!"},
+  {"do": "goto", "label": "end"},
+  {"do": "label", "name": "hurry"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "The spaceship is on the southern tip of Amenbo Island. Hurry, %s - Cooler is waiting on the Moon!"},
+  {"do": "goto", "label": "end"},
+  {"do": "label", "name": "won"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "%s! You did it - Cooler is beaten!"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "The whole Earth felt the battle on the Moon. We're all so grateful: you saved the planet from Cooler."},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "From this day on, you are recognized as the HERO OF EARTH!"},
+  {"do": "flag", "name": "db:hero"},
+  {"do": "toast", "text": "YOU ARE THE HERO OF EARTH!"},
+  {"do": "save"},
   {"do": "the_end"},
+  {"do": "goto", "label": "end"},
+  {"do": "label", "name": "hero"},
+  {"do": "say", "who": "DENDE", "portrait": 38, "text": "Thank you again, %s. The Earth will never forget its hero."},
   {"do": "label", "name": "end"}
+ ]},
+ {"id": "db_cooler_beaten", "name": "THE DRAGON BALL HUNT: COOLER BEATEN", "once": true, "if": {"flags": ["db:sent"], "not_flags": ["db:cooler"]}, "trigger": {"type": "defeat", "kind": 29}, "steps": [
+  {"do": "flag", "name": "db:cooler"},
+  {"do": "say", "who": "", "narrate": true, "text": "Cooler is beaten! Return to Dende at the Lookout."},
+  {"do": "toast", "text": "COOLER IS BEATEN! GO BACK TO DENDE"},
+  {"do": "save"}
+ ]},
+ {"id": "db_cooler_beaten_2", "name": "THE DRAGON BALL HUNT: COOLER BEATEN", "once": true, "if": {"flags": ["db:sent"], "not_flags": ["db:cooler"]}, "trigger": {"type": "defeat", "kind": 39}, "steps": [
+  {"do": "flag", "name": "db:cooler"},
+  {"do": "say", "who": "", "narrate": true, "text": "Cooler is beaten! Return to Dende at the Lookout."},
+  {"do": "toast", "text": "COOLER IS BEATEN! GO BACK TO DENDE"},
+  {"do": "save"}
  ]}
 ]}

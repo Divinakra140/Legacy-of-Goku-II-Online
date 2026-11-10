@@ -1190,6 +1190,11 @@ func _step_local(L: Local) -> void:
 		var home = Game.cfg.get("home_at")      # a map that starts in a room of its own (EARTH: Gohan's room at Goku's house)
 		if home is Dictionary and str(Game.planet.nodes[L.node_i]["key"]) == str(home.get("key", "")):
 			back = Vector2(float(home["x"]), float(home["y"]))
+		# a story: back where it starts (THE DRAGON BALL HUNT: beside Dende on the Lookout), not the map's own start -
+		# on the reshaped EARTH that is open sea
+		var story_back = Game.cfg.has("story") and str(Content.story.get("start_map", "")) == str(Game.planet.nodes[L.node_i]["key"]) and Content.story.has("x")
+		if story_back:
+			back = Vector2(float(Content.story["x"]), float(Content.story["y"]))
 		var sp: Dictionary = f.save_spot
 		var sn = -1
 		for ni in Game.planet.nodes.size():
@@ -1625,6 +1630,7 @@ func _update_view(av: AreaView) -> void:
 			v.set_sprite_set(Assets.sprite_set(shown))
 		var au = f.aura()
 		v.aura = Color.hex(au) if au != 0 else Color(0, 0, 0, 0)
+		v.halo = f.flags.get("db:hero", false)
 		v.tint = f.tint()
 		v.size_scale = f.size_scale()
 		v.label = ("P%d" % (L.k + 1)) if locals.size() > 1 else ""
@@ -1709,6 +1715,7 @@ func _update_view(av: AreaView) -> void:
 			v.set_sprite_set(Assets.sprite_set(rs))
 		var rau = int(st.get("aura", 0))
 		v.aura = Color.hex(rau) if rau != 0 else Color(0, 0, 0, 0)
+		v.halo = bool(st.get("halo", false))
 		v.tint = Color.hex(int(st.get("tint", -1))) if st.has("tint") else Color(1, 1, 1)
 		v.size_scale = float(st.get("scale", 1.0))
 		v.label = "%s LV%d" % [str(st.get("name", "P2")), int(st.get("lvl", 1))]

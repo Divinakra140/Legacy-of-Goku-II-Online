@@ -211,7 +211,7 @@ func _run(L) -> void:
 		var f = L.fighter
 		match str(st.get("do", "")):
 			"say":
-				L.ev["say"] = {"who": str(st.get("who", "")), "text": _text(L, str(st.get("text", ""))), "face": int(st.get("face", -1)), "narrate": bool(st.get("narrate", false)), "black": bool(st.get("black", false)), "t0": Engine.get_physics_frames(), "mine": bool(st.get("mine", Story.box_style(int(st.get("speaker", 0)), f.ch) == 1)), "gface": Story.face_for(int(st.get("speaker", 0)), f.set_id), "speaker": int(st.get("speaker", 0)), "hero_ch": f.ch, "at": str(st.get("at", ""))}      # (the game's own face and box for the line's speaker)
+				L.ev["say"] = {"who": str(st.get("who", "")), "text": _text(L, str(st.get("text", ""))), "face": int(st.get("face", -1)), "portrait": int(st.get("portrait", -1)), "narrate": bool(st.get("narrate", false)), "black": bool(st.get("black", false)), "t0": Engine.get_physics_frames(), "mine": bool(st.get("mine", Story.box_style(int(st.get("speaker", 0)), f.ch) == 1)), "gface": Story.face_for(int(st.get("speaker", 0)), f.set_id), "speaker": int(st.get("speaker", 0)), "hero_ch": f.ch, "at": str(st.get("at", ""))}      # (the game's own face and box for the line's speaker)
 				var gba_box = str(L.ev.get("id", "")).begins_with("story:") and Assets.gba_font("font_talk") != null
 				L.ev["say"]["gba"] = gba_box and not L.ev["say"]["narrate"]
 				if L.ev["say"]["gba"] and str(L.ev["say"]["who"]) != "":
@@ -548,7 +548,17 @@ func draw(c: Control, L, i: int) -> void:
 	c.draw_rect(Rect2(x, y, w, h), Color(0.95, 0.85, 0.5, 0.9), false, 1.0)
 	var who = str(L.ev["say"].get("who", ""))
 	var face = int(L.ev["say"].get("face", -1))
-	if face >= 0:
+	var portrait = int(L.ev["say"].get("portrait", -1))
+	var ptex = Story.face(portrait) if portrait >= 0 else null
+	if ptex != null:
+		# a portrait: the game's own dialogue face (the same art the CAPSULE CORP computer shows - "portrait": its number)
+		var pbox = Rect2(x - 46, y + h - 46, 44, 44)
+		if pbox.position.x < 2:
+			pbox.position.x = x + w + 2
+		c.draw_rect(pbox, Color(0.03, 0.04, 0.12, 0.92))
+		c.draw_texture_rect(ptex, Rect2(pbox.position + Vector2(2, 2), pbox.size - Vector2(4, 4)), false)
+		c.draw_rect(pbox, Color(0.95, 0.85, 0.5, 0.9), false, 1.0)
+	elif face >= 0:
 		# a face: the character's first frame (facing you), in a frame left of the box
 		var fs = Assets.sprite_set(face)
 		if not fs.is_empty() and fs.get("slots", []).size() > 0 and not fs["slots"][0].is_empty():

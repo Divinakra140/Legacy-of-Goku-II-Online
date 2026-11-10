@@ -92,6 +92,8 @@ func step(L) -> void:
 		if f.flags.get("db:got:%d" % i, false) or not f.flags.has("var:db_x%d" % i):
 			continue
 		var p = Vector2(float(f.flags["var:db_x%d" % i]), float(f.flags["var:db_y%d" % i]))
+		if f.flying:
+			continue      # (flying over one: you have to land and go and get it)
 		if Vector2(f.x, f.y - 6.0).distance_to(p) < REACH:
 			f.flags["db:got:%d" % i] = true
 			f.flags["var:dragonballs"] = count(f) + 1

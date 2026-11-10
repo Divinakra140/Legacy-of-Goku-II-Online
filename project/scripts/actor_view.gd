@@ -18,6 +18,7 @@ var label_color = Color(1, 1, 1)
 var hp_frac = 1.0          # under 1: a small health bar over the head
 var bubble = ""            # a chat message over the head
 var aura = Color(0, 0, 0, 0)   # a transformation's aura (alpha 0: none)
+var halo = false               # THE HERO OF EARTH (THE DRAGON BALL HUNT): a golden halo over the head
 var set_id = -1
 var hero = false           # a player's fighter: a villain hero shows the game's boss effects (red when hit, smoke when beaten)
 var _dead_ms = -1
@@ -92,6 +93,18 @@ func _draw() -> void:
 			c.a *= clampf(1.6 - smoke_k * 2.0, 0.0, 1.0)              # beaten: gone in the smoke
 	if c.a > 0.0:
 		draw_texture_rect_region(set_data["tex"], dst, src, c)
+	if halo and c.a > 0.0:
+		# a golden-white ring floating over the head, bobbing a little, its glow pulsing
+		var hb = _opaque_box(f, frame % fr.size(), slot)
+		var tt2 = Engine.get_physics_frames()
+		var hc = Vector2(f["x"] + hb.position.x + hb.size.x * 0.5, f["y"] + hb.position.y - 4.0 - 1.0 * sin(tt2 * 0.08)) * size_scale
+		var hr = maxf(5.0, hb.size.x * 0.32) * size_scale
+		draw_set_transform(hc, 0.0, Vector2(1.0, 0.32))
+		draw_arc(Vector2.ZERO, hr + 1.5, 0, TAU, 28, Color(1.0, 0.85, 0.3, 0.25 + 0.1 * sin(tt2 * 0.12) * c.a), 4.0)
+		draw_arc(Vector2.ZERO, hr, 0, TAU, 28, Color(1.0, 0.82, 0.25, c.a), 2.2)
+		draw_arc(Vector2.ZERO, hr - 0.6, PI * 1.1, PI * 1.9, 12, Color(1, 1, 0.9, 0.9 * c.a), 1.0)
+		draw_set_transform(Vector2.ZERO)
+		queue_redraw()
 	if dk >= 0.0 and dk < 1.0:
 		# the game's brown cloud (puff, cloud, ring, bits); a robot's white ring first, the cloud a quarter second later
 		var bb2 = _opaque_box(f, frame % fr.size(), slot)
