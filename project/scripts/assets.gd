@@ -108,7 +108,7 @@ func exe_dir() -> String:
 ## Android: no folder next to the program - the game's folders (content, modpacks, imported...) come packed in
 ## the APK (res://bundle/gamedata.pack, made by tools/make_pack.py) and are unpacked into the app's own folder
 ## on the first start: [8 bytes: index length][index JSON: [{"p", "s"}...]][the files, in that order]
-const BUNDLE_VERSION = "v46-1"
+const BUNDLE_VERSION = "v46-2"
 var _android_root = ""
 func _remove_tree(path: String) -> void:
 	if not DirAccess.dir_exists_absolute(path):
@@ -565,6 +565,7 @@ func import_library(force: bool = false) -> String:
 		said.append("No Buu's Fury or Legacy of Goku game found (put the .gba or .zip next to the game or in a \"games\" folder)")
 	_tileset = null
 	_blocks.clear()
+	_hides.clear()
 	_sets.clear()
 	_json.clear()
 	return "\n".join(PackedStringArray(said))
@@ -810,6 +811,7 @@ func load_colors() -> void:
 	_imgs.clear()
 	_tileset = null
 	_blocks.clear()
+	_hides.clear()
 
 func variant(n: int) -> Dictionary:
 	for v in colors["variants"]:
@@ -1732,6 +1734,45 @@ func tileset() -> TileSet:
 			_tileset.add_source(ls, next_src + li)
 		next_src += int(ceil(lrows / float(SRC_ROWS)))
 	return _tileset
+
+## a map tile that fills its whole 8 x 8 with solid colour (an animated one: in every frame) - what is under it is never
+## seen. Worked out from the player's own tile sheet the first time a tile is drawn, then remembered
+var _hides = {}
+func tile_hides(cell: int) -> bool:
+	if cell & (1 << 20) or cell & (1 << 18):
+		return false      # (another game's tile, or a cell left empty)
+	var id = cell & 0xFFFF
+	var anim = (cell & (1 << 19)) != 0 and _anim_rows.has(id)
+	var key = id | (1 << 17 if anim else 0)
+	if _hides.has(key):
+		return _hides[key]
+	var sheet: Image = sheet_image("kit")
+	var res = sheet != null
+	if res:
+		var spots = []
+		if anim:
+			var r = int(_anim_rows[id]["row"])
+			for f in maxi(1, int(_anim_rows[id]["frames"])):
+				spots.append(Vector2i(f * 8, r * 8))
+		elif id > 0 and id < kit_tiles:
+			spots.append(Vector2i((id % 64) * 8, (id / 64) * 8))
+		else:
+			res = false
+		for sp in spots:
+			if not res:
+				break
+			if sp.x + 8 > sheet.get_width() or sp.y + 8 > sheet.get_height():
+				res = false
+				break
+			for yy in 8:
+				for xx in 8:
+					if sheet.get_pixel(sp.x + xx, sp.y + yy).a < 0.98:
+						res = false
+						break
+				if not res:
+					break
+	_hides[key] = res
+	return res
 
 ## the big texture a strip of a sheet lies in (BLOCK_ROWS rows of tiles each, made once)
 var _blocks = {}

@@ -645,7 +645,11 @@ func _fill_chunk(av: AreaView, q: Vector2i, on: bool) -> void:
 	var y0 = q.y * CHUNK
 	var blends: Array = av.root.get_meta("blends", [])
 	var blend_ids: Dictionary = av.root.get_meta("blend_ids", {})
-	for k in 5:
+	# from the top layer down: a cell's tile under a solid one above it is never seen - not drawn (about a third of
+	# EARTH's tiles: each one costs a phone's processor every frame)
+	var covered = PackedByteArray()
+	covered.resize(CHUNK * CHUNK)
+	for k in range(4, -1, -1):
 		var tl: TileMapLayer = av.tiles[k]
 		var L: PackedInt32Array = cells[k]
 		for y in range(y0, mini(y0 + CHUNK, th)):
@@ -660,12 +664,17 @@ func _fill_chunk(av: AreaView, q: Vector2i, on: bool) -> void:
 						to_tl = av.root.get_meta("blend_tl"); break
 				if to_tl == tl and k == 4 and blend_ids.has(c):
 					to_tl = av.root.get_meta("blend_tl")
-				if on:
-					var r = Assets.kit_cell(c)
-					if not r.is_empty():
-						to_tl.set_cell(Vector2i(x, y), r[2], r[0], r[1])
-				else:
+				if not on:
 					to_tl.erase_cell(Vector2i(x, y))
+					continue
+				var ci = (y - y0) * CHUNK + (x - x0)
+				if covered[ci] != 0:
+					continue
+				var r = Assets.kit_cell(c)
+				if not r.is_empty():
+					to_tl.set_cell(Vector2i(x, y), r[2], r[0], r[1])
+					if to_tl == tl and Assets.tile_hides(c):      # (a glow, drawn added on, hides nothing)
+						covered[ci] = 1
 
 func _release_view(n: int) -> void:
 	if n < 0 or not views.has(n):
