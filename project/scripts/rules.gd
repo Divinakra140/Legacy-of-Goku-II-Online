@@ -97,7 +97,7 @@ static func not_ready(ch: int) -> bool:
 	return ch >= 0 and ch < Assets.CHARACTERS.size() and int(LOCKED_HEROES.get(str(Assets.CHARACTERS[ch]), 0)) < 0
 
 ## HEROES VS VILLAINS: the villains' side (everyone else is a hero)
-const VILLAINS = ["ANDROID 17", "ANDROID 18", "CELL", "COOLER", "FRIEZA", "KING COLD"]
+const VILLAINS = ["ANDROID 17", "ANDROID 18", "CELL", "COOLER", "FRIEZA", "KING COLD", "GENERAL TAO"]
 static func is_villain(ch: int) -> bool:
 	return ch >= 0 and ch < Assets.CHARACTERS.size() and VILLAINS.has(str(Assets.CHARACTERS[ch]))
 

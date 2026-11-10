@@ -199,6 +199,13 @@
    "base": "VEGETA",
    "inherit": false,
    "set": 3204
+  },
+  {
+   "id": "GENERAL TAO",
+   "name": "GENERAL TAO",
+   "base": "VEGETA",
+   "inherit": false,
+   "set": 50
   }
  ]
 }

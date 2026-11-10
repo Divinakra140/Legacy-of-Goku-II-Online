@@ -870,6 +870,27 @@
    "info": "A thin golden beam from the hand."
   },
   {
+   "id": "dodonpa_wave",
+   "name": "DODONPA WAVE",
+   "who": [
+    "GENERAL TAO"
+   ],
+   "level": 1,
+   "ep": 6,
+   "cooldown": 80,
+   "type": "beam",
+   "charge": 20,
+   "power": 3.4,
+   "stat": "pwr",
+   "speed": 9,
+   "range": 300,
+   "width": 5,
+   "color": "ffd640",
+   "sfx": "beam",
+   "look": "yellow",
+   "info": "The game's own golden beam with the pink edge, fired from the hand - hold the button to keep it out."
+  },
+  {
    "id": "tri_beam",
    "name": "TRI BEAM",
    "who": [
