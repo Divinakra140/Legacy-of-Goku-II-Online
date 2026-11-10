@@ -130,6 +130,21 @@ GUIDE lays a picture of your own faintly over the map (the game's world map, say
 CHOOSE A PICTURE on the right, then drag it into place. BIGGER / SMALLER resize it, FIT TO THE MAP stretches it over the whole map, SHOW IT turns it on and off, and the slider sets how strongly it shows. Only you see it, only in the editor.
 
 
+FOES
+----
+
+Choose FOE, pick a kind, set its level and its look, then click the map.
+- KIND is how a foe fights: its moves and strength. LOOK (set) is the picture it wears. LOOK 0 keeps the kind's own.
+- Every preset in the list shows its kind and the look it normally wears (KIND 85 - SET 141).
+- Two pictures under the boxes: the kind's own look, and the look you picked, with the kinds that normally wear it.
+- A look marked BOSS is a villain's (Frieza, Cooler, Cell, the Androids, General Tao...) or Krillin's, Tien's or
+  Yamcha's: a foe wearing it fights as that character when you come near - their own specials, beams and beam clashes,
+  levelled to the players there. It is still a foe: beaten, it drops EXP and comes back like any foe.
+- A boss kind (Frieza 41, Cooler 29, General Tao 44, Cell 21-25...) with LOOK 0 wears its own boss look.
+- Looks 1 to 6 are empty in the game: there is no picture to show.
+- Foes only move and fight while a player is near: a foe far off the screen waits where you put it.
+
+
 OTHER TOOLS
 -----------
 
@@ -147,3 +162,8 @@ WHEN YOU'RE DONE
 ----------------
 
 Save, then use SHARE - MAKE THE MOD FILE and send the .zip (from the modpacks_made folder next to the game).
+
+Building a release yourself: close the editor and run the bake (tools/bake_earth.py). It puts everything into the
+game's own Earth - the tiles and walls and every foe, person, door, rock, treasure, zone, mood and event box - and leaves
+your edits file empty. Open the editor again afterwards: everything is still there to change, and your next changes are
+baked in the next time.

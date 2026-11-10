@@ -12,8 +12,9 @@ Open DEV TOOLS from the main menu: OPTIONS - DEV TOOLS (Windows and Mac).
 1. STARTING A STORY
 --------------------
 Go to the STORY tab and give it a TITLE. From then on the main menu shows your story at the top, with
-3 save slots, PLAY THE STORY and ERASE SLOT - it keeps its own saves, separate from normal heroes
-(where you stood, flags, numbers, companions, opened places, who was shown or sent away).
+3 save slots, PLAY THE STORY and ERASE SLOT. Each slot keeps the story's own progress (where you stood,
+flags, numbers, companions, opened places, who was shown or sent away). The heroes themselves are your
+Free Play heroes - their level, items and moves come with them - unless the story has OWN_HEROES (below).
 
 Fields:
   TITLE          shown in the main menu and at THE END
@@ -24,6 +25,16 @@ Fields:
   INTRO_EVENT    an EVENTS id that plays once, automatically, the moment a new game begins
   CREDITS        the lines that scroll at THE END
   CREDITS_MUSIC  the song that plays over them
+
+More you can add to the story (in its content/story.json), each true or false:
+  FLY            the players can fly in this story (stories keep their walls otherwise)
+  GBA_BOX        every line is said in the game's own text box (the Z box), not the plain one
+  OWN_HEROES     the story starts its heroes fresh, at level 1, instead of playing your Free Play heroes
+  HERO_FOES      foes in a villain's look (Frieza, Cooler, Cell...) fight as that villain, with their own
+                 specials and beam clashes (stories keep their foes plain otherwise)
+
+And in the mod's mod.json: STORY_ORDER (a number: where the story sits in the STORY MODE list - lower
+first) and HIDDEN (true: the story is not listed, something else starts it - the ORIGINAL STORY's demo).
 
 
 2. THE EVENTS TAB: WHAT A STORY IS MADE OF
@@ -47,7 +58,9 @@ Steps, grouped by what they're for:
               pose the sprite set has - e.g. 18 is charging a beam, 9 is the transform animation),
               camera (to a spot or a person, with a zoom and a frame count), camera_back, shake,
               show_person, hide_person, emote (!, ?, ... over someone's head), and say / choice with a
-              FACE (a sprite set shown to the left of the text box)
+              FACE (a sprite set shown to the left of the text box) or a PORTRAIT (one of the CAPSULE CORP
+              computer's faces, by its number - Dende is 38, Cooler 36). hide_person with SESSION hides
+              them only until the player leaves the game (nothing saved)
 
   NUMBERS     var (set, add, sub, mul, random), if_var (=, !=, <, <=, >, >=), timer (counts down,
               shown on screen), if_timer (has it run out?)
@@ -63,10 +76,28 @@ Steps, grouped by what they're for:
 
   BOSS FIGHTS boss_fight (kind, level, name, hp multiplier, where; a WIN label, a LOSE label, and
               phases like 0.5:half or 0.2:last - at that much health left, the fight pauses, jumps to
-              that label, says its lines, and a fight_on step resumes it). The doors stay shut until
-              it ends.
+              that label, says its lines, and a fight_on step resumes it). A big red health bar with
+              the boss's name shows across the top. The doors stay shut until it ends (LOCK off: they
+              stay open). More you can give it:
+                TAKE       a foe you placed on the map becomes the boss (the nearest of that kind within
+                           this many pixels of x, y) instead of a new one appearing - beaten, it does
+                           not free the planet
+                MATCH      the boss's level: the player's own plus this
+                RIVAL_HP   a villain-look boss fighting with its specials (HERO_FOES): its health times this
+                KEEP_DOWN  losing is real: the player stays down for your LOSE part to play out
+                LEASH      walking this far from the boss calls the fight off, the boss healed
+              hold_foe (a placed foe held still while the scene talks: kind, x, y, take), foe_pose (that
+              foe in one of its poses - 11 is the victory pose), orb_up (a Supernova grown over its head
+              and thrown up off the screen), big_text (big words across the screen: GAME OVER),
+              revive_at (the player back on their feet on a map, at x, y)
+
+  REWARDS     honor (something the hero keeps in every mode - "halo": the HERO OF EARTH's golden
+              halo over their head), dragonballs (the 7 Dragon Balls hidden round EARTH on open ground,
+              the count shown on the screen - THE HERO OF EARTH)
 
 "%s" in a line of text becomes the hero's own name; "{var:coins}" becomes a number you're tracking.
+A flag whose name starts with "session:" lasts only until the player leaves the game (a boss beaten
+once per visit).
 A line too long for one box is flagged - SPLIT INTO BOXES THAT FIT cuts it up for you.
 LINES FROM THE GAME searches every line any of the game's own people say - click one and it drops into
 your step already carrying the right speaker and face.
@@ -122,15 +153,19 @@ in MODS, then open its events in the EVENTS tab and read through them - it's a c
 clues, a timer, a dark park, a two-phase boss, a locked door, a companion, and credits at the end.
 It's the fastest way to see all of this working together rather than imagining it from a list.
 
+THE HERO OF EARTH (STORY MODE) is a second one to read: the Dragon Balls hunt, the game's own text box
+with portraits, a placed foe taken over as a boss on the Moon, a real defeat (victory pose, Supernova,
+GAME OVER, back to the ship), a rematch once a visit, and the halo as a reward.
+
 
 GOOD TO KNOW
 ------------
 - The story camera's zoom is built for one player; with two players on one PC it only moves, it
   doesn't zoom.
 - Companions don't get hurt.
-- The original GBA game's own story scenes can't be read out of the cartridge - they're compiled code,
-  not data - so there's no shortcut to importing them automatically. But every line any of its people
-  say IS readable, and shows up searchable under LINES FROM THE GAME, which is a real head start if
+- The original game's own story scenes are read from your cartridge by the STORY step (one of LoG2's own
+  scenes, by its table; INTRO is the whole opening) - that is how the ORIGINAL STORY's demo plays them.
+  Every line any of its people say is searchable too, under LINES FROM THE GAME - a real head start if
   you're rebuilding a scene from the original game by hand.
 - Nothing you build here needs any ROM file to run or to share: SHARE - MAKE THE MOD FILE packages only
   what you made.
