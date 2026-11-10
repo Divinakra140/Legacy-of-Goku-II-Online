@@ -131,6 +131,17 @@ func tick(L, raw: Dictionary) -> bool:
 	var dn_new = bool(raw.get("down", false)) and not ev.get("dn_prev", true)
 	ev["a_prev"] = a; ev["up_prev"] = bool(raw.get("up", false)); ev["dn_prev"] = bool(raw.get("down", false))
 	_step_moves(L)
+	# a foe held still while the scene talks (hold_foe), the player kept down (a lost fight's scene), the effects
+	if ev.has("held") and not ev.has("fight"):
+		var he = _foe_at(ev["held"])
+		if not he.is_empty():
+			he["hold"] = 3
+	if ev.get("down_hold", false):
+		L.fighter.down_t = maxi(L.fighter.down_t, 10)
+	if ev.has("orb"):
+		ev["orb"]["t"] = int(ev["orb"]["t"]) + 1
+	if ev.has("big"):
+		ev["big"]["t"] = int(ev["big"]["t"]) + 1
 	if ev.has("fight"):
 		var fr = _step_fight(L)
 		if fr == "go":
@@ -322,6 +333,34 @@ func _run(L) -> void:
 			"music":
 				L.ev["music"] = str(st.get("name", "field"))      # (it stays while the event runs: world.gd _pick_music)
 				Music.play(L.ev["music"])
+			"hold_foe":      # a placed foe held still while the scene talks (it can't walk, punch or shoot): kind, x, y, take
+				var hf = _take(L, st)
+				if not hf.is_empty():
+					L.ev["held"] = [_key(L), int(hf["id"])]
+					hf["hold"] = 3
+			"foe_pose":      # the held foe in one of its poses (anim: 11 VICTORY...)
+				var pf = _foe_at(L.ev.get("held", []))
+				if not pf.is_empty():
+					pf["anim"] = int(st.get("anim", 11)); pf["frame"] = int(st.get("frame", 0)); pf["dir"] = int(st.get("dir", 0)); pf["state"] = "idle"
+			"orb_up":      # a huge ball of energy grown over the held foe's head, then thrown up off the screen (a Supernova)
+				var of = _foe_at(L.ev.get("held", []))
+				var op = Vector2(float(of["x"]), float(of["y"])) if not of.is_empty() else Vector2(f.x, f.y)
+				L.ev["orb"] = {"x": op.x, "y": op.y - 40.0, "t": 0, "col": str(st.get("color", "ff7a20"))}
+				Sfx.play("charge")
+			"big_text":      # big words in the middle of the screen (GAME OVER)
+				L.ev["big"] = {"text": str(st.get("text", "")), "t": 0, "col": str(st.get("color", "ff3030"))}
+			"revive_at":      # back on your feet somewhere else (map, x, y): the held foe let go and healed, the effects gone
+				var rf = _foe_at(L.ev.get("held", []))
+				if not rf.is_empty():
+					rf["hold"] = 0; rf["hp"] = rf["maxhp"]; rf["anim"] = 0; rf["state"] = "idle"
+				for k2 in ["held", "down_hold", "orb", "big"]:
+					L.ev.erase(k2)
+				f.revive(float(st.get("x", f.x)), float(st.get("y", f.y)))
+				var rkey = str(st.get("map", _key(L)))
+				for ni in Game.planet.nodes.size():
+					if str(Game.planet.nodes[ni]["key"]) == rkey:
+						world._warp(L, ni, Vector2(float(st.get("x", f.x)), float(st.get("y", f.y))))
+						break
 			"dragonballs":      # THE DRAGON BALL HUNT: the 7 hidden round EARTH (dragonballs.gd)
 				world.db_rt.scatter(f)
 			"toast":
@@ -812,12 +851,15 @@ func _start_fight(L, st: Dictionary) -> bool:
 	# the boss instead of a new one: the nearest of that kind within "take" px of x, y
 	var e = {}
 	if float(st.get("take", 0)) > 0:
-		var best = float(st["take"])
-		for c in sim.enemies:
-			if c["alive"] and c["state"] != "dying" and int(c["type"]) == t and Vector2(float(c["x"]), float(c["y"])).distance_to(p) <= best:
-				best = Vector2(float(c["x"]), float(c["y"])).distance_to(p)
-				e = c
+		e = _take(L, st)
 		if not e.is_empty():
+			if st.has("match"):
+				# its strength matched to the player (a placed foe's own level can be far above a story hero's)
+				var tmp = sim.make_enemy(e["id"], t, int(e["set"]), Vector2(e["x"], e["y"]), maxi(1, f.level + int(st["match"])), false, true)
+				for k in ["hp", "maxhp", "atk", "lvl", "exp", "base_hp", "base_atk"]:
+					e[k] = tmp[k]
+			e["hp"] = e["maxhp"]      # (a fresh fight: full health, whatever an earlier try left)
+			e["hold"] = 0
 			var ai: Dictionary = Content.enemy_cfg.get("styles", {}).get("boss", {}).duplicate()
 			ai["style"] = "boss"
 			ai["own"] = Content.own_attack(t)
@@ -848,7 +890,8 @@ func _start_fight(L, st: Dictionary) -> bool:
 				phases.append([float(kv[0]), kv[1].strip_edges()])
 	elif ph is Array:
 		phases = ph
-	L.ev["fight"] = {"key": key, "id": int(e["id"]), "win": str(st.get("win", "")), "lose": str(st.get("lose", "")), "phases": phases, "lock": bool(st.get("lock", true)), "done": []}
+	L.ev["fight"] = {"key": key, "id": int(e["id"]), "win": str(st.get("win", "")), "lose": str(st.get("lose", "")), "phases": phases, "lock": bool(st.get("lock", true)), "done": [],
+		"keep_down": bool(st.get("keep_down", false)), "leash": float(st.get("leash", 0)), "home": [float(e["x"]), float(e["y"])]}
 	world.toasts.append([(str(e["name"]) + " APPEARS!") if str(e.get("name", "")) != "" else "A BOSS APPEARS!", Color(1, 0.5, 0.4), 200])
 	return true
 
@@ -875,6 +918,21 @@ func _step_fight(L) -> String:
 		L.ev["until"] = ""
 		if str(fi["win"]) != "":
 			_goto(L, str(fi["win"]))
+		return "go"
+	if float(fi.get("leash", 0)) > 0 and Vector2(f.x, f.y).distance_to(Vector2(float(fi["home"][0]), float(fi["home"][1]))) > float(fi["leash"]):
+		# walked away (back into the ship...): the fight is off, the boss as it was - full health, back at its post
+		e["hp"] = e["maxhp"]; e["x"] = float(fi["home"][0]); e["y"] = float(fi["home"][1]); e["state"] = "idle"; e["hold"] = 0
+		L.ev = {}
+		return ""
+	if f.state == "down" and bool(fi.get("keep_down", false)):
+		# beaten for real: the player stays down, the boss stands over them (the story's lose part plays it out)
+		L.ev.erase("fight")
+		L.ev["until"] = ""
+		L.ev["down_hold"] = true
+		L.ev["held"] = [str(fi["key"]), int(fi["id"])]
+		e["hold"] = 3
+		if str(fi["lose"]) != "":
+			_goto(L, str(fi["lose"]))
 		return "go"
 	if f.state == "down":
 		L.ev.erase("fight")
@@ -949,3 +1007,63 @@ func draw_boss(c: Control, L, vs: Vector2) -> void:
 	c.draw_rect(Rect2(x, y, w * frac, 10), Color(0.9, 0.12, 0.1))
 	c.draw_rect(Rect2(x, y, w * frac, 3), Color(1, 0.5, 0.45, 0.8))
 	c.draw_rect(Rect2(x - 2, y - 2, w + 4, 14), Color(1, 0.85, 0.5, 0.9), false, 1.0)
+
+## the nearest living foe of a kind ("kind") within "take" px of x, y on the player's map ({} if none)
+func _take(L, st: Dictionary) -> Dictionary:
+	var sim = Game.sims.get(_key(L))
+	if sim == null:
+		return {}
+	var p = Vector2(float(st.get("x", L.fighter.x)), float(st.get("y", L.fighter.y)))
+	var best = float(st.get("take", 400))
+	var out = {}
+	for c in sim.enemies:
+		if c["alive"] and c["state"] != "dying" and int(c["type"]) == int(st.get("kind", -1)) and Vector2(float(c["x"]), float(c["y"])).distance_to(p) <= best:
+			best = Vector2(float(c["x"]), float(c["y"])).distance_to(p)
+			out = c
+	if not out.is_empty() and not sim.awake.has(out):
+		sim.awake.append(out)
+	return out
+
+## a foe by [map key, id] ({} if gone)
+func _foe_at(ref) -> Dictionary:
+	if not ref is Array or ref.size() < 2:
+		return {}
+	var sim = Game.sims.get(str(ref[0]))
+	if sim == null:
+		return {}
+	for c in sim.enemies:
+		if int(c["id"]) == int(ref[1]) and c["alive"]:
+			return c
+	return {}
+
+## the scene's effects over the world: the Supernova thrown up, big words
+func draw_scene_fx(c: Control, L, i: int, vs: Vector2) -> void:
+	if L.ev.has("orb"):
+		var o: Dictionary = L.ev["orb"]
+		var t = int(o["t"])
+		var grow = clampf(t / 70.0, 0.05, 1.0)
+		var rise = maxf(0.0, t - 80.0) * 9.0
+		var p = world.hud_point(i, Vector2(float(o["x"]), float(o["y"]) - 20.0 * grow - rise))
+		var r = 46.0 * grow
+		var col = Color.from_string(str(o["col"]), Color(1, 0.5, 0.15))
+		var pulse = 1.0 + 0.06 * sin(t * 0.5)
+		c.draw_circle(p, r * 1.6 * pulse, Color(col.r, col.g, col.b, 0.18))
+		c.draw_circle(p, r * 1.25 * pulse, Color(col.r, col.g * 0.8, col.b, 0.45))
+		c.draw_circle(p, r, col)
+		c.draw_circle(p, r * 0.6, Color(1, 0.85, 0.5))
+		c.draw_circle(p - Vector2(r * 0.25, r * 0.25), r * 0.25, Color(1, 1, 0.9, 0.8))
+		if t == 80:
+			Sfx.play("bomb")
+	if L.ev.has("big"):
+		var b: Dictionary = L.ev["big"]
+		var a = clampf(int(b["t"]) / 20.0, 0.0, 1.0)
+		var font = Assets.gba_font("font_head")
+		if font == null:
+			font = ThemeDB.fallback_font
+		var col2 = Color.from_string(str(b["col"]), Color(1, 0.2, 0.2))
+		var txt = str(b["text"])
+		var y = vs.y * 0.45
+		c.draw_rect(Rect2(0, y - 40, vs.x, 56), Color(0, 0, 0, 0.6 * a))
+		for o2 in [Vector2(-2, 0), Vector2(2, 0), Vector2(0, -2), Vector2(0, 2)]:
+			c.draw_string(font, Vector2(0, y) + o2, txt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 32, Color(0, 0, 0, a))
+		c.draw_string(font, Vector2(0, y), txt, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 32, Color(col2.r, col2.g, col2.b, a))

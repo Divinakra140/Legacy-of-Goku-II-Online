@@ -215,6 +215,13 @@
    },
    "steps": [
     {
+     "do": "hold_foe",
+     "kind": 29,
+     "x": 548,
+     "y": 20244,
+     "take": 400
+    },
+    {
      "do": "say",
      "who": "COOLER",
      "portrait": 36,
@@ -232,11 +239,13 @@
      "x": 548,
      "y": 20244,
      "take": 400,
-     "level": 79,
+     "match": 3,
      "name": "COOLER",
      "win": "won",
      "lose": "lost",
-     "lock": true
+     "lock": false,
+     "keep_down": true,
+     "leash": 500
     },
     {
      "do": "goto",
@@ -247,10 +256,46 @@
      "name": "lost"
     },
     {
+     "do": "foe_pose",
+     "anim": 11,
+     "dir": 0
+    },
+    {
+     "do": "wait",
+     "frames": 40
+    },
+    {
      "do": "say",
      "who": "COOLER",
      "portrait": 36,
-     "text": "Pathetic. Come back when you're ready to watch your planet burn."
+     "text": "Now Earth will burn."
+    },
+    {
+     "do": "orb_up",
+     "color": "ff7a20"
+    },
+    {
+     "do": "wait",
+     "frames": 150
+    },
+    {
+     "do": "big_text",
+     "text": "GAME OVER",
+     "color": "ff3030"
+    },
+    {
+     "do": "wait",
+     "frames": 180
+    },
+    {
+     "do": "revive_at",
+     "map": "land/0/0",
+     "x": 11368,
+     "y": 16930
+    },
+    {
+     "do": "toast",
+     "text": "TRY AGAIN: THE SHIP IS RIGHT HERE"
     },
     {
      "do": "goto",

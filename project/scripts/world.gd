@@ -1973,6 +1973,15 @@ func _shader(split: bool, dir: Vector2, lp: Vector2, f1: float, f2: float) -> vo
 
 ## where a player's own part of the screen is (for their banner)
 ## where a fighter is on the screen (the light round them in the dark, blind)
+## a point of the world where it is on the HUD (the first player's screen; split screen: their half's middle)
+func hud_point(i: int, p: Vector2) -> Vector2:
+	if i < locals.size() and i < cams.size() and i < svs.size():
+		var L: Local = locals[i]
+		var vs = Vector2(svs[i].size)
+		var q = (p - L.cam) * cams[i].zoom.x + vs / 2.0
+		return q * (hud_draw.get_viewport_rect().size / vs)
+	return _side_centre(i)
+
 func _light_centre(i: int) -> Vector2:
 	if locals.size() == 1 and i == 0 and not cams.is_empty():
 		var L: Local = locals[0]
@@ -3509,6 +3518,8 @@ func _player_hud(c: Control, L: Local, right: bool) -> void:
 		_ds(c, ThemeDB.fallback_font, Vector2(x, 4 + 24 * S + 8), "P%d" % (L.k + 1), HORIZONTAL_ALIGNMENT_LEFT, 30, 8, Color(1, 0.9, 0.4) if L.k == 0 else Color(0.5, 1, 0.6))
 
 ## a small map of the place in the corner: friends, foes, the boss, ways out
+const MINI_W = 2560.0      # how much of a big land the minimap shows round you (px of the world: 320 x 220 tiles)
+const MINI_H = 1760.0
 func _minimap(c: Control, L: Local, i: int) -> void:
 	var vs = _hud_vs
 	var a: Dictionary = L.area
@@ -3517,9 +3528,10 @@ func _minimap(c: Control, L: Local, i: int) -> void:
 	var w = float(a["w"]); var h = float(a["h"])
 	var vr = Rect2(0, 0, w, h)
 	if a.has("mini") and (w > 700 or h > 500):
-		# a big land: the part around you
+		# a big land: the part around you - far round (it showed about as much as the screen itself: no use)
 		var fc = Vector2(L.fighter.x, L.fighter.y)
-		vr = Rect2(clampf(fc.x - 320, 0, maxf(0, w - 640)), clampf(fc.y - 220, 0, maxf(0, h - 440)), minf(640, w), minf(440, h))
+		var mw = MINI_W; var mh = MINI_H
+		vr = Rect2(clampf(fc.x - mw / 2.0, 0, maxf(0, w - mw)), clampf(fc.y - mh / 2.0, 0, maxf(0, h - mh)), minf(mw, w), minf(mh, h))
 	var sc = minf(84.0 / vr.size.x, 58.0 / vr.size.y)
 	var size = vr.size * sc
 	var org = Vector2(vs.x - size.x - 6, 22) if (locals.size() == 1 or i == 1) else Vector2(6, 56)
@@ -3729,6 +3741,7 @@ func _draw_hud() -> void:
 	db_rt.draw(c, vs)
 	if not locals.is_empty():
 		events_rt.draw_boss(c, locals[0], vs)
+		events_rt.draw_scene_fx(c, locals[0], 0, vs)
 	# the HUD box (bars, special, EXP, minimap, partners) at the same size on the screen whatever the VIEW SIZE
 	var hs = _hud_scale(vs)
 	var vs_real = vs
