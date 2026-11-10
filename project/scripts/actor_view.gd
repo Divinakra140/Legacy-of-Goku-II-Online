@@ -261,6 +261,15 @@ func _halo_spot(a: int, d: int) -> Vector2:
 			return float(pic["xmin"] + pic["xmax"]) / 2.0
 		xs.sort()
 		return float(xs[xs.size() / 2])
+	# the head's middle: each head row's own middle (left edge to right edge), averaged over the rows under the hair's
+	# tips - a whole pixel off when it was the feet's middle (feet are rarely right under the head)
+	var head_mid = func(t: int) -> float:
+		var sm = 0.0; var n = 0
+		for y in range(maxi(0, t + 2), mini(rows.size(), t + 13)):
+			if rows[y].size() > 0:
+				sm += (float(rows[y].min()) + float(rows[y].max()) + 1.0) / 2.0
+				n += 1
+		return (sm / float(n) - 0.5) if n > 0 else float(pic["xmin"] + pic["xmax"]) / 2.0      # (-0.5: the halo's own +0.5 puts it back on the middle)
 	if a == 12 and d >= 2:
 		var xa = int(pic["xmin"]) if d == 2 else int(pic["xmax"]) - 12
 		var xb = int(pic["xmin"]) + 12 if d == 2 else int(pic["xmax"])
@@ -275,11 +284,11 @@ func _halo_spot(a: int, d: int) -> Vector2:
 		res = Vector2(f["x"] + med.call(ht, ht + 4, xa, xb), f["y"] + maxi(0, ht))
 	elif a == 12 and d == 0:
 		var hm = _head_match(pic)
-		res = Vector2(f["x"] + hm.x, f["y"] + hm.y) if hm.x > -900 else Vector2(f["x"] + med.call(top, top + 5, 0, 999), f["y"] + top)
+		res = Vector2(f["x"] + hm.x, f["y"] + hm.y) if hm.x > -900 else Vector2(f["x"] + head_mid.call(top), f["y"] + top)
 	elif a == 12:
-		res = Vector2(f["x"] + med.call(top, top + 5, 0, 999), f["y"] + top)
+		res = Vector2(f["x"] + head_mid.call(top), f["y"] + top)
 	elif d < 2:
-		res = Vector2(f["x"] + med.call(bot - 5, bot, 0, 999), f["y"] + top)      # (over the feet)
+		res = Vector2(f["x"] + head_mid.call(top), f["y"] + top)      # (facing you or away: the head's own middle)
 	else:
 		res = Vector2(f["x"] + med.call(top, top + 3, 0, 999), f["y"] + top)
 	_halo_spots[key] = res
