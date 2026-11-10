@@ -497,6 +497,21 @@ func _view_for(n: int) -> AreaView:
 			av.root.add_child(btl)
 			av.root.set_meta("blend_tl", btl)
 			av.root.set_meta("blends", blends)
+			# the same glow tiles copied elsewhere (DEV TOOLS - COPY / STAMP: the space ship's lights...) glow there too:
+			# the top layer's tiles inside these places (only the top layer: no ground tile ever glows)
+			var ids = {}
+			var cl: Array = av.area["land"]["cells"]
+			var tw0: int = av.area["tw"]
+			for bl in blends:
+				if int(bl[1]) != 4:
+					continue
+				var rr: Rect2i = bl[0]
+				for yy in range(rr.position.y, mini(rr.end.y, int(av.area["th"]))):
+					for xx in range(rr.position.x, mini(rr.end.x, tw0)):
+						var c0 = cl[4][yy * tw0 + xx]
+						if c0 != 0:
+							ids[c0] = true
+			av.root.set_meta("blend_ids", ids)
 		order = []
 	for k in order:
 		var front = int(pri[k]) <= 1 and int(pri[k]) < int(pri[order[0]])
@@ -591,6 +606,7 @@ func _fill_chunk(av: AreaView, q: Vector2i, on: bool) -> void:
 	var x0 = q.x * CHUNK
 	var y0 = q.y * CHUNK
 	var blends: Array = av.root.get_meta("blends", [])
+	var blend_ids: Dictionary = av.root.get_meta("blend_ids", {})
 	for k in 5:
 		var tl: TileMapLayer = av.tiles[k]
 		var L: PackedInt32Array = cells[k]
@@ -604,6 +620,8 @@ func _fill_chunk(av: AreaView, q: Vector2i, on: bool) -> void:
 				for bl in blends:
 					if int(bl[1]) == k and (bl[0] as Rect2i).has_point(Vector2i(x, y)):
 						to_tl = av.root.get_meta("blend_tl"); break
+				if to_tl == tl and k == 4 and blend_ids.has(c):
+					to_tl = av.root.get_meta("blend_tl")
 				if on:
 					var r = Assets.kit_cell(c)
 					if not r.is_empty():
