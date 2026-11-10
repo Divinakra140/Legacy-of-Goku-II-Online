@@ -2422,6 +2422,8 @@ func _story_screen() -> void:
 		if not FileAccess.file_exists(sp):
 			continue
 		var t = Mods.read_json(sp)
+		if bool(p.get("hidden", false)):
+			continue      # (the original story's demo: started from ORIGINAL STORY)
 		if t is Dictionary and t.get("story") is Dictionary and str(t["story"].get("title", "")) != "":
 			items.append([str(t["story"]["title"]).to_upper(), _story_pick.bind(str(p["folder"]))])
 	items.append(["ORIGINAL STORY", _original_story])
@@ -2432,9 +2434,14 @@ func _original_story() -> void:
 	_global_back = _story_screen
 	_gheading("Original Story")
 	Music.play("rom:7")      # Era of Darkness: the story's own song
-	var l = _gtext(gba, Game.keys("THE ORIGINAL STORY IS STILL BEING REBUILT IN GODOT.\n\nCOME BACK IN A LATER UPDATE!\n\n\nB: BACK"), Vector2(10, 50))
-	l.size = Vector2(GW - 20, 100)
+	var l = _gtext(gba, Game.keys("THE ORIGINAL STORY IS STILL BEING REBUILT IN GODOT.\n\nTHE OPENING IS READY TO TRY."), Vector2(10, 34))
+	l.size = Vector2(GW - 20, 50)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# the demo: the pack that holds it (modpacks/Original_Story_Demo), its three save slots
+	if DirAccess.dir_exists_absolute(Mods.packs_dir().path_join(DEMO_PACK)):
+		_gscroll([["PLAY DEMO?", _story_pick.bind(DEMO_PACK)]], 96, 40)
+
+const DEMO_PACK = "Original_Story_Demo"
 
 ## a mod's story: its pack is switched on (it holds the story), then its three save slots
 func _story_pick(folder: String) -> void:
