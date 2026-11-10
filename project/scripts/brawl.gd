@@ -296,7 +296,9 @@ func _step_bot(pid: int, b: Dictionary, host) -> void:
 				if ev.get("ki", false) and int(_any(to)["node"]) == host.node_i:
 					world.ki_spark(host.node_i, Vector2(o.x, o.y), float(ev["kx"]), float(ev["ky"]))
 			else:
-				Game.send_social(to, pid, str(b["name"]), "pvp_hit", {"dmg": int(ev["dmg"]), "kx": float(ev["kx"]), "ky": float(ev["ky"]), "crit": bool(ev["crit"]), "ki": bool(ev.get("ki", false)), "ch": f.ch})
+				# a player hit by a brawler: softer than a player's own blow (content/social.json - pvp - cpu_damage)
+				var cd = float(Content.social_cfg.get("pvp", {}).get("cpu_damage", 0.7))
+				Game.send_social(to, pid, str(b["name"]), "pvp_hit", {"dmg": maxi(1, roundi(int(ev["dmg"]) * cd)), "kx": float(ev["kx"]), "ky": float(ev["ky"]), "crit": bool(ev["crit"]), "ki": bool(ev.get("ki", false)), "ch": f.ch})
 		elif str(ev.get("type", "")) == "hit" and int(ev["enemy"]) >= 0 and allies() > 0:
 			# a friendly CPU's blow on a foe: as a player's (its kill gives the players there their EXP)
 			foe_hits += 1
@@ -378,8 +380,18 @@ func _think(b: Dictionary, f, targets: Array, host) -> Dictionary:
 		b["think"] = 20 + randi() % 20
 		b["tgt"] = -1
 		var best = 999999.0
+		# a player is not swarmed: at most a few brawlers go for the same player at once (content/social.json -
+		# pvp - cpu_on_player); the rest pick someone else
+		var cap = int(Content.social_cfg.get("pvp", {}).get("cpu_on_player", 2))
+		var on = {}
+		for q in bots:
+			if bots[q] != b and int(bots[q].get("tgt", -1)) <= PVP_ID:
+				on[int(bots[q]["tgt"])] = int(on.get(int(bots[q]["tgt"]), 0)) + 1
 		for e in targets:
 			if not e["alive"]:
+				continue
+			var tid = int(e["id"])
+			if tid <= PVP_ID and not bots.has(PVP_ID - tid) and int(on.get(tid, 0)) >= cap:
 				continue
 			var d = Vector2(float(e["x"]) - f.x, float(e["y"]) - f.y).length()
 			if d < best and d < NEAR:

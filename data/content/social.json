@@ -10,6 +10,8 @@
  },
  "pvp": {
   "damage": 0.25,
-  "max_hit": 0.06
+  "max_hit": 0.06,
+  "cpu_damage": 0.7,
+  "cpu_on_player": 2
  }
 }
