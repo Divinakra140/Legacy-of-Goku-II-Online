@@ -893,6 +893,28 @@
    "from": "chest"
   },
   {
+   "id": "dodon_ray",
+   "name": "DODON RAY",
+   "who": [
+    "GENERAL TAO"
+   ],
+   "level": 8,
+   "ep": 5,
+   "cooldown": 70,
+   "type": "beam",
+   "charge": 12,
+   "power": 3.0,
+   "stat": "pwr",
+   "speed": 10,
+   "range": 300,
+   "width": 4,
+   "color": "ffd640",
+   "sfx": "beam",
+   "anim": 19,
+   "from": "chest",
+   "info": "A thin, fast golden ray from the fingertip that pierces everything in its way."
+  },
+  {
    "id": "tri_beam",
    "name": "TRI BEAM",
    "who": [
