@@ -3610,14 +3610,42 @@ func _update_foe_previews() -> void:
 		return
 	var ks = _kind_set(foe_type)
 	foe_prev_kind.set_sprite_set(Assets.sprite_set(ks)); foe_prev_kind.show_frame(1, 0, 0)
-	foe_lab_kind.text = "KIND %d\nITS OWN LOOK: SET %d" % [foe_type, ks]
+	var kb = _boss_name(ks)
+	if ks < 0:
+		foe_lab_kind.text = "KIND %d\nNOT USED BY THE GAME\n(PICK A LOOK)" % foe_type
+	else:
+		foe_lab_kind.text = "KIND %d%s\nITS OWN LOOK: SET %d%s" % [foe_type, " · BOSS" if kb != "" else "", ks, ("\n" + kb) if kb != "" else ""]
 	var ls = foe_look if foe_look > 0 else ks
 	foe_prev_look.set_sprite_set(Assets.sprite_set(ls)); foe_prev_look.show_frame(1, 0, 0)
 	if foe_look <= 0:
 		foe_lab_look.text = "LOOK 0\nTHE KIND'S OWN"
 	else:
 		var users = _kinds_for_set(foe_look)
-		foe_lab_look.text = "LOOK: SET %d\n%s" % [foe_look, ("NORMALLY USED BY KIND " + ", ".join(PackedStringArray(users.map(func(x): return str(x))))) if not users.is_empty() else "NO FOE'S OWN LOOK (A HERO OR A PERSON)"]
+		var lb = _boss_name(foe_look)
+		var who = ("NORMALLY USED BY KIND " + ", ".join(PackedStringArray(users.map(func(x): return str(x))))) if not users.is_empty() else ("NO KIND WEARS IT IN THE GAME" if lb != "" else "NO FOE'S OWN LOOK (A HERO OR A PERSON)")
+		foe_lab_look.text = "LOOK: SET %d%s\n%s%s" % [foe_look, " · BOSS" if lb != "" else "", who, ("\n" + lb) if lb != "" else ""]
+
+## a boss look: a villain's set (or one of its outfits) - a foe wearing it fights as that villain, with its beams and
+## specials (brawl.gd - HERO FOES). "" for any other look
+func _boss_name(s: int) -> String:
+	if s < 0:
+		return ""
+	var fh = {9: "ANDROID 17", 11: "ANDROID 18", 30: "CELL", 34: "COOLER", 48: "FRIEZA"}
+	if fh.has(s):
+		return "FIGHTS AS %s (BEAMS, SPECIALS)" % fh[s]
+	for ch in Assets.CHARACTERS.size():
+		if not Rules.is_villain(ch):
+			continue
+		var hh = Mods.hero_entry(Assets.CHARACTERS[ch])
+		var nm = ""
+		if int(hh.get("set", -1)) == s:
+			nm = str(hh.get("name", Assets.CHARACTERS[ch]))
+		for o in Assets.outfits(ch):
+			if nm == "" and o is Dictionary and int(o.get("set", -1)) == s:
+				nm = str(o.get("name", Assets.CHARACTERS[ch]))
+		if nm != "":
+			return "FIGHTS AS %s (BEAMS, SPECIALS)" % nm
+	return ""
 
 ## the look a kind wears in the game: your team's (DEV TOOLS - ENEMIES) or the game's own
 func _kind_set(k: int) -> int:
