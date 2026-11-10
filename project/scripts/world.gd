@@ -2404,8 +2404,9 @@ func _draw_shots(av: AreaView, back: bool = false) -> void:
 	for pid in Game.remote_states:
 		var st: Dictionary = Game.remote_states[pid]
 		if int(st.get("node", -1)) == av.node_i:
+			var cp = _clash_point_with(int(pid))
 			for e in st.get("shots", []):
-				all.append(e)
+				all.append(e if cp == null else clash_rt.pinned_snap(e, cp))
 			if int(st.get("dir", 0)) == 1:
 				back_fx.append_array(st.get("fx", []).filter(func(x): return str(x[0]) in CHARGE_FX))
 				fxs.append_array(st.get("fx", []).filter(func(x): return not str(x[0]) in CHARGE_FX))
@@ -2732,6 +2733,13 @@ func _efx_c(n: Node2D, name: String, i: int, p: Vector2, sc: float = 1.0, col: C
 	n.draw_texture_rect_region(fx["tex"], Rect2(-size / 2.0, size), src, col)
 	n.draw_set_transform(Vector2.ZERO)
 	return true
+
+## the clash point a player here shares with this fighter (null: none)
+func _clash_point_with(pid: int):
+	for L in locals:
+		if not L.clash.is_empty() and int(L.clash.get("with", -1)) == pid and L.clash.has("p"):
+			return L.clash["p"]
+	return null
 
 const BEAM_LOOKS = {
 	# sheet, body (vertical, horizontal), end burst (vertical pair, horizontal pair), orb at the hands, tint

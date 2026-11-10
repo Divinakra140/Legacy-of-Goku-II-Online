@@ -32,14 +32,56 @@ static func clash_point(d: int, me: Vector2, them: Vector2, k: float, across: Ve
 		return Vector2(lerpf(me.x, them.x, k), across.y)
 	return Vector2(across.x, lerpf(me.y, them.y, k))
 
-## our beam's head kept on the clash point
+## our beam's head kept on the clash point (one of the game's own beams - KAMEHAMEHA... - by its length: it grows
+## or shrinks with the clash point, never past it)
 static func pin_head(shots: Array, d: int, p: Vector2) -> void:
 	for s in shots:
-		if int(s.get("kind", 0)) == 1:
+		var k = int(s.get("kind", 0))
+		if k == 1:
 			if Rules.dir_vec(d).x != 0.0:
 				s["x"] = p.x
 			else:
 				s["y"] = p.y
+		elif k == 5:
+			var L = rom_len(str(s.get("rom", "")), int(s["dir"]), Vector2(float(s["x"]), float(s["y"])), p)
+			if L > 0.0:
+				s["L"] = L; s["max"] = L
+
+## a game beam's length that puts its head (the middle of its head piece) on p; 0: not one of the game's beams
+static func rom_len(rom: String, d: int, P: Vector2, p: Vector2) -> float:
+	var R: Dictionary = Content.rom_specials.get(rom, {})
+	if R.is_empty():
+		return 0.0
+	var h0: Array = R["head"][clampi(d, 0, 3)]
+	var len0 = float(R.get("len0", 8))
+	return maxf(len0, len0 + (p - (P + Vector2(float(h0[0]), float(h0[1])) + Vector2(8, 8))).dot(Rules.dir_vec(d)))
+
+## where a game beam's head is (the middle of its head piece)
+static func rom_head(rom: String, d: int, P: Vector2, L: float) -> Vector2:
+	var R: Dictionary = Content.rom_specials.get(rom, {})
+	if R.is_empty():
+		return P + Rules.dir_vec(d) * L
+	var h0: Array = R["head"][clampi(d, 0, 3)]
+	return P + Vector2(float(h0[0]), float(h0[1])) + Vector2(8, 8) + Rules.dir_vec(d) * (L - float(R.get("len0", 8)))
+
+## another fighter's beam as this screen draws it (a snapshot's shot), its head put on this screen's clash point:
+## both beams end where the sparks are, whatever the other game says a moment late
+static func pinned_snap(e: Array, p: Vector2) -> Array:
+	var k = int(e[3])
+	if k != 1 and k != 5:
+		return e
+	var d = int(e[2])
+	var o = e.duplicate()
+	if k == 1:
+		if Rules.dir_vec(d).x != 0.0:
+			o[0] = p.x
+		else:
+			o[1] = p.y
+	else:
+		var L = rom_len(str(e[9]) if e.size() > 9 else "", d, Vector2(float(e[0]), float(e[1])), p)
+		if L > 0.0:
+			o[5] = L
+	return o
 
 ## pushed back by the winning beam: away from the other, along the line
 static func knock(d: int, me: Vector2, them: Vector2) -> Vector2:
@@ -132,7 +174,7 @@ static func _beam_of(shots: Array, d: int) -> Dictionary:
 		if k == 1:
 			return {"head": Vector2(float(s["x"]), float(s["y"])), "col": Color.hex(int(s.get("col", 0xFFFFFFFF)))}
 		if k == 5:
-			return {"head": Vector2(float(s["x"]), float(s["y"])) + fwd * float(s.get("L", 0)), "col": rom_col(str(s.get("rom", "")))}
+			return {"head": rom_head(str(s.get("rom", "")), d, Vector2(float(s["x"]), float(s["y"])), float(s.get("L", 0))), "col": rom_col(str(s.get("rom", "")))}
 	return {}
 
 static func _beam_snap(shots: Array, d: int) -> Dictionary:
@@ -142,7 +184,7 @@ static func _beam_snap(shots: Array, d: int) -> Dictionary:
 		if k == 1:
 			return {"head": Vector2(float(e[0]), float(e[1])), "col": Color.hex(int(e[4]))}
 		if k == 5:
-			return {"head": Vector2(float(e[0]), float(e[1])) + fwd * float(e[5]), "col": rom_col(str(e[9]) if e.size() > 9 else "")}
+			return {"head": rom_head(str(e[9]) if e.size() > 9 else "", d, Vector2(float(e[0]), float(e[1])), float(e[5])), "col": rom_col(str(e[9]) if e.size() > 9 else "")}
 	return {}
 
 ## where the clash is across its line: halfway between the two beams' heads (an eye beam is higher than one from the
