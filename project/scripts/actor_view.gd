@@ -105,7 +105,7 @@ func _draw() -> void:
 		# over the head - found once per pose and way (no hopping frame to frame): on the ground always the standing
 		# pose's head (a tail, a cape or wings never pull it off), flying the head end of the flying pose (_halo_spot)
 		var spot = _halo_spot(12 if a == 12 else 0, dir)
-		var hc = (spot + Vector2(0, -4.0 - 1.0 * sin(tt2 * 0.08))) * size_scale
+		var hc = (spot + Vector2(0.5, -4.0 - 1.0 * sin(tt2 * 0.08))) * size_scale      # (+0.5: the middle of a pixel - a column's number is its left edge, the halo sat half a pixel left of every head)
 		var hr = 6.0 * size_scale      # (a head's width, whatever the pose: flying it grew to the whole body's)
 		draw_set_transform(hc, 0.0, Vector2(1.0, 0.32))
 		draw_arc(Vector2.ZERO, hr + 1.5, 0, TAU, 28, Color(1.0, 0.85, 0.3, 0.25 + 0.1 * sin(tt2 * 0.12) * c.a), 4.0)

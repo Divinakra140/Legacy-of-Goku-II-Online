@@ -1071,7 +1071,7 @@ func _physics_process(_dt: float) -> void:
 	_tp = {}
 	if _autofly and not locals.is_empty():
 		var af: FighterSim = locals[0].fighter
-		af.flying = true
+		af.flying = OS.get_environment("LOG2_AUTOFLY_GROUND") == ""
 		if Engine.get_physics_frames() == 2 and OS.get_environment("LOG2_AUTOFLY_Y") != "":
 			af.x = 300.0; af.y = float(OS.get_environment("LOG2_AUTOFLY_Y"))
 		af.x += float(OS.get_environment("LOG2_AUTOFLY_DX")) if OS.get_environment("LOG2_AUTOFLY_DX") != "" else 6.0
