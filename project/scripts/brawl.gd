@@ -609,7 +609,7 @@ func _social_in(pid: int, from_pid: int, from_name: String, kind: String, data: 
 	elif kind == "clash_taps":
 		# a player's beam locked with ours (their game saw it first): the clash is on here too
 		if b.get("clash", {}).is_empty():
-			if Clash._beam_of(b["f"].shots, b["f"].dir).is_empty():
+			if Clash._beam_of(b["f"].shots, b["f"].dir).is_empty() or not Clash.beam_drawn(b["f"].shots):
 				return
 			_clash_start(pid, b, from_pid)
 		if int(b["clash"]["with"]) == from_pid:
@@ -632,7 +632,7 @@ func _clash_look(pid: int, b: Dictionary) -> void:
 	if not b.get("clash", {}).is_empty():
 		return
 	var mine = Clash._beam_of(f.shots, f.dir)
-	if mine.is_empty():
+	if mine.is_empty() or not Clash.beam_drawn(f.shots):
 		return
 	for q in bots:
 		var o: Dictionary = bots[q]
@@ -644,7 +644,7 @@ func _clash_look(pid: int, b: Dictionary) -> void:
 		if hvv() and Rules.is_villain(int(f.ch)) == Rules.is_villain(int(of.ch)):
 			continue
 		var theirs = Clash._beam_of(of.shots, of.dir)
-		if theirs.is_empty():
+		if theirs.is_empty() or not Clash.beam_drawn(of.shots):
 			continue
 		if Clash.heads_met(f.dir, mine["head"], theirs["head"]):
 			_clash_start(pid, b, q)

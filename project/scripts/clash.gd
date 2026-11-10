@@ -147,7 +147,7 @@ func step(L, raw: Dictionary) -> bool:
 func _look(L) -> void:
 	var f = L.fighter
 	var mine = _beam_of(f.shots, f.dir)
-	if mine.is_empty():
+	if mine.is_empty() or not beam_drawn(f.shots):
 		return
 	for pid in Game.remote_states:
 		var st: Dictionary = Game.remote_states[pid]
@@ -159,7 +159,7 @@ func _look(L) -> void:
 		if not foe and world._hvv_on() and world._same_side(f.ch, int(st.get("ch", -1))):
 			continue      # (HEROES VS VILLAINS: no clash with your own side)
 		var theirs = _beam_snap(st.get("shots", []), f.dir ^ 1)
-		if theirs.is_empty():
+		if theirs.is_empty() or not snap_drawn(st.get("shots", [])):
 			continue
 		if not heads_met(f.dir, mine["head"], theirs["head"]):
 			continue
@@ -169,6 +169,32 @@ func _look(L) -> void:
 		world.toasts.append(["BEAM CLASH!", Color(1, 0.9, 0.4), 120])
 		Sfx.play("crit")
 		return
+
+## a beam already drawn on the screen - a clash only starts between two beams you can see (one fired a moment before
+## the other's was out locked them with an invisible half). This port's beam: out a few ticks; the game's own beam
+## (KAMEHAMEHA...): grown past its first stub
+const DRAWN_TICKS = 6
+static func beam_drawn(shots: Array) -> bool:
+	for s in shots:
+		var k = int(s.get("kind", 0))
+		if k == 1 and int(s.get("tick", 0)) >= DRAWN_TICKS and float(s.get("w", 0)) >= 1.0:
+			return true
+		if k == 5 and float(s.get("L", 0)) >= _rom_len0(str(s.get("rom", ""))) + 8.0:
+			return true
+	return false
+
+## the same for another player's beam as their game sends it (a snapshot's shots)
+static func snap_drawn(shots: Array) -> bool:
+	for e in shots:
+		var k = int(e[3])
+		if k == 1 and float(e[5]) >= 1.0:
+			return true
+		if k == 5 and float(e[5]) >= _rom_len0(str(e[9]) if e.size() > 9 else "") + 8.0:
+			return true
+	return false
+
+static func _rom_len0(rom: String) -> float:
+	return float(Content.rom_specials.get(rom, {}).get("len0", 8))
 
 static func _beam_of(shots: Array, d: int) -> Dictionary:
 	var fwd = Rules.dir_vec(d)
@@ -221,8 +247,8 @@ func on_social(L, from: int, kind: String, data: Dictionary) -> void:
 		if L.clash.is_empty():
 			# they saw it first: it is on for us too (our beam is out at them)
 			var f = L.fighter
-			if _beam_of(f.shots, f.dir).is_empty():
-				return
+			if _beam_of(f.shots, f.dir).is_empty() or not beam_drawn(f.shots):
+				return      # (ours is not out on the screen yet: no clash - it would have no half of its own)
 			var st2: Dictionary = Game.remote_states.get(from, {})
 			var theirs = _beam_snap(st2.get("shots", []), int(st2.get("dir", 0)))
 			L.clash = {"with": from, "t": 0, "mine": 0, "theirs": 0, "ref": world._my_pid(L) < from, "held": true,
