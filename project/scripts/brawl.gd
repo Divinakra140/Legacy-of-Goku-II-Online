@@ -291,7 +291,7 @@ func _step_bot(pid: int, b: Dictionary, host) -> void:
 		if str(ev.get("type", "")) == "hit" and int(ev["enemy"]) <= PVP_ID:
 			var to = PVP_ID - int(ev["enemy"])
 			if not _any(to).is_empty():
-				_hurt(to, int(ev["dmg"]), float(ev["kx"]), float(ev["ky"]), pid, f.ch, str(b["name"]))
+				_hurt(to, int(ev["dmg"]), float(ev["kx"]), float(ev["ky"]), pid, f.ch, str(b["name"]), bool(ev.get("beam", false)))
 				var o = _any(to)["f"]
 				if ev.get("ki", false) and int(_any(to)["node"]) == host.node_i:
 					world.ki_spark(host.node_i, Vector2(o.x, o.y), float(ev["kx"]), float(ev["ky"]))
@@ -577,13 +577,15 @@ static func _walk(inp: Dictionary, dv: Vector2) -> void:
 ## (attacker_pid, its ch and name): only given for a genuine BRAWL / HEROES VS VILLAINS blow, so it can be scored -
 ## left out for a hero foe's (never scored; see _rival_think / _step_rival). The kill goes to whoever dealt the most
 ## damage since it was last at full health (Rules.top_attacker), not just whoever landed the finishing blow
-func _hurt(pid: int, dmg: int, kx: float, ky: float, attacker_pid: int = -1, attacker_ch: int = -1, attacker_name: String = "") -> void:
+func _hurt(pid: int, dmg: int, kx: float, ky: float, attacker_pid: int = -1, attacker_ch: int = -1, attacker_name: String = "", beam: bool = false) -> void:
 	var b: Dictionary = _any(pid)
 	var f = b["f"]
-	if f.invuln > 0 or f.state == "down" or f.flying:
-		return
+	if (f.invuln > 0 and not beam) or f.state == "down" or f.flying:
+		return      # (a held beam's hits all count: they come a few a second - the time it was safe after each let most go by)
 	var real_dmg = Rules.pvp_damage(dmg, f.maxhp)
 	f.take_hit(real_dmg, kx, ky)
+	if beam:
+		f.invuln = 0
 	if b.get("rival", false) or attacker_pid == -1:
 		return
 	var dt: Dictionary = b.get("dmg_taken", {})
@@ -603,7 +605,7 @@ func _social_in(pid: int, from_pid: int, from_name: String, kind: String, data: 
 	if b.is_empty():
 		return
 	if kind == "pvp_hit":
-		_hurt(pid, int(data.get("dmg", 1)), float(data.get("kx", 0)), float(data.get("ky", 0)), from_pid, int(data.get("ch", -1)), from_name)
+		_hurt(pid, int(data.get("dmg", 1)), float(data.get("kx", 0)), float(data.get("ky", 0)), from_pid, int(data.get("ch", -1)), from_name, bool(data.get("beam", false)))
 	elif kind == "clash_taps":
 		# a player's beam locked with ours (their game saw it first): the clash is on here too
 		if b.get("clash", {}).is_empty():

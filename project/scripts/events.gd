@@ -874,10 +874,13 @@ func _start_fight(L, st: Dictionary) -> bool:
 			ai["own"] = Content.own_attack(t)
 			e["ai"] = ai
 			e["boss"] = true
+			e["story_boss"] = true
 			e["big"] = true
 			e["respawn_ms"] = 1 << 40      # (a one-time boss: gone for this visit once beaten)
 			if not sim.awake.has(e):
 				sim.awake.append(e)
+	if float(st.get("take", 0)) > 0 and e.is_empty():
+		return false      # (the placed foe is not there - beaten already: no new one made in its place)
 	var made = e.is_empty()
 	if made:
 		e = sim.make_enemy(sim.enemies.size(), t, Assets.set_for_type(t), sim._open_near(p), maxi(1, int(st.get("level", f.level))), false, true)

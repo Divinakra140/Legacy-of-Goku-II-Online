@@ -136,6 +136,9 @@ func from_save(d: Dictionary) -> void:
 		pwr_v = maxf(pwr_v, float(hs["pwr"]) + level - 1)
 		end_v = maxf(end_v, float(hs["end"]) + level - 1)
 	flags = d.get("flags", {}) if d.get("flags") is Dictionary else {}
+	for fk in flags.keys():
+		if str(fk).begins_with("session:"):
+			flags.erase(fk)      # ("session:" flags last until you leave the game: THE HERO OF EARTH's Cooler, once a visit)
 	where = d.get("where", {}) if d.get("where") is Dictionary else {}
 	states = {}
 	var dst = d.get("states", {})
@@ -1099,7 +1102,7 @@ func _step_shots(enemies: Array) -> void:
 				if kind == 2 and str(s.get("look", "")) != "":      # a ball that cuts on through (the Destructo Disk): its hit at each foe
 					fx.append(["xboom", e["x"], e["y"] - mid, 14.0, s["col"], 0, 16, str(s["look"]), int(s["dir"])])
 				var dv = Vector2(s["vx"], s["vy"]).normalized()
-				events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": dv.x * 3.0, "ky": dv.y * 3.0, "stun": int(s.get("stun", 0)), "inflict": s.get("inf", {}), "ki": kind == 0})      # (ki: the plain blast, B - its purple spark)
+				events.append({"type": "hit", "enemy": e["id"], "dmg": s["dmg"], "crit": s["crit"], "kx": dv.x * 3.0, "ky": dv.y * 3.0, "stun": int(s.get("stun", 0)), "inflict": s.get("inf", {}), "ki": kind == 0, "beam": kind == 1})      # (ki: the plain blast, B - its purple spark; beam: held, hits over and over)
 				if not s.get("pierce", false):
 					gone = true
 		if explode:
@@ -1713,7 +1716,7 @@ func _step_rom_shot(s: Dictionary, enemies: Array) -> bool:
 			if near < (8.0 if not e.get("big", false) else 16.0) + 4.0:
 				s["hit"][e["id"]] = true
 				var dmg = int(s["dmg"]) if not s.get("rehit", false) else maxi(1, int(s["dmg"]) / 3)
-				events.append({"type": "hit", "enemy": e["id"], "dmg": dmg, "crit": s["crit"], "kx": v.x * 3.0, "ky": v.y * 3.0, "stun": 10, "inflict": s.get("inf", {})})
+				events.append({"type": "hit", "enemy": e["id"], "dmg": dmg, "crit": s["crit"], "kx": v.x * 3.0, "ky": v.y * 3.0, "stun": 10, "inflict": s.get("inf", {}), "beam": true})
 		if int(s["t"]) % 10 == 0:
 			s["rehit"] = true
 		return true

@@ -864,6 +864,11 @@ var perf_on = false
 ## on-screen keyboard sends letters as key presses - chat's "d" stayed "held" and the hero walked right by himself
 var _keys_down = {}
 func _input(ev: InputEvent) -> void:
+	# the "... IS FREE!" box: any of the usual buttons puts it away (it stayed until its own timer ran out)
+	if victory_t > 0 and ((ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode in [KEY_Z, KEY_X, KEY_J, KEY_K, KEY_ENTER, KEY_SPACE, KEY_ESCAPE]) or (ev is InputEventJoypadButton and ev.pressed and ev.button_index in [Game.pad_btn("a"), Game.pad_btn("b"), JOY_BUTTON_START])):
+		victory_t = 0
+		get_viewport().set_input_as_handled()
+		return
 	if ev is InputEventKey and not ev.echo and not chat_open:
 		_keys_down[ev.keycode] = ev.pressed
 	# chat open: R3 again (or B) closes it - here, before the chat box: the box took the pad's buttons and R3 did nothing,
@@ -4082,15 +4087,17 @@ func _draw_hud() -> void:
 	if credits_t >= 0:
 		_draw_credits(c, vs)
 	if victory_t > 0:
-		c.draw_rect(Rect2(vs.x / 2 - 130, vs.y / 2 - 40, 260, 80), Color(0, 0, 0.1, 0.85))
-		_ds(c, font, Vector2(vs.x / 2 - 130, vs.y / 2 - 18), victory_text, HORIZONTAL_ALIGNMENT_CENTER, 260, 11, Color(1, 0.85, 0.3))
+		c.draw_rect(Rect2(vs.x / 2 - 170, vs.y / 2 - 60, 340, 128), Color(0, 0, 0.1, 0.88))
+		c.draw_rect(Rect2(vs.x / 2 - 170, vs.y / 2 - 60, 340, 128), Color(1, 0.85, 0.4, 0.8), false, 1.0)
+		_ds(c, font, Vector2(vs.x / 2 - 170, vs.y / 2 - 26), victory_text, HORIZONTAL_ALIGNMENT_CENTER, 340, 16, Color(1, 0.85, 0.3))
 		var kills = 0
 		var lv = []
 		for L in locals:
 			kills += L.kills
 			lv.append(str(L.fighter.level))
-		_ds(c, font, Vector2(vs.x / 2 - 130, vs.y / 2 + 2), "FOES BEATEN %d   LEVEL %s" % [kills, " / ".join(PackedStringArray(lv))], HORIZONTAL_ALIGNMENT_CENTER, 260, 8, Color(1, 1, 1))
-		_ds(c, font, Vector2(vs.x / 2 - 130, vs.y / 2 + 20), "THE PLANET STAYS OPEN", HORIZONTAL_ALIGNMENT_CENTER, 260, 8, Color(0.6, 1, 0.6))
+		_ds(c, font, Vector2(vs.x / 2 - 170, vs.y / 2 + 6), "FOES BEATEN %d   LEVEL %s" % [kills, " / ".join(PackedStringArray(lv))], HORIZONTAL_ALIGNMENT_CENTER, 340, 10, Color(1, 1, 1))
+		_ds(c, font, Vector2(vs.x / 2 - 170, vs.y / 2 + 28), "THE PLANET STAYS OPEN", HORIZONTAL_ALIGNMENT_CENTER, 340, 10, Color(0.6, 1, 0.6))
+		_ds(c, font, Vector2(vs.x / 2 - 170, vs.y / 2 + 52), Game.keys("Z / A: OK"), HORIZONTAL_ALIGNMENT_CENTER, 340, 8, Color(0.75, 0.8, 0.9))
 	if not match_won_info.is_empty():
 		_draw_match_won(c, vs)
 	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -4681,7 +4688,7 @@ func _pvp_targets(L: Local, elist: Array) -> void:
 func _pvp_hit_out(L: Local, pid: int, ev: Dictionary) -> void:
 	if not L.fighter.pvp and not Game.remote_states.get(pid, {}).get("foe", false):
 		return
-	Game.send_social(pid, _my_pid(L), L.name, "pvp_hit", {"dmg": int(ev["dmg"]), "kx": float(ev["kx"]), "ky": float(ev["ky"]), "crit": bool(ev["crit"]), "ki": bool(ev.get("ki", false)), "ch": L.fighter.ch})
+	Game.send_social(pid, _my_pid(L), L.name, "pvp_hit", {"dmg": int(ev["dmg"]), "kx": float(ev["kx"]), "ky": float(ev["ky"]), "crit": bool(ev["crit"]), "ki": bool(ev.get("ki", false)), "beam": bool(ev.get("beam", false)), "ch": L.fighter.ch})
 	var p = _pos_of_pid(pid)
 	if p != null and views.has(L.node_i):
 		if ev.get("ki", false):

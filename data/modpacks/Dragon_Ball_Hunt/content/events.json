@@ -212,6 +212,9 @@
    "if": {
     "flags": [
      "db:sent"
+    ],
+    "not_flags": [
+     "session:moon_won"
     ]
    },
    "steps": [
@@ -305,6 +308,10 @@
     {
      "do": "label",
      "name": "won"
+    },
+    {
+     "do": "flag",
+     "name": "session:moon_won"
     },
     {
      "do": "if_flag",

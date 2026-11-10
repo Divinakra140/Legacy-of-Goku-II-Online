@@ -717,8 +717,8 @@ func hit(id: int, dmg: int, kx: float, ky: float, stun: int = 12, kind: int = 1,
 			e["kx"] = 0.0; e["ky"] = 0.0
 		if e["hp"] <= 0:
 			e["state"] = "dying"; e["t"] = 0; e["anim"] = 0
-			if e["boss"]:
-				boss_beaten = true
+			if e["boss"] and not e.get("story_boss", false):
+				boss_beaten = true      # (a story's boss - THE HERO OF EARTH's Cooler - does not free the planet)
 			var wb = e.get("wboss", false)
 			var luck = 12.0 if wb else (6.0 if e["boss"] else (3.0 if e["elite"] else 1.0))
 			zeni_won = 0
