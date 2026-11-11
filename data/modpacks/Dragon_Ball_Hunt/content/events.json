@@ -7,6 +7,16 @@
    "if": {},
    "steps": [
     {
+     "do": "face",
+     "who": "PLAYER",
+     "dir": "up"
+    },
+    {
+     "do": "face",
+     "who": "DENDE",
+     "dir": "down"
+    },
+    {
      "do": "say",
      "who": "DENDE",
      "portrait": 38,
