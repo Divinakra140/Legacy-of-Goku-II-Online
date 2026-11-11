@@ -2,9 +2,9 @@ LoG2 Online v46 - What's New
 ============================
 
 NEW STORY: THE HERO OF EARTH
-- A short story of its own, in STORY MODE under The Missing Key Capsule.
+- My own custom story mode added, in STORY MODE under The Missing Key Capsule.
 - Dende tells you Cooler has stolen the seven Dragon Balls and hidden them all over the world. Find them all.
-- The Dragon Balls are hidden somewhere new every game. Land and walk up to one to pick it up: a big picture of it shows,
+- The Dragon Balls are hidden somewhere new every game (randomized). Land and walk up to one to pick it up: a big picture of it shows,
   and the count sits above the minimap.
 - Then a spaceship on the southern tip of Amenbo Island takes you to the Moon, where Cooler is waiting - a boss fight
   with his own specials and beam clashes, a big red health bar, and a real GAME OVER if he wins.

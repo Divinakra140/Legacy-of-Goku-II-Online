@@ -1,15 +1,22 @@
 First off... do these in order champ.
 
-If you changed the map, run the bake first (python3 -I ../tools/bake_earth.py from the project folder). You do this by copy pasting this command into terminal: 
+1. If you changed the map, run the bake first (python3 -I ../tools/bake_earth.py from the project folder). You do this by copy pasting this command into terminal: 
 
 cd "/Volumes/Gen2/Godot/Legacy of Goku/LoG2_Android_Build/project" && python3 -I ../tools/bake_earth.py
 
-Then raise BUNDLE_VERSION in project/scripts/assets.gd, so phones load the new map.
+____________________________________
 
-For example it may say 45-4 so change it to 45-5
+2. If its a new release say v46, you need to change the version first on the build script, so find where it says v45 and change it to v46 the file is build_release.command. 
 
-The bundle version only controls the game data packed inside the release: the map, content, mods and similar files. Devices copy that data out once and keep the copy. Raising the version tells them to copy it out again.
+Basically you are only changing two numbers of text: 
 
-So you only raise it when you’ve changed data: a map bake, content edits, mods. Raising it when nothing changed doesn’t hurt anything. Devices would just unpack the same data again, which takes a few extra seconds on the first start.
+ V=v45; R="$B/release/$V"; ... and change it to V=v46. 
 
-Then to rebuild the three releases: double-click tools/build_release.command, or run it in Terminal. It packs the game data, builds all three releases, adds the guides, and zips. 
+Run this command to change it: 
+
+sed -i '' 's/^V=v45;/V=v46;/' "/Volumes/Gen2/Godot/Legacy of Goku/LoG2_Android_Build/tools/build_release.command"
+
+Or you can manually edit that line of text using Nextpad++ on Mac or Notepad++ on windows. Just don't use text editor on Mac or it will get quarantined by Mac and won't run. 
+__________________________________________________
+
+4. Then to rebuild the three releases for Mac, Android and Windows: double-click tools/build_release.command, or run it in Terminal. It packs the game data, builds all three releases, adds the guides, and zips. 

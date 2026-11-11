@@ -1,5 +1,68 @@
 # Changelog
 
+## v46
+
+### NEW STORY: THE HERO OF EARTH
+- My own custom story mode added, in STORY MODE under The Missing Key Capsule.
+- Dende tells you Cooler has stolen the seven Dragon Balls and hidden them all over the world. Find them all.
+- The Dragon Balls are hidden somewhere new every game (randomized). Land and walk up to one to pick it up: a big picture of it shows,
+  and the count sits above the minimap.
+- Then a spaceship on the southern tip of Amenbo Island takes you to the Moon, where Cooler is waiting - a boss fight
+  with his own specials and beam clashes, a big red health bar, and a real GAME OVER if he wins.
+- Beat him and Dende names you the HERO OF EARTH: a golden halo over your hero's head in every mode, for everyone to see.
+- After the story is beaten, Cooler can be fought again on the Moon for fun.
+- Flying is allowed in this story, and your Free Play heroes play it at their own level.
+- Talks use the game's own text box, with the characters' own faces.
+
+### NEW PLAYABLE VILLAIN: GENERAL TAO
+- General Tao joins the villains (Heroes vs Villains, Brawl and Free Play).
+- Specials: the DODONPA WAVE (the game's own golden beam, from his blaster arm) and, from level 8, the DODON RAY.
+- General Tao placed as a foe fights with them too.
+
+### THE ORIGINAL STORY
+- PLAY DEMO? in STORY MODE - ORIGINAL STORY: the opening, rebuilt so far, played as Trunks.
+
+### WORLD MAP AND MAPS
+- SELECT (TAB / M on a computer) opens a real map of your planet: pick any place on it and press A (or click) to fly
+  there.
+- The minimap shows much more of the world around you.
+- SELECT MAP: West City, Gingertown, the Northern Mountains and the rest now start you at that place on the one big
+  Earth. New: PLANET NAMEK.
+
+### SPEED
+- Much smoother everywhere, and far smoother on handhelds: the Retroid Pocket Flip 2 now holds about 60 frames a
+  second even over the Northern Mountains (it was 10-15).
+- No more stutter flying over the ocean or over lots of foes.
+- The loading bar shows everything that loads, all the way to the end.
+- OPTIONS - FPS COUNTER shows the frame rate (and the slowest recent frame).
+
+### COMBAT
+- Beam clashes: both beams always end right at the sparks, and a clash only starts once both beams are on screen.
+- Beam clashes against computer fighters are decided by your tapping - fair, and winnable.
+- Beams and blasts hit big foes (the T-Rex, the robot skull...) anywhere on their body, and hit tall fighters (Cooler,
+  Cell, Frieza...) anywhere from head to feet.
+- A held beam keeps hurting what it touches, the whole time.
+- Beams end in the right splash, and stop at it.
+- Brawl and Heroes vs Villains: no more being swarmed - at most two computer fighters on you at once.
+- Bosses (Frieza, Cooler, Cell, the Androids...) and Krillin, Tien and Yamcha placed as foes fight with their own
+  specials and beam clashes.
+- Computer fighters walk around buildings instead of into them.
+- Vegeta's Galick Gun (and the other ki balls) fly further as your hero levels up.
+
+### MENUS
+- OPTIONS: easier to read.
+- Changing outfits on Windows and Mac: Q / E (the buttons show it), and pointing at a hero with the mouse picks them.
+- The "... IS FREE!" message is bigger and goes away with Z / A.
+
+### EARTH
+- No more foes standing in the open sea.
+- Lights copied into new places (like the spaceships) glow as they should.
+
+MAP EDITOR (DEV TOOLS, Windows and Mac)
+- FOE tool: every preset shows its kind and look, with pictures of both, and which bosses fight with their specials.
+- Baking Earth now bakes everything into it: foes, people, doors, rocks, treasure and events.
+- A second YouTube link: Divinakra Creations.
+
 ## v45
 
 - Capsule Corp computer terminal: a villain database for Free Play - stand at the computer and view stats,
