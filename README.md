@@ -12,7 +12,7 @@ GLOBAL multiplayer together. Also known as "Legacy of Goku II - Co-op".
   villians and  outfits, a seamless open world Earth map that connects all the LOG2 GBA maps into one, the original 
   game's balance (level cap 50), original game music recorded from your own cartridge, and shared saves. [Download Here](https://github.com/Divinakra140/Legacy-of-Goku-II-Online/releases/tag/v46)
 - **The dev tools:** a much better map editor (redo, brush sizes, mirrored copy and paste, keep-the-ground pasting,
-  save points in THINGS, customizable foes, door jumping, biome paint, smart edges, walkable roofs, render layers, map resizing and a move places tool) with guides included
+  save points in THINGS, customizable foes, door jumping, biome paint, smart edges, walkable roofs, render layers, map resizing and a move places tool) and a Story mode builder with guides included
   ([Story.Mode.Editor.Guide.txt](https://github.com/Divinakra140/Legacy-of-Goku-II-Online/releases/download/v46/Story.Mode.Editor.Guide.txt)) ([Earth.Editor.Guide.txt](https://github.com/Divinakra140/Legacy-of-Goku-II-Online/releases/download/v46/Earth.Editor.Guide.txt)). and a [Video Guide](https://www.youtube.com/watch?v=eD4ifri5Pkg) by Divinakra.
 
 **No game data is included.** On first start the game asks for your own *Dragon Ball Z - The Legacy of Goku II (USA)*
