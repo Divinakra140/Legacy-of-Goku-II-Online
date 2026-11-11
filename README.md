@@ -8,7 +8,7 @@ GLOBAL multiplayer together. Also known as "Legacy of Goku II - Co-op".
 
 **Improvements** LoG2 Online v46 has some exciting impovements to both the game on all three platforms and bundled map editor
  on PC and Mac:
-- **The game:** global and local multiplayer across Android, Windows and Mac, GBA-style menus, flying, new playable heroes, 
+- **The game:** global and local multiplayer across Android, Windows and Mac, GBA-style menus, flying anywhere, new playable heroes, 
   villians and  outfits, a seamless open world Earth map that connects all the LOG2 GBA maps into one, the original 
   game's balance (level cap 50), original game music recorded from your own cartridge, and shared saves. [Download Here](https://github.com/Divinakra140/Legacy-of-Goku-II-Online/releases/tag/v46)
 - **The dev tools:** a much better map editor (redo, brush sizes, mirrored copy and paste, keep-the-ground pasting,
