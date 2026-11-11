@@ -2,7 +2,7 @@
 # Builds all three releases into release/v45: Android APK, Windows zip, Mac zip.
 # Double-click it, or run it in Terminal. Takes a few minutes.
 # Before it: if you changed the Earth in the editor, run tools/bake_earth.py first (from the project folder),
-# and raise BUNDLE_VERSION in project/scripts/assets.gd so Android installs pick up the new data.
+# (Android installs pick up changed data by themselves: no BUNDLE_VERSION to raise.)
 set -e
 B="/Volumes/Gen2/Godot/Legacy of Goku/LoG2_Android_Build"
 [ -d /Volumes/PWBuild/godot ] || hdiutil attach /Volumes/Gen2/PokeWilds-Build.sparseimage >/dev/null

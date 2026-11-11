@@ -8,6 +8,9 @@
 B="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD=${BUILD:-/Volumes/PWBuild/log2-build}
 P="$BUILD/project"
+# the game data packed fresh every time (an APK must never carry older data than the folders hold)
+dot_clean -m "$B/data/mods" "$B/data/builtin" 2>/dev/null || true
+python3 -I "$B/tools/make_pack.py" "$B/data" "$B/project/bundle/gamedata.pack" content modpacks music adventures builtin mods > /dev/null || { echo "packing the game data failed"; exit 1; }
 [ -d "$P/android/build" ] || { echo "No Android build template in $P/android/build (see README: Gradle build)"; exit 1; }
 rsync -a --delete --exclude '._*' --exclude '.godot/' --exclude 'android/' "$B/project/" "$P/"
 cp "$B"/android_custom/java/com/godot/game/*.java "$P/android/build/src/main/java/com/godot/game/"

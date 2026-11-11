@@ -32,6 +32,8 @@ More you can add to the story (in its content/story.json), each true or false:
   OWN_HEROES     the story starts its heroes fresh, at level 1, instead of playing your Free Play heroes
   HERO_FOES      foes in a villain's look (Frieza, Cooler, Cell...) fight as that villain, with their own
                  specials and beam clashes (stories keep their foes plain otherwise)
+  QUIET_START    the world's name and story lines don't show along the bottom when the game begins (so an
+                 opening talk isn't covered by them)
 
 And in the mod's mod.json: STORY_ORDER (a number: where the story sits in the STORY MODE list - lower
 first) and HIDDEN (true: the story is not listed, something else starts it - the ORIGINAL STORY's demo).

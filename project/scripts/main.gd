@@ -890,6 +890,13 @@ func _start_test() -> void:
 	Game.cfg["respawn_scale"] = float(test.get("respawn", "1"))
 	Game.cfg["event_scale"] = float(test.get("events", "1"))
 	Game.cfg["wb_node"] = int(test.get("wbnode", "-1"))
+	if test.has("savedir"):      # test aid: the saves in a folder of the test's own (never the player's)
+		DirAccess.make_dir_recursive_absolute(test["savedir"])
+		Game._saves_dir = test["savedir"].trim_suffix("/") + "/"
+	if test.has("story"):        # test aid (--story=<mod folder> [--slot=N]): that mod's story, a save slot of it
+		Mods.story_pack = test["story"]
+		Mods.reload()
+		_story_cfg(int(test.get("slot", "1")))
 	if Game.cfg["mode"] == "host":
 		Game.host_game()
 		await get_tree().create_timer(float(test.get("wait", "3"))).timeout

@@ -108,7 +108,7 @@ func exe_dir() -> String:
 ## Android: no folder next to the program - the game's folders (content, modpacks, imported...) come packed in
 ## the APK (res://bundle/gamedata.pack, made by tools/make_pack.py) and are unpacked into the app's own folder
 ## on the first start: [8 bytes: index length][index JSON: [{"p", "s"}...]][the files, in that order]
-const BUNDLE_VERSION = "v46-3"
+const BUNDLE_VERSION = "v46-3"      # (raising it is no longer needed: changed data is unpacked again by its own fingerprint)
 var _android_root = ""
 func _remove_tree(path: String) -> void:
 	if not DirAccess.dir_exists_absolute(path):
@@ -124,13 +124,18 @@ func _android_dir() -> String:
 		return _android_root
 	_android_root = ProjectSettings.globalize_path("user://game")
 	var mark = _android_root.path_join("bundle_version.txt")
-	if FileAccess.file_exists(mark) and FileAccess.get_file_as_string(mark).strip_edges() == BUNDLE_VERSION:
-		return _android_root
 	var src = FileAccess.open("res://bundle/gamedata.pack", FileAccess.READ)
 	if src == null:
 		printerr("[assets] no res://bundle/gamedata.pack")
 		return _android_root
-	var index = JSON.parse_string(src.get_buffer(src.get_64()).get_string_from_utf8())
+	# the data's own fingerprint (its index holds every file's hash): any change to the packed data - an Earth bake,
+	# a story's events - is unpacked again by itself, BUNDLE_VERSION raised or not
+	var head = src.get_buffer(src.get_64()).get_string_from_utf8()
+	var stamp = BUNDLE_VERSION + " " + head.md5_text()
+	if FileAccess.file_exists(mark) and FileAccess.get_file_as_string(mark).strip_edges() == stamp:
+		src.close()
+		return _android_root
+	var index = JSON.parse_string(head)
 	if not index is Array:
 		printerr("[assets] the game data's index is broken")
 		return _android_root
@@ -157,7 +162,7 @@ func _android_dir() -> String:
 	print("[assets] game data ready in ", Time.get_ticks_msec() - t0, " ms")
 	var mf = FileAccess.open(mark, FileAccess.WRITE)
 	if mf:
-		mf.store_string(BUNDLE_VERSION)
+		mf.store_string(stamp)
 		mf.close()
 	return _android_root
 

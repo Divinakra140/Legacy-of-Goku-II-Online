@@ -328,10 +328,13 @@ func _ready() -> void:
 		print("[prof] _add_local %d ms" % (Time.get_ticks_msec() - _tl))
 	if int(Game.cfg.get("local_players", 1)) >= 2:
 		_add_local(1, int(Game.cfg.get("character2", 0)), str(Game.cfg.get("name2", "PLAYER 2")), p.start_point() + Vector2(18, 0))
-	toasts.append([p.title, Color(1, 0.85, 0.3), 300])
-	for line in p.lore.split("\n"):
-		if line != "":
-			toasts.append([line, Color(0.9, 0.95, 1), 300])
+	# the world's name and lore along the bottom - not in a story that asks for a quiet start ("quiet_start" in its
+	# story.json: THE HERO OF EARTH - its opening talk is on screen at once, and the lines would cover it)
+	if not (Game.cfg.has("story") and bool(Content.story.get("quiet_start", false))):
+		toasts.append([p.title, Color(1, 0.85, 0.3), 300])
+		for line in p.lore.split("\n"):
+			if line != "":
+				toasts.append([line, Color(0.9, 0.95, 1), 300])
 	_on_resize()
 	ready_done = true
 	for L in locals:
@@ -1044,7 +1047,7 @@ func _prof_report() -> void:
 		nodes += views[n].ents.get_child_count()
 	if Engine.get_physics_frames() == 360 and OS.get_environment("LOG2_MAPOPEN") != "":
 		map_open = true
-	if Engine.get_physics_frames() == 480 and OS.get_environment("LOG2_SHOT") != "":
+	if Engine.get_physics_frames() == (int(OS.get_environment("LOG2_SHOT_AT")) if OS.get_environment("LOG2_SHOT_AT") != "" else 480) and OS.get_environment("LOG2_SHOT") != "":
 		_shot.call_deferred()
 	if Engine.get_physics_frames() == 600:
 		for n in views:
@@ -2329,8 +2332,6 @@ func _quest_event(L: Local, kind: String, info: Dictionary) -> void:
 		f.quests[id] = now
 		if now >= cnt:
 			_quest_done(L, q)
-		elif t == "kill" and (now % maxi(1, cnt / 5) == 0 or cnt - now <= 2):
-			toasts.append(["%s  %d / %d" % [q["name"], now, cnt], Color(0.8, 0.9, 1), 90])
 
 func _quest_done(L: Local, q: Dictionary) -> void:
 	var f: FighterSim = L.fighter
@@ -2361,8 +2362,7 @@ func _quest_done(L: Local, q: Dictionary) -> void:
 	else:
 		f.qdone.append(id)
 		f.quests.erase(id)
-	toasts.append(["MISSION COMPLETE: %s!" % q["name"], Color(1, 0.85, 0.3), 260])
-	toasts.append(["REWARD: " + ", ".join(PackedStringArray(got)), Color(1, 0.95, 0.7), 260])
+	# (no MISSION COMPLETE / REWARD messages on screen, in any mode: the rewards are given quietly)
 	Sfx.play("levelup")
 	Game.save_fighter(f, L.k)
 
