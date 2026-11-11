@@ -6,18 +6,18 @@ The world's first ever online multiplayer Godot rebuild of **Legacy of Goku II**
 for **Android** (Handhelds and phones), **Windows** and **Mac** (Apple Silicon and Intel). All three play
 GLOBAL multiplayer together. Also known as "Legacy of Goku II - Co-op". 
 
-**Improvements** LoG2 Online v44 has some exciting impovements to both the game on all three platforms and bundled map editor
+**Improvements** LoG2 Online v46 has some exciting impovements to both the game on all three platforms and bundled map editor
  on PC and Mac:
 - **The game:** global and local multiplayer across Android, Windows and Mac, GBA-style menus, flying, new playable heroes, 
-  villians and  outfits, a reworked Earth (Goku's House, Triceratops Jungle and West City improved by hand), the original 
-  game's balance (level cap 50), original game music recorded from your own cartridge, and shared saves. [Download Here](https://github.com/Divinakra140/Legacy-of-Goku-II-Online/releases/tag/v45)
+  villians and  outfits, a seamless open world Earth map that connects all the LOG2 GBA maps into one, the original 
+  game's balance (level cap 50), original game music recorded from your own cartridge, and shared saves. [Download Here](https://github.com/Divinakra140/Legacy-of-Goku-II-Online/releases/tag/v46)
 - **The dev tools:** a much better map editor (redo, brush sizes, mirrored copy and paste, keep-the-ground pasting,
-  save points in THINGS, a foe picture list, door jumping) and the Earth editor, with guides included
-  (DEV TOOLS.txt, Earth Editor Guide.txt). and a [Video Guide](https://www.youtube.com/watch?v=eD4ifri5Pkg) by Divinakra.
+  save points in THINGS, customizable foes, door jumping, biome paint, smart edges, walkable roofs, render layers, map resizing and a move places tool) with guides included
+  (Story.Mode.Editor.Guide.txt, Earth.Editor.Guide.txt). and a [Video Guide](https://www.youtube.com/watch?v=eD4ifri5Pkg) by Divinakra.
 
 **No game data is included.** On first start the game asks for your own *Dragon Ball Z - The Legacy of Goku II (USA)*
 .gba (CHOOSE MY GAME) and reads its maps, sprites and sounds on your device. Earth ships as tile numbers only
-(builtin/earth): it is drawn with the tiles from your own game file.
+(builtin/earth): it is drawn with the tiles from your own game file. This game acts as an asset extractor for all three legacy games as long as the .gba USA files sit next to each other somewhere on your computer. Sprites get sent to "imported" > "sprites" next to the LOg2Online.exe. 
 
 See [CHANGELOG.md](CHANGELOG.md) for what is new.
 
