@@ -2404,6 +2404,10 @@ func _gload(f: Callable) -> void:
 	_gheading("Loading")
 	_gpanel(Rect2(60, 84, 200, 12))
 	var fill = ColorRect.new(); fill.color = G_CYAN; fill.position = Vector2(62, 86); fill.size = Vector2(0, 8); gba.add_child(fill)
+	# the screen shown before anything heavy starts (on a handheld the songs and effects took a moment, and the name
+	# screen stood frozen in the meantime - no loading screen at all)
+	await get_tree().process_frame
+	await get_tree().process_frame
 	Music.preload_game_songs()        # every song of the game read now: no song is read while you play
 	Assets.prewarm_fx()        # every explosion/beam/spark picture read now too: none is read for the first time mid-fight
 	# every sprite set built now (in the background), then made ready to draw - the bar shows how far it really is
