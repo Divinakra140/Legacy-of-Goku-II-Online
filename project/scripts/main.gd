@@ -822,6 +822,11 @@ func _on_started() -> void:
 		return
 	if world and is_instance_valid(world) and world.has_method("save_all"):
 		world.save_all()
+	if not _warmed or (_start_land() != "" and not Assets._areas.has(_start_land())):
+		if world and is_instance_valid(world):
+			world.queue_free()
+			world = null
+		await _warm_up()      # (hosting, joining, LOCAL MULTIPLAYER: the loading screen here, before the world opens)
 	if ui:
 		ui.queue_free()
 		ui = null
@@ -2400,6 +2405,23 @@ func _shoulder_icon(left: bool) -> ImageTexture:
 
 # ---- the loading screen: shown while the world is built (the game is busy for a moment)
 func _gload(f: Callable) -> void:
+	await _warm_up()
+	f.call()
+
+## the loading screen and everything it gets ready (songs, effects, every sprite set, the map's tiles, the land you
+## start in) - once a session: single player and stories do it before the game starts; a game started any other way
+## (hosting, joining, LOCAL MULTIPLAYER) does it as it starts (_on_started) - they skipped it and built it all mid-game
+var _warmed = false
+## the land a game starts in ("" for none): the map the loading screen builds
+func _start_land() -> String:
+	var adv = str(Game.cfg.get("adventure", ""))
+	if adv.begins_with("land:"):
+		return "land/%s/0" % adv.substr(5)
+	if Game.cfg.has("story") and str(Content.story.get("start_map", "")).begins_with("land/"):
+		return str(Content.story["start_map"])
+	return ""
+
+func _warm_up() -> void:
 	_gba_screen()
 	_gheading("Loading")
 	_gpanel(Rect2(60, 84, 200, 12))
@@ -2437,12 +2459,7 @@ func _gload(f: Callable) -> void:
 			await get_tree().process_frame
 	# the land you start in, built now too (its places, people and foes; then the whole map): it was built after the
 	# bar was full - 6 more seconds with nothing moving
-	var lk = ""
-	var adv = str(Game.cfg.get("adventure", ""))
-	if adv.begins_with("land:"):
-		lk = "land/%s/0" % adv.substr(5)
-	elif str(Content.story.get("start_map", "")).begins_with("land/"):
-		lk = str(Content.story["start_map"])
+	var lk = _start_land()
 	if lk != "":
 		var note = _gtext(gba, "BUILDING THE WORLD...", Vector2(60, 100))
 		note.size = Vector2(200, 10)
@@ -2464,7 +2481,7 @@ func _gload(f: Callable) -> void:
 			Assets.area(lk)
 	fill.size.x = 196.0
 	await get_tree().process_frame
-	f.call()
+	_warmed = true
 
 # ---- STORY MODE: the stories in the mods, and the original story (still to come)
 func _story_screen() -> void:
